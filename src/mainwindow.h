@@ -16,6 +16,7 @@ class QListWidget;
 class QListWidgetItem;
 class QPlainTextEdit;
 class QPushButton;
+class QTabWidget;
 class QTextEdit;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -56,6 +57,8 @@ private slots:
     void onAuthCheckFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onGitProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onGitProcessErrorOccurred(QProcess::ProcessError error);
+    void onLogFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void onHistoryItemClicked(QListWidgetItem *item);
     void onRepoDirChanged();
     void onRefreshDebounce();
 
@@ -68,6 +71,7 @@ private:
     static bool isGitRepository(const QString &path);
     void startGitStatusQuery();
     void startGitUnpushedQuery();
+    void startGitLogQuery();
     void addGitFileToTree(const QString &path, const QString &prefix);
 
     void loadBranches();
@@ -99,6 +103,8 @@ private:
     QListWidget *m_recentList = nullptr;
     QTreeWidget *m_gitStatusTree = nullptr;
     QPlainTextEdit *m_fileContentViewer = nullptr;
+    QTabWidget *m_sidebarTabs = nullptr;
+    QListWidget *m_commitHistoryList = nullptr;
 
     QLineEdit *m_summaryInput = nullptr;
     QTextEdit *m_descriptionInput = nullptr;
@@ -114,6 +120,7 @@ private:
     QProcess *m_branchProcess = nullptr;
     QProcess *m_checkoutProcess = nullptr;
     QProcess *m_createBranchProcess = nullptr;
+    QProcess *m_logProcess = nullptr;
     QString m_currentBranch;
     bool m_populatingBranches = false;
 

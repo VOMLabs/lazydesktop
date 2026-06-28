@@ -187,16 +187,34 @@ void MainWindow::setupUi()
     auto *commitContainer = new QWidget();
     commitContainer->setLayout(commitLayout);
 
-    // Left panel: tree on top, commit pane on bottom
-    auto *leftPanel = new QSplitter(Qt::Vertical);
-    leftPanel->addWidget(m_gitStatusTree);
-    leftPanel->addWidget(commitContainer);
-    leftPanel->setStretchFactor(0, 1);
-    leftPanel->setStretchFactor(1, 0);
+    // Sidebar with tabs: Changes + History
+    m_sidebarTabs = new QTabWidget();
+
+    // Tab 1 — Changes
+    auto *changesTab = new QWidget();
+    auto *changesLayout = new QVBoxLayout(changesTab);
+    changesLayout->setContentsMargins(0, 0, 0, 0);
+    changesLayout->setSpacing(0);
+    auto *changesSplitter = new QSplitter(Qt::Vertical);
+    changesSplitter->addWidget(m_gitStatusTree);
+    changesSplitter->addWidget(commitContainer);
+    changesSplitter->setStretchFactor(0, 1);
+    changesSplitter->setStretchFactor(1, 0);
+    changesLayout->addWidget(changesSplitter);
+    m_sidebarTabs->addTab(changesTab, "Changes");
+
+    // Tab 2 — History
+    auto *historyTab = new QWidget();
+    auto *historyLayout = new QVBoxLayout(historyTab);
+    historyLayout->setContentsMargins(0, 0, 0, 0);
+    m_commitHistoryList = new QListWidget();
+    m_commitHistoryList->setAlternatingRowColors(true);
+    historyLayout->addWidget(m_commitHistoryList);
+    m_sidebarTabs->addTab(historyTab, "History");
 
     // Main horizontal splitter
     auto *splitter = new QSplitter(Qt::Horizontal);
-    splitter->addWidget(leftPanel);
+    splitter->addWidget(m_sidebarTabs);
     splitter->addWidget(m_fileContentViewer);
     splitter->setStretchFactor(0, 1);
     splitter->setStretchFactor(1, 2);
@@ -242,6 +260,10 @@ void MainWindow::setupUi()
     connect(m_checkoutProcess, &QProcess::errorOccurred,
             this, &MainWindow::onCheckoutErrorOccurred);
 
+    m_logProcess = new QProcess(this);
+    connect(m_logProcess, &QProcess::finished,
+            this, &MainWindow::onLogFinished);
+
     m_createBranchProcess = new QProcess(this);
     connect(m_createBranchProcess, &QProcess::finished,
             this, &MainWindow::onBranchesLoaded);
@@ -273,6 +295,8 @@ void MainWindow::setupUi()
             this, &MainWindow::onRecentProjectClicked);
     connect(m_gitStatusTree, &QTreeWidget::itemClicked,
             this, &MainWindow::onTreeItemClicked);
+    connect(m_commitHistoryList, &QListWidget::itemClicked,
+            this, &MainWindow::onHistoryItemClicked);
     connect(m_summaryInput, &QLineEdit::textChanged,
             this, &MainWindow::onSummaryTextChanged);
     connect(m_commitButton, &QPushButton::clicked,
@@ -515,6 +539,7 @@ bool MainWindow::openRepository(const QString &path)
     addRecentProject(path);
     loadBranches();
     startGitStatusQuery();
+    startGitLogQuery();
 
     // Watch for file changes to auto-refresh
     m_fsWatcher->removePaths(m_fsWatcher->files());
@@ -734,6 +759,7 @@ void MainWindow::onCommitFinished(int exitCode, QProcess::ExitStatus exitStatus)
     m_treeDirs.clear();
     m_fileContentViewer->clear();
     startGitStatusQuery();
+    startGitLogQuery();
 }
 
 void MainWindow::onCommitErrorOccurred(QProcess::ProcessError error)
@@ -1204,6 +1230,69 @@ void MainWindow::onGitProcessErrorOccurred(QProcess::ProcessError error)
     }
 
     m_currentQuery = GitQuery::None;
+}
+
+// --- Git log (History tab) ---
+
+void MainWindow::startGitLogQuery()
+{
+    if (m_repoPath.isEmpty())
+        return;
+
+    m_logProcess->setWorkingDirectory(m_repoPath);
+    m_logProcess->start("git", {
+        "log", "--pretty=format:%h%n%an%n%ar%n%s", "--max-count=100",
+        "--abbrev-commit"
+    });
+}
+
+void MainWindow::onLogFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+    if (exitStatus != QProcess::NormalExit || exitCode != 0)
+        return;
+
+    m_commitHistoryList->clear();
+
+    const QString output = QString::fromUtf8(m_logProcess->readAllStandardOutput());
+    const QStringList lines = output.split('\n', Qt::SkipEmptyParts);
+
+    // Format is groups of 4 lines: hash, author, date, subject
+    for (int i = 0; i + 3 < lines.size(); i += 4) {
+        const QString hash  = lines[i];
+        const QString author = lines[i + 1];
+        const QString date  = lines[i + 2];
+        const QString subject = lines[i + 3];
+
+        // First line: subject
+        // Second line: hash · author · date
+        const QString display = subject + "\n" + hash + "  " + author + "  " + date;
+
+        auto *item = new QListWidgetItem(display);
+        item->setData(Qt::UserRole, hash);
+        m_commitHistoryList->addItem(item);
+    }
+}
+
+void MainWindow::onHistoryItemClicked(QListWidgetItem *item)
+{
+    if (!item)
+        return;
+
+    const QString hash = item->data(Qt::UserRole).toString();
+    if (hash.isEmpty())
+        return;
+
+    // Fetch full commit details asynchronously
+    auto *detailProc = new QProcess(this);
+    detailProc->setWorkingDirectory(m_repoPath);
+    detailProc->start("git", {"show", "--stat", "--oneline", hash});
+
+    connect(detailProc, &QProcess::finished, this, [detailProc](int ec, QProcess::ExitStatus es) {
+        detailProc->deleteLater();
+        if (es != QProcess::NormalExit || ec != 0)
+            return;
+        qDebug().noquote() << QString::fromUtf8(detailProc->readAllStandardOutput());
+    });
 }
 
 // --- File system watcher (auto-refresh) ---
