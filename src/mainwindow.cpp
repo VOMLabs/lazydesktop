@@ -188,7 +188,7 @@ void MainWindow::onOpenFolder()
     }
 
     m_repoPath = dir;
-    m_currentPathLabel->setText(dir);
+    m_currentPathLabel->setText(QDir(dir).dirName());
     m_gitStatusTree->clear();
     m_treeDirs.clear();
     m_fileContentViewer->clear();
