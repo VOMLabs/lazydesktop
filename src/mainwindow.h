@@ -4,7 +4,9 @@
 #include <QMainWindow>
 #include <QProcess>
 
+#include <QFileSystemWatcher>
 #include <QMap>
+#include <QTimer>
 
 class QComboBox;
 class QDialog;
@@ -54,6 +56,8 @@ private slots:
     void onAuthCheckFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onGitProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onGitProcessErrorOccurred(QProcess::ProcessError error);
+    void onRepoDirChanged();
+    void onRefreshDebounce();
 
 private:
     enum class GitQuery { None, Status, Unpushed };
@@ -118,6 +122,8 @@ private:
     GitCredentials m_gitCredentials;
     QString m_askPassScriptPath;
 
+    QFileSystemWatcher *m_fsWatcher = nullptr;
+    QTimer *m_refreshTimer = nullptr;
     QProcess *m_gitProcess = nullptr;
     QString m_repoPath;
     GitQuery m_currentQuery = GitQuery::None;

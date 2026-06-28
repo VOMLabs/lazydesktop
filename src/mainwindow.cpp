@@ -3,6 +3,7 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDirIterator>
 #include <QDir>
 #include <QFile>
 #include <QFile>
@@ -278,6 +279,17 @@ void MainWindow::setupUi()
             this, &MainWindow::onCommitClicked);
     connect(m_pushButton, &QPushButton::clicked,
             this, &MainWindow::onPushClicked);
+
+    m_fsWatcher = new QFileSystemWatcher(this);
+    m_refreshTimer = new QTimer(this);
+    m_refreshTimer->setSingleShot(true);
+    m_refreshTimer->setInterval(500);
+    connect(m_fsWatcher, &QFileSystemWatcher::directoryChanged,
+            this, &MainWindow::onRepoDirChanged);
+    connect(m_fsWatcher, &QFileSystemWatcher::fileChanged,
+            this, &MainWindow::onRepoDirChanged);
+    connect(m_refreshTimer, &QTimer::timeout,
+            this, &MainWindow::onRefreshDebounce);
 }
 
 // --- Recent projects persistence ---
@@ -503,6 +515,15 @@ bool MainWindow::openRepository(const QString &path)
     addRecentProject(path);
     loadBranches();
     startGitStatusQuery();
+
+    // Watch for file changes to auto-refresh
+    m_fsWatcher->removePaths(m_fsWatcher->files());
+    m_fsWatcher->removePaths(m_fsWatcher->directories());
+    const QString gitDir = QDir(path).filePath(".git");
+    m_fsWatcher->addPath(gitDir);
+    m_fsWatcher->addPath(QDir(gitDir).filePath("index"));
+    m_fsWatcher->addPath(QDir(gitDir).filePath("HEAD"));
+
     return true;
 }
 
@@ -1183,6 +1204,21 @@ void MainWindow::onGitProcessErrorOccurred(QProcess::ProcessError error)
     }
 
     m_currentQuery = GitQuery::None;
+}
+
+// --- File system watcher (auto-refresh) ---
+
+void MainWindow::onRepoDirChanged()
+{
+    m_refreshTimer->start();
+}
+
+void MainWindow::onRefreshDebounce()
+{
+    if (m_repoPath.isEmpty())
+        return;
+    m_currentQuery = GitQuery::None;
+    startGitStatusQuery();
 }
 
 // --- Git bootstrapping ---
