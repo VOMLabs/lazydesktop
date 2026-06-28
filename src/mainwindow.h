@@ -29,6 +29,9 @@ private slots:
     void onCommitClicked();
     void onCommitFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onCommitErrorOccurred(QProcess::ProcessError error);
+    void onPushClicked();
+    void onPushFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void onPushErrorOccurred(QProcess::ProcessError error);
     void onGitProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onGitProcessErrorOccurred(QProcess::ProcessError error);
 
@@ -50,6 +53,9 @@ private:
     QTextEdit *m_descriptionInput = nullptr;
     QPushButton *m_commitButton = nullptr;
     QProcess *m_commitProcess = nullptr;
+
+    QPushButton *m_pushButton = nullptr;
+    QProcess *m_pushProcess = nullptr;
 
     QProcess *m_gitProcess = nullptr;
     QString m_repoPath;

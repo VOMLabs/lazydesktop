@@ -37,6 +37,10 @@ MainWindow::~MainWindow()
         m_commitProcess->kill();
         m_commitProcess->waitForFinished(3000);
     }
+    if (m_pushProcess && m_pushProcess->state() != QProcess::NotRunning) {
+        m_pushProcess->kill();
+        m_pushProcess->waitForFinished(3000);
+    }
 }
 
 void MainWindow::setupUi()
@@ -96,9 +100,13 @@ void MainWindow::setupUi()
     splitter->setStretchFactor(0, 1);
     splitter->setStretchFactor(1, 2);
 
+    m_pushButton = new QPushButton("Push");
+    m_pushButton->setEnabled(false);
+
     topLayout->addWidget(m_openFolderButton);
     topLayout->addWidget(m_currentPathLabel);
     topLayout->addStretch();
+    topLayout->addWidget(m_pushButton);
 
     mainLayout->addLayout(topLayout);
     mainLayout->addWidget(splitter, 1);
@@ -118,6 +126,12 @@ void MainWindow::setupUi()
     connect(m_commitProcess, &QProcess::errorOccurred,
             this, &MainWindow::onCommitErrorOccurred);
 
+    m_pushProcess = new QProcess(this);
+    connect(m_pushProcess, &QProcess::finished,
+            this, &MainWindow::onPushFinished);
+    connect(m_pushProcess, &QProcess::errorOccurred,
+            this, &MainWindow::onPushErrorOccurred);
+
     // Connections
     connect(m_openFolderButton, &QPushButton::clicked,
             this, &MainWindow::onOpenFolder);
@@ -127,6 +141,8 @@ void MainWindow::setupUi()
             this, &MainWindow::onSummaryTextChanged);
     connect(m_commitButton, &QPushButton::clicked,
             this, &MainWindow::onCommitClicked);
+    connect(m_pushButton, &QPushButton::clicked,
+            this, &MainWindow::onPushClicked);
 }
 
 bool MainWindow::isGitRepository(const QString &path)
@@ -189,6 +205,7 @@ void MainWindow::onOpenFolder()
 
     m_repoPath = dir;
     m_currentPathLabel->setText(QDir(dir).dirName());
+    m_pushButton->setEnabled(true);
     m_gitStatusTree->clear();
     m_treeDirs.clear();
     m_fileContentViewer->clear();
@@ -254,10 +271,12 @@ void MainWindow::onTreeItemClicked(QTreeWidgetItem *item, int column)
             fmt.setFontWeight(QFont::Bold);
             display = line;
         } else if (line.startsWith('-')) {
+            fmt.setForeground(Qt::black);
             fmt.setBackground(QColor(255, 200, 200));
             display = QString("%1%2").arg(oldLn).arg(line);
             oldLn++;
         } else if (line.startsWith('+')) {
+            fmt.setForeground(Qt::black);
             fmt.setBackground(QColor(200, 255, 200));
             display = QString("%1%2").arg(newLn).arg(line);
             newLn++;
@@ -331,6 +350,53 @@ void MainWindow::onCommitErrorOccurred(QProcess::ProcessError error)
             "Please install Git to use this feature.");
     }
     m_commitButton->setEnabled(!m_summaryInput->text().trimmed().isEmpty());
+}
+
+// --- Push ---
+
+void MainWindow::onPushClicked()
+{
+    if (m_pushProcess->state() != QProcess::NotRunning)
+        return;
+
+    m_pushButton->setEnabled(false);
+    m_pushProcess->setWorkingDirectory(m_repoPath);
+    m_pushProcess->start("git", {"push"});
+}
+
+void MainWindow::onPushFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+    if (exitStatus != QProcess::NormalExit) {
+        m_pushButton->setEnabled(true);
+        return;
+    }
+
+    const QString stderrOut = QString::fromUtf8(
+        m_pushProcess->readAllStandardError());
+
+    if (exitCode != 0) {
+        QMessageBox::warning(this, "Push Failed", stderrOut);
+        m_pushButton->setEnabled(true);
+        return;
+    }
+
+    QMessageBox::information(this, "Push Successful",
+        "Changes have been pushed successfully.");
+
+    m_gitStatusTree->clear();
+    m_treeDirs.clear();
+    m_fileContentViewer->clear();
+    startGitStatusQuery();
+    m_pushButton->setEnabled(true);
+}
+
+void MainWindow::onPushErrorOccurred(QProcess::ProcessError error)
+{
+    if (error == QProcess::FailedToStart) {
+        QMessageBox::critical(this, "Git Not Found",
+            "Git is not installed or not available on the system PATH.");
+    }
+    m_pushButton->setEnabled(true);
 }
 
 // --- Status queries ---
