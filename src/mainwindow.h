@@ -8,6 +8,8 @@
 
 class QLabel;
 class QLineEdit;
+class QListWidget;
+class QListWidgetItem;
 class QPlainTextEdit;
 class QPushButton;
 class QTextEdit;
@@ -23,7 +25,8 @@ public:
     ~MainWindow() override;
 
 private slots:
-    void onOpenFolder();
+    void onProjectButtonClicked();
+    void onRecentProjectClicked(QListWidgetItem *item);
     void onTreeItemClicked(QTreeWidgetItem *item, int column);
     void onSummaryTextChanged(const QString &text);
     void onCommitClicked();
@@ -37,15 +40,26 @@ private slots:
 
 private:
     enum class GitQuery { None, Status, Unpushed };
+    enum class PushState { Push, Fetch, Pull };
 
     void setupUi();
+    bool openRepository(const QString &path);
     static bool isGitRepository(const QString &path);
     void startGitStatusQuery();
     void startGitUnpushedQuery();
     void addGitFileToTree(const QString &path, const QString &prefix);
 
-    QPushButton *m_openFolderButton = nullptr;
+    void loadRecentProjects();
+    void saveRecentProjects();
+    void addRecentProject(const QString &path);
+    void populateRecentList();
+    void setWorkspaceVisible(bool visible);
+
+    QPushButton *m_projectButton = nullptr;
     QLabel *m_currentPathLabel = nullptr;
+    QWidget *m_recentDrawer = nullptr;
+    QPushButton *m_openProjectButton = nullptr;
+    QListWidget *m_recentList = nullptr;
     QTreeWidget *m_gitStatusTree = nullptr;
     QPlainTextEdit *m_fileContentViewer = nullptr;
 
@@ -54,7 +68,6 @@ private:
     QPushButton *m_commitButton = nullptr;
     QProcess *m_commitProcess = nullptr;
 
-    enum class PushState { Push, Fetch, Pull };
     PushState m_pushState = PushState::Push;
     QPushButton *m_pushButton = nullptr;
     QProcess *m_pushProcess = nullptr;
@@ -63,6 +76,7 @@ private:
     QString m_repoPath;
     GitQuery m_currentQuery = GitQuery::None;
     QMap<QString, QTreeWidgetItem *> m_treeDirs;
+    QStringList m_recentProjects;
 };
 
 #endif // MAINWINDOW_H

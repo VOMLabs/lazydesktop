@@ -9,11 +9,13 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QSettings>
 #include <QSplitter>
 #include <QTextCursor>
 #include <QTextEdit>
@@ -21,10 +23,13 @@
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
 
+static const int kMaxRecentProjects = 10;
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
     setupUi();
+    loadRecentProjects();
 }
 
 MainWindow::~MainWindow()
@@ -50,17 +55,51 @@ void MainWindow::setupUi()
 
     auto *centralWidget = new QWidget(this);
     auto *mainLayout = new QVBoxLayout(centralWidget);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(0);
 
+    // --- Top toolbar ---
     auto *topLayout = new QHBoxLayout();
+    topLayout->setContentsMargins(6, 4, 6, 4);
 
-    m_openFolderButton = new QPushButton("Open Folder");
-    m_currentPathLabel = new QLabel("No folder selected");
+    m_projectButton = new QPushButton("Open Folder");
+    m_projectButton->setMinimumHeight(28);
+
+    m_currentPathLabel = new QLabel();
+    m_currentPathLabel->setVisible(false);
+
+    m_pushButton = new QPushButton("Push");
+    m_pushButton->setEnabled(false);
+    m_pushState = PushState::Push;
+
+    topLayout->addWidget(m_projectButton);
+    topLayout->addWidget(m_currentPathLabel);
+    topLayout->addStretch();
+    topLayout->addWidget(m_pushButton);
+
+    // --- Recent projects drawer (hidden by default) ---
+    m_recentDrawer = new QWidget();
+    m_recentDrawer->setFixedWidth(260);
+    m_recentDrawer->setVisible(false);
+
+    auto *drawerLayout = new QVBoxLayout(m_recentDrawer);
+    drawerLayout->setContentsMargins(6, 6, 6, 6);
+
+    m_openProjectButton = new QPushButton("+ Open Project");
+    m_openProjectButton->setMinimumHeight(32);
+
+    m_recentList = new QListWidget();
+    m_recentList->setAlternatingRowColors(true);
+
+    drawerLayout->addWidget(m_openProjectButton);
+    drawerLayout->addWidget(m_recentList, 1);
+
+    // --- Main content widgets ---
     m_gitStatusTree = new QTreeWidget();
-    m_fileContentViewer = new QPlainTextEdit();
-
     m_gitStatusTree->setHeaderHidden(true);
     m_gitStatusTree->setColumnCount(1);
 
+    m_fileContentViewer = new QPlainTextEdit();
     m_fileContentViewer->setReadOnly(true);
     auto monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     m_fileContentViewer->setFont(monoFont);
@@ -100,17 +139,15 @@ void MainWindow::setupUi()
     splitter->setStretchFactor(0, 1);
     splitter->setStretchFactor(1, 2);
 
-    m_pushButton = new QPushButton("Push");
-    m_pushButton->setEnabled(false);
-    m_pushState = PushState::Push;
-
-    topLayout->addWidget(m_openFolderButton);
-    topLayout->addWidget(m_currentPathLabel);
-    topLayout->addStretch();
-    topLayout->addWidget(m_pushButton);
+    // Content area: drawer + main splitter
+    auto *contentLayout = new QHBoxLayout();
+    contentLayout->setContentsMargins(0, 0, 0, 0);
+    contentLayout->setSpacing(0);
+    contentLayout->addWidget(m_recentDrawer);
+    contentLayout->addWidget(splitter, 1);
 
     mainLayout->addLayout(topLayout);
-    mainLayout->addWidget(splitter, 1);
+    mainLayout->addLayout(contentLayout, 1);
 
     setCentralWidget(centralWidget);
 
@@ -134,8 +171,12 @@ void MainWindow::setupUi()
             this, &MainWindow::onPushErrorOccurred);
 
     // Connections
-    connect(m_openFolderButton, &QPushButton::clicked,
-            this, &MainWindow::onOpenFolder);
+    connect(m_projectButton, &QPushButton::clicked,
+            this, &MainWindow::onProjectButtonClicked);
+    connect(m_openProjectButton, &QPushButton::clicked,
+            this, &MainWindow::onProjectButtonClicked);
+    connect(m_recentList, &QListWidget::itemClicked,
+            this, &MainWindow::onRecentProjectClicked);
     connect(m_gitStatusTree, &QTreeWidget::itemClicked,
             this, &MainWindow::onTreeItemClicked);
     connect(m_summaryInput, &QLineEdit::textChanged,
@@ -144,6 +185,123 @@ void MainWindow::setupUi()
             this, &MainWindow::onCommitClicked);
     connect(m_pushButton, &QPushButton::clicked,
             this, &MainWindow::onPushClicked);
+}
+
+// --- Recent projects persistence ---
+
+void MainWindow::loadRecentProjects()
+{
+    QSettings settings;
+    m_recentProjects = settings.value("recentProjects").toStringList();
+    populateRecentList();
+}
+
+void MainWindow::saveRecentProjects()
+{
+    QSettings settings;
+    settings.setValue("recentProjects", m_recentProjects);
+}
+
+void MainWindow::addRecentProject(const QString &path)
+{
+    m_recentProjects.removeAll(path);
+    m_recentProjects.prepend(path);
+    while (m_recentProjects.size() > kMaxRecentProjects)
+        m_recentProjects.removeLast();
+    saveRecentProjects();
+    populateRecentList();
+}
+
+void MainWindow::populateRecentList()
+{
+    m_recentList->clear();
+    for (const QString &path : m_recentProjects) {
+        auto *item = new QListWidgetItem(QDir(path).dirName());
+        item->setData(Qt::UserRole, path);
+        item->setToolTip(path);
+        m_recentList->addItem(item);
+    }
+}
+
+// --- Workspace state ---
+
+void MainWindow::setWorkspaceVisible(bool visible)
+{
+    m_currentPathLabel->setVisible(visible);
+    m_gitStatusTree->setVisible(visible);
+    m_fileContentViewer->setVisible(visible);
+    m_summaryInput->setVisible(visible);
+    m_descriptionInput->setVisible(visible);
+    m_commitButton->setVisible(visible);
+    m_pushButton->setVisible(visible);
+}
+
+// --- Project button & drawer ---
+
+void MainWindow::onProjectButtonClicked()
+{
+    auto *btn = qobject_cast<QPushButton *>(sender());
+    if (!btn)
+        return;
+
+    // "Open Project" button inside the drawer always opens folder dialog
+    if (btn == m_openProjectButton) {
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, "Open Git Repository");
+        if (!dir.isEmpty())
+            openRepository(dir);
+        return;
+    }
+
+    // m_projectButton behaviour depends on state
+    if (m_repoPath.isEmpty()) {
+        // No project open → open folder dialog
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, "Open Git Repository");
+        if (!dir.isEmpty())
+            openRepository(dir);
+    } else {
+        // Project open → toggle drawer
+        m_recentDrawer->setVisible(!m_recentDrawer->isVisible());
+    }
+}
+
+void MainWindow::onRecentProjectClicked(QListWidgetItem *item)
+{
+    if (!item)
+        return;
+
+    const QString path = item->data(Qt::UserRole).toString();
+    if (path.isEmpty())
+        return;
+
+    m_recentDrawer->setVisible(false);
+    openRepository(path);
+}
+
+// --- Open / validate repository ---
+
+bool MainWindow::openRepository(const QString &path)
+{
+    if (!isGitRepository(path)) {
+        QMessageBox::warning(this, "Invalid Folder",
+            "The selected folder is not a Git repository.\n"
+            "Please select a folder that contains a .git directory.");
+        return false;
+    }
+
+    m_repoPath = path;
+    m_projectButton->setText(QDir(path).dirName());
+    m_currentPathLabel->setVisible(false);
+    m_pushButton->setEnabled(true);
+    m_gitStatusTree->clear();
+    m_treeDirs.clear();
+    m_fileContentViewer->clear();
+    m_recentDrawer->setVisible(false);
+
+    addRecentProject(path);
+    startGitStatusQuery();
+    return true;
 }
 
 bool MainWindow::isGitRepository(const QString &path)
@@ -189,30 +347,7 @@ void MainWindow::addGitFileToTree(const QString &path, const QString &prefix)
         m_gitStatusTree->addTopLevelItem(fileItem);
 }
 
-void MainWindow::onOpenFolder()
-{
-    const QString dir = QFileDialog::getExistingDirectory(
-        this, "Open Git Repository");
-
-    if (dir.isEmpty())
-        return;
-
-    if (!isGitRepository(dir)) {
-        QMessageBox::warning(this, "Invalid Folder",
-            "The selected folder is not a Git repository.\n"
-            "Please select a folder that contains a .git directory.");
-        return;
-    }
-
-    m_repoPath = dir;
-    m_currentPathLabel->setText(QDir(dir).dirName());
-    m_pushButton->setEnabled(true);
-    m_gitStatusTree->clear();
-    m_treeDirs.clear();
-    m_fileContentViewer->clear();
-
-    startGitStatusQuery();
-}
+// --- Tree item click (diff viewer) ---
 
 static QString runGitDiff(const QString &repoPath, const QStringList &args)
 {
@@ -302,15 +437,23 @@ void MainWindow::onSummaryTextChanged(const QString &text)
 
 void MainWindow::onCommitClicked()
 {
-    if (m_commitProcess->state() != QProcess::NotRunning)
-        return;
+    if (!m_commitProcess || m_commitProcess->state() != QProcess::NotRunning) {
+        if (m_commitProcess) {
+            m_commitProcess->deleteLater();
+            m_commitProcess = nullptr;
+        }
+        m_commitProcess = new QProcess(this);
+        connect(m_commitProcess, &QProcess::finished,
+                this, &MainWindow::onCommitFinished);
+        connect(m_commitProcess, &QProcess::errorOccurred,
+                this, &MainWindow::onCommitErrorOccurred);
+    }
 
     QStringList args = {"commit", "-a", "-m", m_summaryInput->text().trimmed()};
 
     const QString desc = m_descriptionInput->toPlainText().trimmed();
-    if (!desc.isEmpty()) {
+    if (!desc.isEmpty())
         args << "-m" << desc;
-    }
 
     m_commitButton->setEnabled(false);
     m_commitProcess->setWorkingDirectory(m_repoPath);
@@ -324,11 +467,14 @@ void MainWindow::onCommitFinished(int exitCode, QProcess::ExitStatus exitStatus)
         return;
     }
 
-    const QString stderrOut = QString::fromUtf8(
-        m_commitProcess->readAllStandardError());
-
     if (exitCode != 0) {
+        const QString stderrOut = QString::fromUtf8(
+            m_commitProcess->readAllStandardError());
         QMessageBox::warning(this, "Commit Failed", stderrOut);
+
+        m_commitProcess->deleteLater();
+        m_commitProcess = nullptr;
+
         m_commitButton->setEnabled(!m_summaryInput->text().trimmed().isEmpty());
         return;
     }
@@ -347,9 +493,11 @@ void MainWindow::onCommitErrorOccurred(QProcess::ProcessError error)
 {
     if (error == QProcess::FailedToStart) {
         QMessageBox::critical(this, "Git Not Found",
-            "Git is not installed or not available on the system PATH.\n"
-            "Please install Git to use this feature.");
+            "Git is not installed or not available on the system PATH.");
     }
+
+    m_commitProcess->deleteLater();
+    m_commitProcess = nullptr;
     m_commitButton->setEnabled(!m_summaryInput->text().trimmed().isEmpty());
 }
 
