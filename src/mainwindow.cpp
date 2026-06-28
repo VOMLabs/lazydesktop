@@ -6,6 +6,7 @@
 #include <QFileInfo>
 #include <QFont>
 #include <QFontDatabase>
+#include <QGraphicsDropShadowEffect>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -77,13 +78,22 @@ void MainWindow::setupUi()
     topLayout->addStretch();
     topLayout->addWidget(m_pushButton);
 
-    // --- Recent projects drawer (hidden by default) ---
-    m_recentDrawer = new QWidget();
+    // --- Recent projects drawer (overlay, hidden by default) ---
+    m_recentDrawer = new QWidget(centralWidget);
     m_recentDrawer->setFixedWidth(260);
     m_recentDrawer->setVisible(false);
+    m_recentDrawer->setAutoFillBackground(true);
+
+    auto *drawerFrame = new QFrame(m_recentDrawer);
+    drawerFrame->setFrameShape(QFrame::StyledPanel);
+    drawerFrame->setFrameShadow(QFrame::Raised);
 
     auto *drawerLayout = new QVBoxLayout(m_recentDrawer);
-    drawerLayout->setContentsMargins(6, 6, 6, 6);
+    drawerLayout->setContentsMargins(0, 0, 0, 0);
+    drawerLayout->addWidget(drawerFrame, 1);
+
+    auto *frameLayout = new QVBoxLayout(drawerFrame);
+    frameLayout->setContentsMargins(6, 6, 6, 6);
 
     m_openProjectButton = new QPushButton("+ Open Project");
     m_openProjectButton->setMinimumHeight(32);
@@ -91,8 +101,8 @@ void MainWindow::setupUi()
     m_recentList = new QListWidget();
     m_recentList->setAlternatingRowColors(true);
 
-    drawerLayout->addWidget(m_openProjectButton);
-    drawerLayout->addWidget(m_recentList, 1);
+    frameLayout->addWidget(m_openProjectButton);
+    frameLayout->addWidget(m_recentList, 1);
 
     // --- Main content widgets ---
     m_gitStatusTree = new QTreeWidget();
@@ -139,11 +149,17 @@ void MainWindow::setupUi()
     splitter->setStretchFactor(0, 1);
     splitter->setStretchFactor(1, 2);
 
-    // Content area: drawer + main splitter
+    // Drop shadow for overlay effect
+    auto *shadow = new QGraphicsDropShadowEffect();
+    shadow->setBlurRadius(12);
+    shadow->setOffset(2, 0);
+    shadow->setColor(QColor(0, 0, 0, 100));
+    m_recentDrawer->setGraphicsEffect(shadow);
+
+    // Content area: only the main splitter (drawer overlays on top)
     auto *contentLayout = new QHBoxLayout();
     contentLayout->setContentsMargins(0, 0, 0, 0);
     contentLayout->setSpacing(0);
-    contentLayout->addWidget(m_recentDrawer);
     contentLayout->addWidget(splitter, 1);
 
     mainLayout->addLayout(topLayout);
@@ -248,8 +264,18 @@ void MainWindow::onProjectButtonClicked()
         if (!dir.isEmpty())
             openRepository(dir);
     } else {
-        // Project open → toggle drawer
-        m_recentDrawer->setVisible(!m_recentDrawer->isVisible());
+        // Project open → toggle overlay drawer
+        if (m_recentDrawer->isVisible()) {
+            m_recentDrawer->hide();
+        } else {
+            auto *cw = centralWidget();
+            int toolbarH = m_projectButton->mapTo(cw, QPoint(0, 0)).y()
+                         + m_projectButton->height() + 2;
+            m_recentDrawer->setGeometry(0, toolbarH, 260,
+                cw->height() - toolbarH);
+            m_recentDrawer->raise();
+            m_recentDrawer->show();
+        }
     }
 }
 
