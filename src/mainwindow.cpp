@@ -1,29 +1,43 @@
 #include "mainwindow.h"
 
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDir>
+#include <QFile>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFont>
 #include <QFontDatabase>
+#include <QFormLayout>
 #include <QGraphicsDropShadowEffect>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QPainter>
+#include <QPixmap>
 #include <QSettings>
 #include <QSplitter>
+#include <QStandardPaths>
+#include <QTemporaryFile>
+#include <QTextStream>
 #include <QTextCursor>
 #include <QTextEdit>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
+#include <QStandardPaths>
+
+#include <yaml-cpp/yaml.h>
 
 static const int kMaxRecentProjects = 10;
 
@@ -32,6 +46,7 @@ MainWindow::MainWindow(QWidget *parent)
 {
     setupUi();
     loadRecentProjects();
+    checkGitAvailable();
 }
 
 MainWindow::~MainWindow()
@@ -56,6 +71,19 @@ MainWindow::~MainWindow()
         m_checkoutProcess->kill();
         m_checkoutProcess->waitForFinished(3000);
     }
+    if (m_installProcess && m_installProcess->state() != QProcess::NotRunning) {
+        m_installProcess->kill();
+        m_installProcess->waitForFinished(3000);
+    }
+    if (m_authProcess && m_authProcess->state() != QProcess::NotRunning) {
+        m_authProcess->kill();
+        m_authProcess->waitForFinished(3000);
+    }
+    if (m_createBranchProcess && m_createBranchProcess->state() != QProcess::NotRunning) {
+        m_createBranchProcess->kill();
+        m_createBranchProcess->waitForFinished(3000);
+    }
+    cleanupAskPass();
 }
 
 void MainWindow::setupUi()
@@ -87,9 +115,17 @@ void MainWindow::setupUi()
     m_branchComboBox->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     m_branchComboBox->setEnabled(false);
 
+    m_deleteBranchButton = new QPushButton(QString::fromUtf8("\u2716"));
+    m_deleteBranchButton->setFixedSize(24, 24);
+    m_deleteBranchButton->setEnabled(false);
+    m_deleteBranchButton->setStyleSheet(
+        "QPushButton { color: red; border: none; font-weight: bold; }"
+        "QPushButton:hover { background: #ffcccc; }");
+
     topLayout->addWidget(m_projectButton);
     topLayout->addWidget(m_currentPathLabel);
     topLayout->addWidget(m_branchComboBox);
+    topLayout->addWidget(m_deleteBranchButton);
     topLayout->addStretch();
     topLayout->addWidget(m_pushButton);
 
@@ -205,6 +241,18 @@ void MainWindow::setupUi()
     connect(m_checkoutProcess, &QProcess::errorOccurred,
             this, &MainWindow::onCheckoutErrorOccurred);
 
+    m_createBranchProcess = new QProcess(this);
+    connect(m_createBranchProcess, &QProcess::finished,
+            this, &MainWindow::onBranchesLoaded);
+
+    m_installProcess = new QProcess(this);
+    connect(m_installProcess, &QProcess::finished,
+            this, &MainWindow::onInstallFinished);
+
+    m_authProcess = new QProcess(this);
+    connect(m_authProcess, &QProcess::finished,
+            this, &MainWindow::onAuthCheckFinished);
+
     m_pushProcess = new QProcess(this);
     connect(m_pushProcess, &QProcess::finished,
             this, &MainWindow::onPushFinished);
@@ -214,6 +262,8 @@ void MainWindow::setupUi()
     // Connections
     connect(m_branchComboBox, &QComboBox::activated,
             this, &MainWindow::onBranchChanged);
+    connect(m_deleteBranchButton, &QPushButton::clicked,
+            this, &MainWindow::onDeleteBranch);
     connect(m_projectButton, &QPushButton::clicked,
             this, &MainWindow::onProjectButtonClicked);
     connect(m_openProjectButton, &QPushButton::clicked,
@@ -232,17 +282,57 @@ void MainWindow::setupUi()
 
 // --- Recent projects persistence ---
 
+static QString projectsFilePath()
+{
+#ifdef Q_OS_WIN
+    return QString("C:/Users/%1/vomlabs/lazydesktop/projects.yaml")
+        .arg(qEnvironmentVariable("USERNAME"));
+#else
+    return QDir::homePath() + "/vomlabs/lazydesktop/projects.yaml";
+#endif
+}
+
 void MainWindow::loadRecentProjects()
 {
-    QSettings settings;
-    m_recentProjects = settings.value("recentProjects").toStringList();
+    const QString path = projectsFilePath();
+    if (!QFileInfo::exists(path))
+        return;
+
+    try {
+        YAML::Node root = YAML::LoadFile(path.toStdString());
+        const auto &projects = root["projects"];
+        if (!projects || !projects.IsSequence())
+            return;
+
+        m_recentProjects.clear();
+        for (size_t i = 0; i < projects.size(); ++i)
+            m_recentProjects.append(
+                QString::fromStdString(projects[i].as<std::string>()));
+    } catch (...) {
+        // corrupt file — start fresh
+        m_recentProjects.clear();
+    }
+
     populateRecentList();
 }
 
 void MainWindow::saveRecentProjects()
 {
-    QSettings settings;
-    settings.setValue("recentProjects", m_recentProjects);
+    const QString path = projectsFilePath();
+    QDir().mkpath(QFileInfo(path).absolutePath());
+
+    YAML::Emitter out;
+    out << YAML::BeginMap;
+    out << YAML::Key << "projects";
+    out << YAML::Value << YAML::BeginSeq;
+    for (const QString &p : m_recentProjects)
+        out << p.toStdString();
+    out << YAML::EndSeq;
+    out << YAML::EndMap;
+
+    QFile file(path);
+    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        file.write(out.c_str());
 }
 
 void MainWindow::addRecentProject(const QString &path)
@@ -259,10 +349,81 @@ void MainWindow::populateRecentList()
 {
     m_recentList->clear();
     for (const QString &path : m_recentProjects) {
-        auto *item = new QListWidgetItem(QDir(path).dirName());
+        auto *item = new QListWidgetItem();
         item->setData(Qt::UserRole, path);
-        item->setToolTip(path);
         m_recentList->addItem(item);
+
+        auto *row = new QWidget();
+        auto *layout = new QHBoxLayout(row);
+        layout->setContentsMargins(4, 2, 4, 2);
+        layout->setSpacing(4);
+
+        auto *label = new QPushButton(QDir(path).dirName());
+        label->setToolTip(path);
+        label->setCursor(Qt::PointingHandCursor);
+        label->setFlat(true);
+        label->setStyleSheet("QPushButton { text-align: left; border: none; padding: 0; }");
+
+        auto *btn = new QPushButton(QStringLiteral("\xF0\x9F\x97\x91"));
+        btn->setFixedSize(22, 22);
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setFlat(true);
+        btn->setProperty("repoPath", path);
+
+        connect(label, &QPushButton::clicked, this, [this, path]() {
+            m_recentDrawer->setVisible(false);
+            openRepository(path);
+        });
+        connect(btn, &QPushButton::clicked, this, &MainWindow::onRemoveRecentProject);
+
+        layout->addWidget(label, 1);
+        layout->addWidget(btn, 0, Qt::AlignRight);
+        row->setLayout(layout);
+
+        m_recentList->setItemWidget(item, row);
+    }
+}
+
+void MainWindow::onRemoveRecentProject()
+{
+    auto *btn = qobject_cast<QPushButton *>(sender());
+    if (!btn)
+        return;
+
+    const QString path = btn->property("repoPath").toString();
+    if (path.isEmpty())
+        return;
+
+    QMessageBox msg(this);
+    msg.setWindowTitle("Remove Project");
+    msg.setText(QString("Remove \"%1\" from the list?").arg(QDir(path).dirName()));
+    msg.setInformativeText("You can also delete the project directory.");
+    auto *removeBtn = msg.addButton("Remove from List", QMessageBox::AcceptRole);
+    auto *deleteBtn = msg.addButton("Yes, and Delete Directory", QMessageBox::DestructiveRole);
+    msg.addButton(QMessageBox::Cancel);
+    msg.setDefaultButton(QMessageBox::Cancel);
+
+    msg.exec();
+
+    if (msg.clickedButton() == removeBtn) {
+        m_recentProjects.removeAll(path);
+        saveRecentProjects();
+        populateRecentList();
+    } else if (msg.clickedButton() == deleteBtn) {
+        auto really = QMessageBox::question(this, "Confirm Deletion",
+            QString("Are you really sure you want to permanently delete\n\"%1\"?\n\n"
+                    "This cannot be undone.").arg(path),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+
+        if (really == QMessageBox::Yes) {
+            m_recentProjects.removeAll(path);
+            saveRecentProjects();
+            populateRecentList();
+
+            QDir dir(path);
+            if (dir.exists())
+                dir.removeRecursively();
+        }
     }
 }
 
@@ -351,6 +512,19 @@ bool MainWindow::isGitRepository(const QString &path)
     return gitInfo.exists();
 }
 
+static QIcon circleIcon(const QColor &color, int size = 10)
+{
+    QPixmap pm(size, size);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setBrush(color);
+    p.setPen(Qt::NoPen);
+    p.drawEllipse(1, 1, size - 2, size - 2);
+    p.end();
+    return QIcon(pm);
+}
+
 void MainWindow::addGitFileToTree(const QString &path, const QString &prefix)
 {
     const QStringList parts = path.split('/');
@@ -380,8 +554,19 @@ void MainWindow::addGitFileToTree(const QString &path, const QString &prefix)
     }
 
     auto *fileItem = new QTreeWidgetItem();
-    fileItem->setText(0, QString("%1 %2").arg(prefix, parts.last()));
+    fileItem->setText(0, parts.last());
     fileItem->setData(0, Qt::UserRole, path);
+
+    const QChar status = prefix.trimmed().isEmpty() ? QChar() : prefix.trimmed().at(0);
+    switch (status.toLatin1()) {
+    case 'M': fileItem->setIcon(0, circleIcon(QColor("#f0c000"))); break;
+    case 'D': fileItem->setIcon(0, circleIcon(QColor("#e04040"))); break;
+    case 'A': fileItem->setIcon(0, circleIcon(QColor("#40c040"))); break;
+    case 'R': fileItem->setIcon(0, circleIcon(QColor("#c080ff"))); break;
+    case '?': fileItem->setIcon(0, circleIcon(QColor("#c0c0c0"))); break;
+    default:  fileItem->setIcon(0, circleIcon(QColor("#f0c000"))); break;
+    }
+
     if (parent)
         parent->addChild(fileItem);
     else
@@ -570,7 +755,12 @@ void MainWindow::onBranchesLoaded()
     const QString output = QString::fromUtf8(
         m_branchProcess->readAllStandardOutput());
 
+    m_populatingBranches = true;
     m_branchComboBox->clear();
+
+    // "Create New Branch..." sentinel at the top
+    m_branchComboBox->addItem("+ Create New Branch...");
+    m_branchComboBox->insertSeparator(1);
 
     QStringList locals, remotes;
     const QStringList lines = output.split('\n', Qt::SkipEmptyParts);
@@ -598,6 +788,9 @@ void MainWindow::onBranchesLoaded()
 
     m_branchComboBox->setEnabled(true);
     m_populatingBranches = false;
+
+    // Update delete button
+    updateDeleteButtonState();
 }
 
 void MainWindow::onBranchChanged(int index)
@@ -606,12 +799,23 @@ void MainWindow::onBranchChanged(int index)
         return;
 
     const QString selected = m_branchComboBox->itemText(index);
-    if (selected == m_currentBranch || selected.isEmpty())
+    if (selected.isEmpty())
         return;
 
-    // Skip separators
+    // Handle "Create New Branch..." sentinel
+    if (index == 0) {
+        createNewBranch();
+        return;
+    }
+
+    // Skip actual separators
     if (m_branchComboBox->itemData(index, Qt::AccessibleDescriptionRole).toString() == "separator")
         return;
+
+    if (selected == m_currentBranch) {
+        updateDeleteButtonState();
+        return;
+    }
 
     // Check for uncommitted changes
     QProcess dirty;
@@ -631,7 +835,6 @@ void MainWindow::onBranchChanged(int index)
             }
 
             if (reply == QMessageBox::Yes) {
-                // Trigger commit flow, then checkout after
                 m_summaryInput->setFocus();
                 restoreBranchSelection();
                 QMessageBox::information(this, "Commit First",
@@ -690,6 +893,65 @@ void MainWindow::onCheckoutErrorOccurred(QProcess::ProcessError error)
     restoreBranchSelection();
 }
 
+void MainWindow::updateDeleteButtonState()
+{
+    int idx = m_branchComboBox->currentIndex();
+    if (idx <= 1) { // sentinel or separator
+        m_deleteBranchButton->setEnabled(false);
+        return;
+    }
+
+    const QString branch = m_branchComboBox->itemText(idx);
+    m_deleteBranchButton->setEnabled(
+        !branch.startsWith("remotes/") && branch != m_currentBranch);
+}
+
+void MainWindow::onDeleteBranch()
+{
+    int idx = m_branchComboBox->currentIndex();
+    if (idx <= 1)
+        return;
+
+    const QString branch = m_branchComboBox->itemText(idx);
+    if (branch.startsWith("remotes/") || branch == m_currentBranch)
+        return;
+
+    auto reply = QMessageBox::question(this, "Delete Branch",
+        QString("Are you sure you want to delete the branch '%1'?").arg(branch),
+        QMessageBox::Yes | QMessageBox::No);
+
+    if (reply != QMessageBox::Yes)
+        return;
+
+    m_populatingBranches = true;
+    QProcess del;
+    del.setWorkingDirectory(m_repoPath);
+    del.start("git", {"branch", "-D", branch});
+    if (del.waitForFinished(5000) && del.exitCode() == 0) {
+        loadBranches();
+    } else {
+        QMessageBox::warning(this, "Delete Failed",
+            QString::fromUtf8(del.readAllStandardError()));
+        m_populatingBranches = false;
+    }
+}
+
+void MainWindow::createNewBranch()
+{
+    bool ok = false;
+    const QString name = QInputDialog::getText(this,
+        "Create Branch", "Branch name:", QLineEdit::Normal, {}, &ok);
+
+    if (!ok || name.trimmed().isEmpty()) {
+        restoreBranchSelection();
+        return;
+    }
+
+    m_populatingBranches = true;
+    m_createBranchProcess->setWorkingDirectory(m_repoPath);
+    m_createBranchProcess->start("git", {"checkout", "-b", name.trimmed()});
+}
+
 void MainWindow::refreshAll()
 {
     m_gitStatusTree->clear();
@@ -712,6 +974,7 @@ void MainWindow::onPushClicked()
 
     m_pushButton->setEnabled(false);
     m_pushProcess->setWorkingDirectory(m_repoPath);
+    setupAuthEnv(m_pushProcess);
 
     switch (m_pushState) {
     case PushState::Push:
@@ -920,4 +1183,214 @@ void MainWindow::onGitProcessErrorOccurred(QProcess::ProcessError error)
     }
 
     m_currentQuery = GitQuery::None;
+}
+
+// --- Git bootstrapping ---
+
+bool MainWindow::checkGitAvailable()
+{
+    const QString gitPath = QStandardPaths::findExecutable("git");
+    if (!gitPath.isEmpty())
+        return true;
+
+    auto reply = QMessageBox::question(this, "Git Not Found",
+        "Git is required but was not found on your system.\n\n"
+        "Would you like to install it now?",
+        QMessageBox::Yes | QMessageBox::No);
+
+    if (reply == QMessageBox::Yes) {
+        installGit();
+    } else {
+        QMessageBox::information(this, "Git Required",
+            "Some features will be unavailable without Git.\n"
+            "You can install it manually and restart the application.");
+    }
+
+    return false;
+}
+
+void MainWindow::installGit()
+{
+    if (m_installProcess->state() == QProcess::Running)
+        return;
+
+    QStringList args;
+
+#ifdef Q_OS_WIN
+    args = {"install", "--id", "Git.Git", "-e", "--source", "winget"};
+    m_installProcess->start("winget", args);
+#elif defined(Q_OS_MACOS)
+    args = {"--install"};
+    m_installProcess->start("xcode-select", args);
+#else
+    // Linux — try apt-get, then dnf, then pacman
+    const QString pm = QStandardPaths::findExecutable("apt-get").isEmpty()
+                           ? (QStandardPaths::findExecutable("dnf").isEmpty()
+                                  ? "pacman"
+                                  : "dnf")
+                           : "apt-get";
+
+    if (pm == "apt-get")
+        args = {"install", "-y", "git"};
+    else if (pm == "dnf")
+        args = {"install", "-y", "git"};
+    else
+        args = {"-S", "--noconfirm", "git"};
+
+    QString runner = QStandardPaths::findExecutable("pkexec");
+    if (runner.isEmpty())
+        runner = QStandardPaths::findExecutable("sudo");
+
+    if (runner.isEmpty()) {
+        QMessageBox::critical(this, "Installation Failed",
+            "Could not find a privilege escalation tool (pkexec or sudo).\n"
+            "Please install Git manually.");
+        return;
+    }
+
+    m_installProcess->start(runner, QStringList({pm}) + args);
+#endif
+}
+
+void MainWindow::onInstallFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+    if (exitStatus != QProcess::NormalExit)
+        return;
+
+    if (exitCode != 0) {
+        const QString err = QString::fromUtf8(
+            m_installProcess->readAllStandardError());
+        QMessageBox::warning(this, "Installation Failed", err);
+        return;
+    }
+
+    if (checkGitAvailable()) {
+        QMessageBox::information(this, "Installation Complete",
+            "Git has been installed successfully.");
+    }
+}
+
+// --- Git authentication ---
+
+void MainWindow::checkGitAuth()
+{
+    if (!m_gitCredentials.valid)
+        return;
+
+    m_authProcess->setWorkingDirectory(m_repoPath);
+
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert("GIT_TERMINAL_PROMPT", "0");
+    m_authProcess->setProcessEnvironment(env);
+
+    m_authProcess->start("git", {"ls-remote", "--exit-code",
+        m_gitCredentials.host});
+}
+
+void MainWindow::onAuthCheckFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+    if (exitStatus != QProcess::NormalExit)
+        return;
+
+    // exit code 128 usually means auth failure
+    if (exitCode == 0 || exitCode == 2)
+        return;
+
+    showAuthDialog();
+}
+
+void MainWindow::showAuthDialog()
+{
+    QDialog dialog(this);
+    dialog.setWindowTitle("Git Authentication");
+    dialog.setMinimumWidth(400);
+
+    auto *form = new QFormLayout(&dialog);
+
+    auto *hostEdit = new QLineEdit();
+    hostEdit->setPlaceholderText("e.g. https://github.com");
+
+    auto *userEdit = new QLineEdit();
+    userEdit->setPlaceholderText("Username");
+
+    auto *tokenEdit = new QLineEdit();
+    tokenEdit->setPlaceholderText("Personal Access Token or Password");
+    tokenEdit->setEchoMode(QLineEdit::Password);
+
+    auto *buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+
+    form->addRow("Remote Host:", hostEdit);
+    form->addRow("Username:", userEdit);
+    form->addRow("Token / Password:", tokenEdit);
+    form->addRow(buttons);
+
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    m_gitCredentials.host = hostEdit->text().trimmed();
+    m_gitCredentials.username = userEdit->text().trimmed();
+    m_gitCredentials.token = tokenEdit->text();
+    m_gitCredentials.valid = true;
+
+    setupAskPass();
+}
+
+bool MainWindow::setupAskPass()
+{
+    cleanupAskPass();
+
+    QTemporaryFile tmp;
+    tmp.setAutoRemove(false);
+    if (!tmp.open())
+        return false;
+    m_askPassScriptPath = tmp.fileName();
+    tmp.close();
+
+    QFile file(m_askPassScriptPath);
+
+#ifdef Q_OS_WIN
+    if (!file.open(QIODevice::WriteOnly))
+        return false;
+    QTextStream out(&file);
+    out << "@echo off\n";
+    out << "if \"%1\"==\"*Username*\" ( echo " << m_gitCredentials.username << " ) else ( echo " << m_gitCredentials.token << " )\n";
+    file.close();
+#else
+    if (!file.open(QIODevice::WriteOnly))
+        return false;
+    QTextStream out(&file);
+    out << "#!/bin/sh\n";
+    out << "case \"$1\" in\n";
+    out << "  *Username*) echo \"" << m_gitCredentials.username << "\" ;;\n";
+    out << "  *)           echo \"" << m_gitCredentials.token << "\" ;;\n";
+    out << "esac\n";
+    file.close();
+    file.setPermissions(QFile::ExeOwner | QFile::ExeGroup | QFile::ExeOther |
+                        QFile::ReadOwner | QFile::WriteOwner);
+#endif
+
+    return true;
+}
+
+void MainWindow::cleanupAskPass()
+{
+    if (!m_askPassScriptPath.isEmpty()) {
+        QFile::remove(m_askPassScriptPath);
+        m_askPassScriptPath.clear();
+    }
+}
+
+void MainWindow::setupAuthEnv(QProcess *proc)
+{
+    if (!m_gitCredentials.valid || m_askPassScriptPath.isEmpty())
+        return;
+
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert("GIT_ASKPASS", m_askPassScriptPath);
+    env.insert("GIT_TERMINAL_PROMPT", "0");
+    proc->setProcessEnvironment(env);
 }

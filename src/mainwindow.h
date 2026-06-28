@@ -7,6 +7,7 @@
 #include <QMap>
 
 class QComboBox;
+class QDialog;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -16,6 +17,14 @@ class QPushButton;
 class QTextEdit;
 class QTreeWidget;
 class QTreeWidgetItem;
+
+struct GitCredentials
+{
+    QString host;
+    QString username;
+    QString token;
+    bool valid = false;
+};
 
 class MainWindow : public QMainWindow
 {
@@ -37,9 +46,12 @@ private slots:
     void onBranchesLoaded();
     void onCheckoutFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onCheckoutErrorOccurred(QProcess::ProcessError error);
+    void onDeleteBranch();
     void onPushClicked();
     void onPushFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onPushErrorOccurred(QProcess::ProcessError error);
+    void onInstallFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void onAuthCheckFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onGitProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onGitProcessErrorOccurred(QProcess::ProcessError error);
 
@@ -58,11 +70,23 @@ private:
     void refreshAll();
     void doCheckout(const QString &branch);
     void restoreBranchSelection();
+    void updateDeleteButtonState();
+    void createNewBranch();
 
     void loadRecentProjects();
     void saveRecentProjects();
     void addRecentProject(const QString &path);
     void populateRecentList();
+    void onRemoveRecentProject();
+
+    bool checkGitAvailable();
+    void installGit();
+
+    void checkGitAuth();
+    void showAuthDialog();
+    bool setupAskPass();
+    void cleanupAskPass();
+    void setupAuthEnv(QProcess *proc);
 
     QPushButton *m_projectButton = nullptr;
     QLabel *m_currentPathLabel = nullptr;
@@ -82,10 +106,17 @@ private:
     QProcess *m_pushProcess = nullptr;
 
     QComboBox *m_branchComboBox = nullptr;
+    QPushButton *m_deleteBranchButton = nullptr;
     QProcess *m_branchProcess = nullptr;
     QProcess *m_checkoutProcess = nullptr;
+    QProcess *m_createBranchProcess = nullptr;
     QString m_currentBranch;
     bool m_populatingBranches = false;
+
+    QProcess *m_installProcess = nullptr;
+    QProcess *m_authProcess = nullptr;
+    GitCredentials m_gitCredentials;
+    QString m_askPassScriptPath;
 
     QProcess *m_gitProcess = nullptr;
     QString m_repoPath;
