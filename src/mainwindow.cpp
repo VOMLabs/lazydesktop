@@ -207,11 +207,11 @@ void MainWindow::onTreeItemClicked(QTreeWidgetItem *item, int column)
             fmt.setFontWeight(QFont::Bold);
             display = line;
         } else if (line.startsWith('-')) {
-            fmt.setForeground(Qt::red);
+            fmt.setBackground(QColor(255, 200, 200));
             display = QString("%1%2").arg(oldLn).arg(line);
             oldLn++;
         } else if (line.startsWith('+')) {
-            fmt.setForeground(QColor(0, 140, 0));
+            fmt.setBackground(QColor(200, 255, 200));
             display = QString("%1%2").arg(newLn).arg(line);
             newLn++;
         } else if (line.startsWith(' ')) {
