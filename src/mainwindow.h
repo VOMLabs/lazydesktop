@@ -54,6 +54,8 @@ private:
     QPushButton *m_commitButton = nullptr;
     QProcess *m_commitProcess = nullptr;
 
+    enum class PushState { Push, Fetch, Pull };
+    PushState m_pushState = PushState::Push;
     QPushButton *m_pushButton = nullptr;
     QProcess *m_pushProcess = nullptr;
 

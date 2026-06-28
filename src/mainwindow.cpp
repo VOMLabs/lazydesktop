@@ -102,6 +102,7 @@ void MainWindow::setupUi()
 
     m_pushButton = new QPushButton("Push");
     m_pushButton->setEnabled(false);
+    m_pushState = PushState::Push;
 
     topLayout->addWidget(m_openFolderButton);
     topLayout->addWidget(m_currentPathLabel);
@@ -352,7 +353,7 @@ void MainWindow::onCommitErrorOccurred(QProcess::ProcessError error)
     m_commitButton->setEnabled(!m_summaryInput->text().trimmed().isEmpty());
 }
 
-// --- Push ---
+// --- Push / Fetch / Pull ---
 
 void MainWindow::onPushClicked()
 {
@@ -361,7 +362,18 @@ void MainWindow::onPushClicked()
 
     m_pushButton->setEnabled(false);
     m_pushProcess->setWorkingDirectory(m_repoPath);
-    m_pushProcess->start("git", {"push"});
+
+    switch (m_pushState) {
+    case PushState::Push:
+        m_pushProcess->start("git", {"push"});
+        break;
+    case PushState::Fetch:
+        m_pushProcess->start("git", {"fetch"});
+        break;
+    case PushState::Pull:
+        m_pushProcess->start("git", {"pull"});
+        break;
+    }
 }
 
 void MainWindow::onPushFinished(int exitCode, QProcess::ExitStatus exitStatus)
@@ -371,23 +383,85 @@ void MainWindow::onPushFinished(int exitCode, QProcess::ExitStatus exitStatus)
         return;
     }
 
-    const QString stderrOut = QString::fromUtf8(
+    const QString stdOut = QString::fromUtf8(
+        m_pushProcess->readAllStandardOutput());
+    const QString stdErr = QString::fromUtf8(
         m_pushProcess->readAllStandardError());
 
-    if (exitCode != 0) {
-        QMessageBox::warning(this, "Push Failed", stderrOut);
+    switch (m_pushState) {
+    case PushState::Push: {
+        if (exitCode != 0) {
+            if (stdErr.contains("rejected") || stdErr.contains("non-fast-forward")) {
+                m_pushState = PushState::Pull;
+                m_pushButton->setText("Pull");
+                QMessageBox::warning(this, "Push Rejected",
+                    "The remote has commits you don't have locally.\n"
+                    "Pull first, then push again.");
+            } else {
+                QMessageBox::warning(this, "Push Failed", stdErr);
+            }
+            m_pushButton->setEnabled(true);
+            return;
+        }
+
+        if (stdOut.contains("Everything up-to-date")) {
+            m_pushState = PushState::Fetch;
+            m_pushButton->setText("Fetch");
+        } else {
+            m_gitStatusTree->clear();
+            m_treeDirs.clear();
+            m_fileContentViewer->clear();
+            startGitStatusQuery();
+        }
         m_pushButton->setEnabled(true);
-        return;
+        break;
     }
+    case PushState::Fetch: {
+        if (exitCode != 0) {
+            QMessageBox::warning(this, "Fetch Failed", stdErr);
+            m_pushState = PushState::Push;
+            m_pushButton->setText("Push");
+            m_pushButton->setEnabled(true);
+            return;
+        }
 
-    QMessageBox::information(this, "Push Successful",
-        "Changes have been pushed successfully.");
+        QProcess behind;
+        behind.setWorkingDirectory(m_repoPath);
+        behind.start("git", {"rev-list", "--count", "HEAD..@{u}"});
+        if (behind.waitForFinished(5000) && behind.exitCode() == 0) {
+            int count = behind.readAllStandardOutput().trimmed().toInt();
+            if (count > 0) {
+                m_pushState = PushState::Pull;
+                m_pushButton->setText("Pull");
+            } else {
+                m_pushState = PushState::Push;
+                m_pushButton->setText("Push");
+            }
+        } else {
+            m_pushState = PushState::Push;
+            m_pushButton->setText("Push");
+        }
+        m_pushButton->setEnabled(true);
+        break;
+    }
+    case PushState::Pull: {
+        if (exitCode != 0) {
+            QMessageBox::warning(this, "Pull Failed", stdErr);
+            m_pushButton->setEnabled(true);
+            return;
+        }
 
-    m_gitStatusTree->clear();
-    m_treeDirs.clear();
-    m_fileContentViewer->clear();
-    startGitStatusQuery();
-    m_pushButton->setEnabled(true);
+        m_pushState = PushState::Push;
+        m_pushButton->setText("Push");
+
+        m_gitStatusTree->clear();
+        m_treeDirs.clear();
+        m_fileContentViewer->clear();
+        startGitStatusQuery();
+        m_pushButton->setEnabled(true);
+        break;
+    }
+    }
 }
 
 void MainWindow::onPushErrorOccurred(QProcess::ProcessError error)
