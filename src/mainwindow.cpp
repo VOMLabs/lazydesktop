@@ -13,6 +13,7 @@
 #include <QProcess>
 #include <QPushButton>
 #include <QSplitter>
+#include <QTextCursor>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
@@ -147,6 +148,16 @@ void MainWindow::onOpenFolder()
     startGitStatusQuery();
 }
 
+static QString runGitDiff(const QString &repoPath, const QStringList &args)
+{
+    QProcess proc;
+    proc.setWorkingDirectory(repoPath);
+    proc.start("git", args);
+    if (!proc.waitForFinished(5000) || proc.exitCode() != 0)
+        return {};
+    return QString::fromUtf8(proc.readAllStandardOutput());
+}
+
 void MainWindow::onTreeItemClicked(QTreeWidgetItem *item, int column)
 {
     Q_UNUSED(column);
@@ -158,14 +169,44 @@ void MainWindow::onTreeItemClicked(QTreeWidgetItem *item, int column)
     if (relPath.isEmpty())
         return;
 
-    QFile file(m_repoPath + '/' + relPath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        m_fileContentViewer->setPlainText(
-            QString("Error opening file: %1").arg(file.errorString()));
+    m_fileContentViewer->clear();
+
+    QString diff = runGitDiff(m_repoPath, {"diff", "HEAD", "--", relPath});
+
+    if (diff.isEmpty())
+        diff = runGitDiff(m_repoPath, {"diff", "@{u}..HEAD", "--", relPath});
+
+    if (diff.isEmpty()) {
+        m_fileContentViewer->setPlainText("No changes to display.");
         return;
     }
 
-    m_fileContentViewer->setPlainText(QString::fromUtf8(file.readAll()));
+    auto *doc = m_fileContentViewer->document();
+    QTextCursor cursor(doc);
+
+    const QStringList lines = diff.split('\n');
+
+    for (const QString &line : lines) {
+        if (line.startsWith("---") || line.startsWith("+++")
+            || line.startsWith("diff --git")
+            || line.startsWith("\\ "))
+            continue;
+
+        QTextCharFormat fmt;
+
+        if (line.startsWith("@@")) {
+            fmt.setForeground(QColor(80, 80, 200));
+            fmt.setFontWeight(QFont::Bold);
+        } else if (line.startsWith('-')) {
+            fmt.setForeground(Qt::red);
+        } else if (line.startsWith('+')) {
+            fmt.setForeground(QColor(0, 140, 0));
+        } else {
+            continue;
+        }
+
+        cursor.insertText(line + '\n', fmt);
+    }
 }
 
 void MainWindow::startGitStatusQuery()
