@@ -12,6 +12,7 @@
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSplitter>
 #include <QTextCursor>
 #include <QTreeWidget>
@@ -183,8 +184,11 @@ void MainWindow::onTreeItemClicked(QTreeWidgetItem *item, int column)
 
     auto *doc = m_fileContentViewer->document();
     QTextCursor cursor(doc);
+    QRegularExpression hunkRe(R"(@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@.*)");
 
     const QStringList lines = diff.split('\n');
+    int oldLn = 0;
+    int newLn = 0;
 
     for (const QString &line : lines) {
         if (line.startsWith("---") || line.startsWith("+++")
@@ -193,19 +197,32 @@ void MainWindow::onTreeItemClicked(QTreeWidgetItem *item, int column)
             continue;
 
         QTextCharFormat fmt;
+        QString display;
 
-        if (line.startsWith("@@")) {
+        auto match = hunkRe.match(line);
+        if (match.hasMatch()) {
+            oldLn = match.captured(1).toInt();
+            newLn = match.captured(2).toInt();
             fmt.setForeground(QColor(80, 80, 200));
             fmt.setFontWeight(QFont::Bold);
+            display = line;
         } else if (line.startsWith('-')) {
             fmt.setForeground(Qt::red);
+            display = QString("%1%2").arg(oldLn).arg(line);
+            oldLn++;
         } else if (line.startsWith('+')) {
             fmt.setForeground(QColor(0, 140, 0));
+            display = QString("%1%2").arg(newLn).arg(line);
+            newLn++;
+        } else if (line.startsWith(' ')) {
+            oldLn++;
+            newLn++;
+            continue;
         } else {
             continue;
         }
 
-        cursor.insertText(line + '\n', fmt);
+        cursor.insertText(display + '\n', fmt);
     }
 }
 
