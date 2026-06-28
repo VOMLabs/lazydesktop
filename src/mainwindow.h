@@ -6,6 +6,7 @@
 
 #include <QMap>
 
+class QComboBox;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -32,6 +33,10 @@ private slots:
     void onCommitClicked();
     void onCommitFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onCommitErrorOccurred(QProcess::ProcessError error);
+    void onBranchChanged(int index);
+    void onBranchesLoaded();
+    void onCheckoutFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void onCheckoutErrorOccurred(QProcess::ProcessError error);
     void onPushClicked();
     void onPushFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onPushErrorOccurred(QProcess::ProcessError error);
@@ -48,6 +53,11 @@ private:
     void startGitStatusQuery();
     void startGitUnpushedQuery();
     void addGitFileToTree(const QString &path, const QString &prefix);
+
+    void loadBranches();
+    void refreshAll();
+    void doCheckout(const QString &branch);
+    void restoreBranchSelection();
 
     void loadRecentProjects();
     void saveRecentProjects();
@@ -70,6 +80,12 @@ private:
     PushState m_pushState = PushState::Push;
     QPushButton *m_pushButton = nullptr;
     QProcess *m_pushProcess = nullptr;
+
+    QComboBox *m_branchComboBox = nullptr;
+    QProcess *m_branchProcess = nullptr;
+    QProcess *m_checkoutProcess = nullptr;
+    QString m_currentBranch;
+    bool m_populatingBranches = false;
 
     QProcess *m_gitProcess = nullptr;
     QString m_repoPath;

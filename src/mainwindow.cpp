@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 
+#include <QComboBox>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -47,6 +48,14 @@ MainWindow::~MainWindow()
         m_pushProcess->kill();
         m_pushProcess->waitForFinished(3000);
     }
+    if (m_branchProcess && m_branchProcess->state() != QProcess::NotRunning) {
+        m_branchProcess->kill();
+        m_branchProcess->waitForFinished(3000);
+    }
+    if (m_checkoutProcess && m_checkoutProcess->state() != QProcess::NotRunning) {
+        m_checkoutProcess->kill();
+        m_checkoutProcess->waitForFinished(3000);
+    }
 }
 
 void MainWindow::setupUi()
@@ -73,8 +82,14 @@ void MainWindow::setupUi()
     m_pushButton->setEnabled(false);
     m_pushState = PushState::Push;
 
+    m_branchComboBox = new QComboBox();
+    m_branchComboBox->setMinimumWidth(160);
+    m_branchComboBox->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    m_branchComboBox->setEnabled(false);
+
     topLayout->addWidget(m_projectButton);
     topLayout->addWidget(m_currentPathLabel);
+    topLayout->addWidget(m_branchComboBox);
     topLayout->addStretch();
     topLayout->addWidget(m_pushButton);
 
@@ -180,6 +195,16 @@ void MainWindow::setupUi()
     connect(m_commitProcess, &QProcess::errorOccurred,
             this, &MainWindow::onCommitErrorOccurred);
 
+    m_branchProcess = new QProcess(this);
+    connect(m_branchProcess, &QProcess::finished,
+            this, &MainWindow::onBranchesLoaded);
+
+    m_checkoutProcess = new QProcess(this);
+    connect(m_checkoutProcess, &QProcess::finished,
+            this, &MainWindow::onCheckoutFinished);
+    connect(m_checkoutProcess, &QProcess::errorOccurred,
+            this, &MainWindow::onCheckoutErrorOccurred);
+
     m_pushProcess = new QProcess(this);
     connect(m_pushProcess, &QProcess::finished,
             this, &MainWindow::onPushFinished);
@@ -187,6 +212,8 @@ void MainWindow::setupUi()
             this, &MainWindow::onPushErrorOccurred);
 
     // Connections
+    connect(m_branchComboBox, &QComboBox::activated,
+            this, &MainWindow::onBranchChanged);
     connect(m_projectButton, &QPushButton::clicked,
             this, &MainWindow::onProjectButtonClicked);
     connect(m_openProjectButton, &QPushButton::clicked,
@@ -313,6 +340,7 @@ bool MainWindow::openRepository(const QString &path)
     m_recentDrawer->setVisible(false);
 
     addRecentProject(path);
+    loadBranches();
     startGitStatusQuery();
     return true;
 }
@@ -512,6 +540,167 @@ void MainWindow::onCommitErrorOccurred(QProcess::ProcessError error)
     m_commitProcess->deleteLater();
     m_commitProcess = nullptr;
     m_commitButton->setEnabled(!m_summaryInput->text().trimmed().isEmpty());
+}
+
+// --- Branch switching ---
+
+void MainWindow::loadBranches()
+{
+    if (m_branchProcess->state() == QProcess::Running)
+        return;
+
+    m_branchComboBox->setEnabled(false);
+    m_populatingBranches = true;
+    m_branchComboBox->clear();
+
+    // Get current branch synchronously (fast)
+    QProcess cur;
+    cur.setWorkingDirectory(m_repoPath);
+    cur.start("git", {"branch", "--show-current"});
+    if (cur.waitForFinished(3000) && cur.exitCode() == 0)
+        m_currentBranch = QString::fromUtf8(cur.readAllStandardOutput()).trimmed();
+
+    // Load all branches asynchronously
+    m_branchProcess->setWorkingDirectory(m_repoPath);
+    m_branchProcess->start("git", {"branch", "-a", "--format=%(refname:short)"});
+}
+
+void MainWindow::onBranchesLoaded()
+{
+    const QString output = QString::fromUtf8(
+        m_branchProcess->readAllStandardOutput());
+
+    m_branchComboBox->clear();
+
+    QStringList locals, remotes;
+    const QStringList lines = output.split('\n', Qt::SkipEmptyParts);
+
+    for (const QString &line : lines) {
+        if (line.startsWith("remotes/"))
+            remotes << line;
+        else
+            locals << line;
+    }
+
+    for (const QString &b : locals)
+        m_branchComboBox->addItem(b);
+
+    if (!remotes.isEmpty()) {
+        m_branchComboBox->insertSeparator(m_branchComboBox->count());
+        for (const QString &b : remotes)
+            m_branchComboBox->addItem(b);
+    }
+
+    // Select current branch
+    int idx = m_branchComboBox->findText(m_currentBranch);
+    if (idx >= 0)
+        m_branchComboBox->setCurrentIndex(idx);
+
+    m_branchComboBox->setEnabled(true);
+    m_populatingBranches = false;
+}
+
+void MainWindow::onBranchChanged(int index)
+{
+    if (m_populatingBranches)
+        return;
+
+    const QString selected = m_branchComboBox->itemText(index);
+    if (selected == m_currentBranch || selected.isEmpty())
+        return;
+
+    // Skip separators
+    if (m_branchComboBox->itemData(index, Qt::AccessibleDescriptionRole).toString() == "separator")
+        return;
+
+    // Check for uncommitted changes
+    QProcess dirty;
+    dirty.setWorkingDirectory(m_repoPath);
+    dirty.start("git", {"status", "--porcelain"});
+    if (dirty.waitForFinished(3000) && dirty.exitCode() == 0) {
+        const QString status = QString::fromUtf8(dirty.readAllStandardOutput()).trimmed();
+        if (!status.isEmpty()) {
+            auto reply = QMessageBox::question(this, "Uncommitted Changes",
+                "You have uncommitted changes. Commit them before switching branches?\n\n"
+                "Press 'Yes' to commit, 'No' to discard changes and switch, or 'Cancel' to abort.",
+                QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+
+            if (reply == QMessageBox::Cancel) {
+                restoreBranchSelection();
+                return;
+            }
+
+            if (reply == QMessageBox::Yes) {
+                // Trigger commit flow, then checkout after
+                m_summaryInput->setFocus();
+                restoreBranchSelection();
+                QMessageBox::information(this, "Commit First",
+                    "Please write a summary above and click Commit, then switch branches.");
+                return;
+            }
+        }
+    }
+
+    doCheckout(selected);
+}
+
+void MainWindow::doCheckout(const QString &branch)
+{
+    m_branchComboBox->setEnabled(false);
+    m_checkoutProcess->setWorkingDirectory(m_repoPath);
+    m_checkoutProcess->start("git", {"checkout", branch});
+}
+
+void MainWindow::restoreBranchSelection()
+{
+    m_populatingBranches = true;
+    int idx = m_branchComboBox->findText(m_currentBranch);
+    if (idx >= 0)
+        m_branchComboBox->setCurrentIndex(idx);
+    m_populatingBranches = false;
+}
+
+void MainWindow::onCheckoutFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+    m_branchComboBox->setEnabled(true);
+
+    if (exitStatus != QProcess::NormalExit)
+        return;
+
+    if (exitCode != 0) {
+        const QString err = QString::fromUtf8(
+            m_checkoutProcess->readAllStandardError());
+        QMessageBox::warning(this, "Checkout Failed", err);
+        restoreBranchSelection();
+        return;
+    }
+
+    refreshAll();
+}
+
+void MainWindow::onCheckoutErrorOccurred(QProcess::ProcessError error)
+{
+    m_branchComboBox->setEnabled(true);
+
+    if (error == QProcess::FailedToStart) {
+        QMessageBox::critical(this, "Git Not Found",
+            "Git is not installed or not available on the system PATH.");
+    }
+
+    restoreBranchSelection();
+}
+
+void MainWindow::refreshAll()
+{
+    m_gitStatusTree->clear();
+    m_treeDirs.clear();
+    m_fileContentViewer->clear();
+    m_summaryInput->clear();
+    m_descriptionInput->clear();
+    m_commitButton->setEnabled(false);
+
+    loadBranches();
+    startGitStatusQuery();
 }
 
 // --- Push / Fetch / Pull ---
