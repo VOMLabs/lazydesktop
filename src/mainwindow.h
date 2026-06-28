@@ -53,7 +53,6 @@ private:
     void saveRecentProjects();
     void addRecentProject(const QString &path);
     void populateRecentList();
-    void setWorkspaceVisible(bool visible);
 
     QPushButton *m_projectButton = nullptr;
     QLabel *m_currentPathLabel = nullptr;

@@ -223,19 +223,6 @@ void MainWindow::populateRecentList()
     }
 }
 
-// --- Workspace state ---
-
-void MainWindow::setWorkspaceVisible(bool visible)
-{
-    m_currentPathLabel->setVisible(visible);
-    m_gitStatusTree->setVisible(visible);
-    m_fileContentViewer->setVisible(visible);
-    m_summaryInput->setVisible(visible);
-    m_descriptionInput->setVisible(visible);
-    m_commitButton->setVisible(visible);
-    m_pushButton->setVisible(visible);
-}
-
 // --- Project button & drawer ---
 
 void MainWindow::onProjectButtonClicked()
