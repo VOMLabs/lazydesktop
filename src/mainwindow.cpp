@@ -1,13 +1,18 @@
 #include "mainwindow.h"
 
 #include <QDir>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFont>
+#include <QFontDatabase>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
+#include <QPlainTextEdit>
 #include <QProcess>
 #include <QPushButton>
+#include <QSplitter>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
@@ -29,7 +34,7 @@ MainWindow::~MainWindow()
 void MainWindow::setupUi()
 {
     setWindowTitle("lazydesktop");
-    resize(800, 600);
+    resize(1000, 600);
 
     auto *centralWidget = new QWidget(this);
     auto *mainLayout = new QVBoxLayout(centralWidget);
@@ -39,16 +44,27 @@ void MainWindow::setupUi()
     m_openFolderButton = new QPushButton("Open Folder");
     m_currentPathLabel = new QLabel("No folder selected");
     m_gitStatusTree = new QTreeWidget();
+    m_fileContentViewer = new QPlainTextEdit();
 
     m_gitStatusTree->setHeaderHidden(true);
     m_gitStatusTree->setColumnCount(1);
+
+    m_fileContentViewer->setReadOnly(true);
+    auto monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    m_fileContentViewer->setFont(monoFont);
+
+    auto *splitter = new QSplitter(Qt::Horizontal);
+    splitter->addWidget(m_gitStatusTree);
+    splitter->addWidget(m_fileContentViewer);
+    splitter->setStretchFactor(0, 1);
+    splitter->setStretchFactor(1, 2);
 
     topLayout->addWidget(m_openFolderButton);
     topLayout->addWidget(m_currentPathLabel);
     topLayout->addStretch();
 
     mainLayout->addLayout(topLayout);
-    mainLayout->addWidget(m_gitStatusTree, 1);
+    mainLayout->addWidget(splitter, 1);
 
     setCentralWidget(centralWidget);
 
@@ -60,6 +76,8 @@ void MainWindow::setupUi()
 
     connect(m_openFolderButton, &QPushButton::clicked,
             this, &MainWindow::onOpenFolder);
+    connect(m_gitStatusTree, &QTreeWidget::itemClicked,
+            this, &MainWindow::onTreeItemClicked);
 }
 
 bool MainWindow::isGitRepository(const QString &path)
@@ -98,6 +116,7 @@ void MainWindow::addGitFileToTree(const QString &path, const QString &prefix)
 
     auto *fileItem = new QTreeWidgetItem();
     fileItem->setText(0, QString("%1 %2").arg(prefix, parts.last()));
+    fileItem->setData(0, Qt::UserRole, path);
     if (parent)
         parent->addChild(fileItem);
     else
@@ -123,8 +142,30 @@ void MainWindow::onOpenFolder()
     m_currentPathLabel->setText(dir);
     m_gitStatusTree->clear();
     m_treeDirs.clear();
+    m_fileContentViewer->clear();
 
     startGitStatusQuery();
+}
+
+void MainWindow::onTreeItemClicked(QTreeWidgetItem *item, int column)
+{
+    Q_UNUSED(column);
+
+    if (!item || item->text(0).endsWith('/'))
+        return;
+
+    const QString relPath = item->data(0, Qt::UserRole).toString();
+    if (relPath.isEmpty())
+        return;
+
+    QFile file(m_repoPath + '/' + relPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        m_fileContentViewer->setPlainText(
+            QString("Error opening file: %1").arg(file.errorString()));
+        return;
+    }
+
+    m_fileContentViewer->setPlainText(QString::fromUtf8(file.readAll()));
 }
 
 void MainWindow::startGitStatusQuery()

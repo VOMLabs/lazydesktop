@@ -7,6 +7,7 @@
 #include <QMap>
 
 class QLabel;
+class QPlainTextEdit;
 class QPushButton;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -21,6 +22,7 @@ public:
 
 private slots:
     void onOpenFolder();
+    void onTreeItemClicked(QTreeWidgetItem *item, int column);
     void onGitProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onGitProcessErrorOccurred(QProcess::ProcessError error);
 
@@ -36,6 +38,7 @@ private:
     QPushButton *m_openFolderButton = nullptr;
     QLabel *m_currentPathLabel = nullptr;
     QTreeWidget *m_gitStatusTree = nullptr;
+    QPlainTextEdit *m_fileContentViewer = nullptr;
     QProcess *m_gitProcess = nullptr;
     QString m_repoPath;
     GitQuery m_currentQuery = GitQuery::None;
