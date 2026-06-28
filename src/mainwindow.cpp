@@ -8,6 +8,7 @@
 #include <QFontDatabase>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QProcess>
@@ -15,6 +16,7 @@
 #include <QRegularExpression>
 #include <QSplitter>
 #include <QTextCursor>
+#include <QTextEdit>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
@@ -30,6 +32,10 @@ MainWindow::~MainWindow()
     if (m_gitProcess && m_gitProcess->state() != QProcess::NotRunning) {
         m_gitProcess->kill();
         m_gitProcess->waitForFinished(3000);
+    }
+    if (m_commitProcess && m_commitProcess->state() != QProcess::NotRunning) {
+        m_commitProcess->kill();
+        m_commitProcess->waitForFinished(3000);
     }
 }
 
@@ -55,8 +61,37 @@ void MainWindow::setupUi()
     auto monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     m_fileContentViewer->setFont(monoFont);
 
+    // --- Commit pane ---
+    m_summaryInput = new QLineEdit();
+    m_summaryInput->setPlaceholderText("Summary (required)");
+
+    m_descriptionInput = new QTextEdit();
+    m_descriptionInput->setPlaceholderText("Description (optional)");
+    m_descriptionInput->setFixedHeight(80);
+    m_descriptionInput->setAcceptRichText(false);
+
+    m_commitButton = new QPushButton("Commit");
+    m_commitButton->setEnabled(false);
+
+    auto *commitLayout = new QVBoxLayout();
+    commitLayout->setContentsMargins(4, 4, 4, 4);
+    commitLayout->addWidget(m_summaryInput);
+    commitLayout->addWidget(m_descriptionInput);
+    commitLayout->addWidget(m_commitButton);
+
+    auto *commitContainer = new QWidget();
+    commitContainer->setLayout(commitLayout);
+
+    // Left panel: tree on top, commit pane on bottom
+    auto *leftPanel = new QSplitter(Qt::Vertical);
+    leftPanel->addWidget(m_gitStatusTree);
+    leftPanel->addWidget(commitContainer);
+    leftPanel->setStretchFactor(0, 1);
+    leftPanel->setStretchFactor(1, 0);
+
+    // Main horizontal splitter
     auto *splitter = new QSplitter(Qt::Horizontal);
-    splitter->addWidget(m_gitStatusTree);
+    splitter->addWidget(leftPanel);
     splitter->addWidget(m_fileContentViewer);
     splitter->setStretchFactor(0, 1);
     splitter->setStretchFactor(1, 2);
@@ -70,16 +105,28 @@ void MainWindow::setupUi()
 
     setCentralWidget(centralWidget);
 
+    // Processes
     m_gitProcess = new QProcess(this);
     connect(m_gitProcess, &QProcess::finished,
             this, &MainWindow::onGitProcessFinished);
     connect(m_gitProcess, &QProcess::errorOccurred,
             this, &MainWindow::onGitProcessErrorOccurred);
 
+    m_commitProcess = new QProcess(this);
+    connect(m_commitProcess, &QProcess::finished,
+            this, &MainWindow::onCommitFinished);
+    connect(m_commitProcess, &QProcess::errorOccurred,
+            this, &MainWindow::onCommitErrorOccurred);
+
+    // Connections
     connect(m_openFolderButton, &QPushButton::clicked,
             this, &MainWindow::onOpenFolder);
     connect(m_gitStatusTree, &QTreeWidget::itemClicked,
             this, &MainWindow::onTreeItemClicked);
+    connect(m_summaryInput, &QLineEdit::textChanged,
+            this, &MainWindow::onSummaryTextChanged);
+    connect(m_commitButton, &QPushButton::clicked,
+            this, &MainWindow::onCommitClicked);
 }
 
 bool MainWindow::isGitRepository(const QString &path)
@@ -225,6 +272,68 @@ void MainWindow::onTreeItemClicked(QTreeWidgetItem *item, int column)
         cursor.insertText(display + '\n', fmt);
     }
 }
+
+// --- Commit pane ---
+
+void MainWindow::onSummaryTextChanged(const QString &text)
+{
+    m_commitButton->setEnabled(!text.trimmed().isEmpty());
+}
+
+void MainWindow::onCommitClicked()
+{
+    if (m_commitProcess->state() != QProcess::NotRunning)
+        return;
+
+    QStringList args = {"commit", "-a", "-m", m_summaryInput->text().trimmed()};
+
+    const QString desc = m_descriptionInput->toPlainText().trimmed();
+    if (!desc.isEmpty()) {
+        args << "-m" << desc;
+    }
+
+    m_commitButton->setEnabled(false);
+    m_commitProcess->setWorkingDirectory(m_repoPath);
+    m_commitProcess->start("git", args);
+}
+
+void MainWindow::onCommitFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+    if (exitStatus != QProcess::NormalExit) {
+        m_commitButton->setEnabled(!m_summaryInput->text().trimmed().isEmpty());
+        return;
+    }
+
+    const QString stderrOut = QString::fromUtf8(
+        m_commitProcess->readAllStandardError());
+
+    if (exitCode != 0) {
+        QMessageBox::warning(this, "Commit Failed", stderrOut);
+        m_commitButton->setEnabled(!m_summaryInput->text().trimmed().isEmpty());
+        return;
+    }
+
+    m_summaryInput->clear();
+    m_descriptionInput->clear();
+    m_commitButton->setEnabled(false);
+
+    m_gitStatusTree->clear();
+    m_treeDirs.clear();
+    m_fileContentViewer->clear();
+    startGitStatusQuery();
+}
+
+void MainWindow::onCommitErrorOccurred(QProcess::ProcessError error)
+{
+    if (error == QProcess::FailedToStart) {
+        QMessageBox::critical(this, "Git Not Found",
+            "Git is not installed or not available on the system PATH.\n"
+            "Please install Git to use this feature.");
+    }
+    m_commitButton->setEnabled(!m_summaryInput->text().trimmed().isEmpty());
+}
+
+// --- Status queries ---
 
 void MainWindow::startGitStatusQuery()
 {
