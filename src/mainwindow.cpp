@@ -63,14 +63,9 @@ public:
 
         const bool selected = opt.state & QStyle::State_Selected;
         const bool hovered = opt.state & QStyle::State_MouseOver;
-        const QColor accentColor("#58a6ff");
 
-        // Draw background
         if (selected) {
             painter->fillRect(opt.rect, opt.palette.highlight());
-            // Left accent bar
-            QRect accentBar(opt.rect.left(), opt.rect.top(), 3, opt.rect.height());
-            painter->fillRect(accentBar, accentColor);
         } else if (hovered) {
             painter->fillRect(opt.rect, opt.palette.alternateBase());
         }
@@ -81,7 +76,7 @@ public:
         const QString subject = parts.value(1);
         const QString meta    = parts.value(2);
 
-        QRect r = opt.rect.adjusted(10, 2, -4, -2);
+        QRect r = opt.rect.adjusted(4, 2, -4, -2);
         const int lh = opt.fontMetrics.height();
 
         // Hash — monospace, small, muted
@@ -90,7 +85,7 @@ public:
             f.setFamilies({"monospace", "Courier New", "Liberation Mono", "Menlo", "Consolas"});
             f.setPointSize(f.pointSize() - 2);
             painter->setFont(f);
-            painter->setPen(selected ? accentColor : QColor("#888888"));
+            painter->setPen(QColor("#888888"));
             painter->drawText(r.left(), r.top(), r.width(), lh,
                               Qt::AlignLeft | Qt::AlignBottom | Qt::TextSingleLine, hash);
         }
@@ -441,11 +436,20 @@ void MainWindow::setupUi()
         "}"
     );
 
-    historySplitter->addWidget(m_commitFilesHeader);
-    historySplitter->addWidget(m_commitFilesList);
+    // Wrap header + list in a container so the splitter handle resizes
+    // only the list, leaving the header at its fixed height.
+    auto *cfContainer = new QWidget();
+    auto *cfContainerLayout = new QVBoxLayout(cfContainer);
+    cfContainerLayout->setContentsMargins(0, 0, 0, 0);
+    cfContainerLayout->setSpacing(0);
+    cfContainerLayout->addWidget(m_commitFilesHeader);
+    cfContainerLayout->addWidget(m_commitFilesList, 1);
+    cfContainer->setVisible(false);
+    m_commitFilesContainer = cfContainer;
+
+    historySplitter->addWidget(m_commitFilesContainer);
     historySplitter->setStretchFactor(0, 1);
-    historySplitter->setStretchFactor(1, 0);
-    historySplitter->setStretchFactor(2, 1);
+    historySplitter->setStretchFactor(1, 1);
 
     historyLayout->addWidget(historySplitter);
     m_sidebarTabs->addTab(historyTab, "History");
@@ -1672,6 +1676,8 @@ void MainWindow::onHistoryItemClicked(QListWidgetItem *item)
     m_commitFilesList->setVisible(true);
     if (m_commitFilesHeader)
         m_commitFilesHeader->setVisible(true);
+    if (m_commitFilesContainer)
+        m_commitFilesContainer->setVisible(true);
     if (m_viewCommitFilesAction)
         m_viewCommitFilesAction->setChecked(true);
 

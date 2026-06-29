@@ -134,6 +134,7 @@ private:
     QListWidget *m_commitHistoryList = nullptr;
     QListWidget *m_commitFilesList = nullptr;
     QWidget *m_commitFilesHeader = nullptr;
+    QWidget *m_commitFilesContainer = nullptr;
 
     QLineEdit *m_summaryInput = nullptr;
     QTextEdit *m_descriptionInput = nullptr;
