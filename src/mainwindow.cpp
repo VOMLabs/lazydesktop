@@ -68,37 +68,52 @@ public:
             painter->fillRect(opt.rect, opt.palette.alternateBase());
 
         const QString text = index.data(Qt::DisplayRole).toString();
-        const int newlinePos = text.indexOf('\n');
-        const QString subject = newlinePos >= 0 ? text.left(newlinePos) : text;
-        const QString meta = newlinePos >= 0 ? text.mid(newlinePos + 1) : QString();
+        const QStringList parts = text.split('\n');
+        const QString hash    = parts.value(0);
+        const QString subject = parts.value(1);
+        const QString meta    = parts.value(2);
 
         QRect r = opt.rect.adjusted(4, 2, -4, -2);
+        const int lh = opt.fontMetrics.height();
 
-        // Subject line — bold, default color
-        QFont subjFont = opt.font;
-        subjFont.setBold(true);
-        painter->setFont(subjFont);
-        painter->setPen(opt.palette.windowText().color());
-        painter->drawText(r, Qt::AlignLeft | Qt::AlignTop | Qt::TextSingleLine, subject);
+        // Hash — monospace, small, muted
+        {
+            QFont f = opt.font;
+            f.setFamilies({"monospace", "Courier New", "Liberation Mono", "Menlo", "Consolas"});
+            f.setPointSize(f.pointSize() - 2);
+            painter->setFont(f);
+            painter->setPen(QColor("#888888"));
+            painter->drawText(r.left(), r.top(), r.width(), lh,
+                              Qt::AlignLeft | Qt::AlignBottom | Qt::TextSingleLine, hash);
+        }
 
-        // Meta line — smaller, gray
+        // Subject — bold, default color
+        {
+            QFont f = opt.font;
+            f.setBold(true);
+            painter->setFont(f);
+            painter->setPen(opt.palette.windowText().color());
+            painter->drawText(r.left(), r.top() + lh, r.width(), lh,
+                              Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine, subject);
+        }
+
+        // Meta — smaller, gray
         if (!meta.isEmpty()) {
-            QFont metaFont = opt.font;
-            metaFont.setPointSize(metaFont.pointSize() - 1);
-            painter->setFont(metaFont);
+            QFont f = opt.font;
+            f.setPointSize(f.pointSize() - 1);
+            painter->setFont(f);
             painter->setPen(opt.palette.color(QPalette::Disabled, QPalette::WindowText));
-            QRect metaRect = r.adjusted(0, r.height() / 2, 0, 0);
-            painter->drawText(metaRect, Qt::AlignLeft | Qt::AlignBottom | Qt::TextSingleLine, meta);
+            painter->drawText(r.left(), r.top() + lh * 2, r.width(), lh,
+                              Qt::AlignLeft | Qt::AlignTop | Qt::TextSingleLine, meta);
         }
 
         painter->restore();
     }
 
     QSize sizeHint(const QStyleOptionViewItem &option,
-                   const QModelIndex &index) const override
+                   const QModelIndex &) const override
     {
-        Q_UNUSED(index);
-        return QSize(200, option.fontMetrics.height() * 2 + 4);
+        return QSize(200, option.fontMetrics.height() * 3 + 4);
     }
 };
 
@@ -365,24 +380,22 @@ void MainWindow::setupUi()
     changesLayout->addWidget(changesSplitter);
     m_sidebarTabs->addTab(changesTab, "Changes");
 
-    // Tab 2 — History
+    // Tab 2 — History (commit list + commit files in a vertical splitter)
     auto *historyTab = new QWidget();
     auto *historyLayout = new QVBoxLayout(historyTab);
     historyLayout->setContentsMargins(0, 0, 0, 0);
+    historyLayout->setSpacing(0);
+
+    auto *historySplitter = new QSplitter(Qt::Vertical);
+
     m_commitHistoryList = new QListWidget();
     m_commitHistoryList->setAlternatingRowColors(true);
     m_commitHistoryList->setItemDelegate(new CommitDelegate(m_commitHistoryList));
-    historyLayout->addWidget(m_commitHistoryList);
-    m_sidebarTabs->addTab(historyTab, "History");
+    historySplitter->addWidget(m_commitHistoryList);
 
-    // Commit detail panel (hidden by default)
-    auto *commitFilesWidget = new QWidget();
-    auto *commitFilesLayout = new QVBoxLayout(commitFilesWidget);
-    commitFilesLayout->setContentsMargins(0, 0, 0, 0);
-    commitFilesLayout->setSpacing(0);
-
-    auto *commitFilesHeader = new QWidget();
-    auto *cfHeaderLayout = new QHBoxLayout(commitFilesHeader);
+    // Commit files panel (hidden by default, inside history tab)
+    m_commitFilesHeader = new QWidget();
+    auto *cfHeaderLayout = new QHBoxLayout(m_commitFilesHeader);
     cfHeaderLayout->setContentsMargins(6, 2, 6, 2);
     auto *cfTitle = new QLabel("Commit Files");
     cfTitle->setStyleSheet("font-weight: bold;");
@@ -393,14 +406,19 @@ void MainWindow::setupUi()
                                "QPushButton:hover { color: #e6edf3; }");
     cfHeaderLayout->addWidget(cfTitle, 1);
     cfHeaderLayout->addWidget(cfCloseBtn, 0, Qt::AlignRight);
-    commitFilesHeader->setVisible(false);
-    m_commitFilesHeader = commitFilesHeader;
+    m_commitFilesHeader->setVisible(false);
 
     m_commitFilesList = new QListWidget();
     m_commitFilesList->setVisible(false);
 
-    commitFilesLayout->addWidget(commitFilesHeader);
-    commitFilesLayout->addWidget(m_commitFilesList, 1);
+    historySplitter->addWidget(m_commitFilesHeader);
+    historySplitter->addWidget(m_commitFilesList);
+    historySplitter->setStretchFactor(0, 1);
+    historySplitter->setStretchFactor(1, 0);
+    historySplitter->setStretchFactor(2, 1);
+
+    historyLayout->addWidget(historySplitter);
+    m_sidebarTabs->addTab(historyTab, "History");
 
     connect(cfCloseBtn, &QPushButton::clicked, this, [this]() {
         m_commitFilesHeader->setVisible(false);
@@ -409,14 +427,12 @@ void MainWindow::setupUi()
             m_viewCommitFilesAction->setChecked(false);
     });
 
-    // Main horizontal splitter
+    // Main horizontal splitter (sidebar + viewer)
     auto *splitter = new QSplitter(Qt::Horizontal);
     splitter->addWidget(m_sidebarTabs);
-    splitter->addWidget(commitFilesWidget);
     splitter->addWidget(m_viewerStack);
     splitter->setStretchFactor(0, 1);
-    splitter->setStretchFactor(1, 0);
-    splitter->setStretchFactor(2, 2);
+    splitter->setStretchFactor(1, 2);
 
     // Drop shadow for overlay effect
     auto *shadow = new QGraphicsDropShadowEffect();
@@ -1604,9 +1620,8 @@ void MainWindow::onLogFinished(int exitCode, QProcess::ExitStatus exitStatus)
         const QString date  = lines[i + 2];
         const QString subject = lines[i + 3];
 
-        // First line: subject
-        // Second line: hash · author · date
-        const QString display = subject + "\n" + hash + "  " + author + "  " + date;
+        // Three lines: hash, subject, author · date
+        const QString display = hash + "\n" + subject + "\n" + author + "  \u00b7  " + date;
 
         auto *item = new QListWidgetItem(display);
         item->setData(Qt::UserRole, hash);
