@@ -61,11 +61,19 @@ public:
 
         painter->save();
 
+        const bool selected = opt.state & QStyle::State_Selected;
+        const bool hovered = opt.state & QStyle::State_MouseOver;
+        const QColor accentColor("#58a6ff");
+
         // Draw background
-        if (opt.state & QStyle::State_Selected)
+        if (selected) {
             painter->fillRect(opt.rect, opt.palette.highlight());
-        else if (opt.state & QStyle::State_MouseOver)
+            // Left accent bar
+            QRect accentBar(opt.rect.left(), opt.rect.top(), 3, opt.rect.height());
+            painter->fillRect(accentBar, accentColor);
+        } else if (hovered) {
             painter->fillRect(opt.rect, opt.palette.alternateBase());
+        }
 
         const QString text = index.data(Qt::DisplayRole).toString();
         const QStringList parts = text.split('\n');
@@ -73,7 +81,7 @@ public:
         const QString subject = parts.value(1);
         const QString meta    = parts.value(2);
 
-        QRect r = opt.rect.adjusted(4, 2, -4, -2);
+        QRect r = opt.rect.adjusted(10, 2, -4, -2);
         const int lh = opt.fontMetrics.height();
 
         // Hash — monospace, small, muted
@@ -82,17 +90,18 @@ public:
             f.setFamilies({"monospace", "Courier New", "Liberation Mono", "Menlo", "Consolas"});
             f.setPointSize(f.pointSize() - 2);
             painter->setFont(f);
-            painter->setPen(QColor("#888888"));
+            painter->setPen(selected ? accentColor : QColor("#888888"));
             painter->drawText(r.left(), r.top(), r.width(), lh,
                               Qt::AlignLeft | Qt::AlignBottom | Qt::TextSingleLine, hash);
         }
 
-        // Subject — bold, default color
+        // Subject — bold
         {
             QFont f = opt.font;
             f.setBold(true);
             painter->setFont(f);
-            painter->setPen(opt.palette.windowText().color());
+            painter->setPen(selected ? opt.palette.highlightedText().color()
+                                     : opt.palette.windowText().color());
             painter->drawText(r.left(), r.top() + lh, r.width(), lh,
                               Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine, subject);
         }
@@ -102,7 +111,8 @@ public:
             QFont f = opt.font;
             f.setPointSize(f.pointSize() - 1);
             painter->setFont(f);
-            painter->setPen(opt.palette.color(QPalette::Disabled, QPalette::WindowText));
+            painter->setPen(selected ? opt.palette.highlightedText().color().lighter(160)
+                                     : opt.palette.color(QPalette::Disabled, QPalette::WindowText));
             painter->drawText(r.left(), r.top() + lh * 2, r.width(), lh,
                               Qt::AlignLeft | Qt::AlignTop | Qt::TextSingleLine, meta);
         }
@@ -272,6 +282,16 @@ void MainWindow::setupUi()
     m_gitStatusTree->setIndentation(0);
     m_gitStatusTree->setAnimated(false);
     m_gitStatusTree->setIconSize(QSize(10, 10));
+    m_gitStatusTree->setStyleSheet(
+        "QTreeWidget::item:selected {"
+        "  background: palette(highlight);"
+        "  color: palette(highlighted-text);"
+        "}"
+        "QTreeWidget::item:selected:!active {"
+        "  background: palette(highlight);"
+        "  color: palette(highlighted-text);"
+        "}"
+    );
 
     // Header bar: master checkbox + changed-files count
     m_headerBar = new QWidget();
@@ -410,6 +430,16 @@ void MainWindow::setupUi()
 
     m_commitFilesList = new QListWidget();
     m_commitFilesList->setVisible(false);
+    m_commitFilesList->setStyleSheet(
+        "QListWidget::item:selected {"
+        "  background: palette(highlight);"
+        "  color: palette(highlighted-text);"
+        "}"
+        "QListWidget::item:selected:!active {"
+        "  background: palette(highlight);"
+        "  color: palette(highlighted-text);"
+        "}"
+    );
 
     historySplitter->addWidget(m_commitFilesHeader);
     historySplitter->addWidget(m_commitFilesList);
