@@ -5,17 +5,21 @@
 #include <QProcess>
 
 #include <QFileSystemWatcher>
-#include <QMap>
 #include <QTimer>
 
+class DiffViewer;
+class QAction;
+class QCheckBox;
 class QComboBox;
 class QDialog;
 class QLabel;
 class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
+class QMenu;
 class QPlainTextEdit;
 class QPushButton;
+class QStackedWidget;
 class QTabWidget;
 class QTextEdit;
 class QTreeWidget;
@@ -59,8 +63,19 @@ private slots:
     void onGitProcessErrorOccurred(QProcess::ProcessError error);
     void onLogFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onHistoryItemClicked(QListWidgetItem *item);
+    void onCommitFileClicked(QListWidgetItem *item);
+    void onCommitDetailFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onRepoDirChanged();
     void onRefreshDebounce();
+    void onOpenEditor();
+    void onOpenFileManager();
+    void onOpenTerminal();
+    void onOpenGitHub();
+    void closeRepository();
+    void onTreeContextMenu(const QPoint &pos);
+    void onDiscardFile();
+    void toggleCommitPanel(bool visible);
+    void toggleCommitFilesPanel(bool visible);
 
 private:
     enum class GitQuery { None, Status, Unpushed };
@@ -73,6 +88,8 @@ private:
     void startGitUnpushedQuery();
     void startGitLogQuery();
     void addGitFileToTree(const QString &path, const QString &prefix);
+    void setAllCheckStates(Qt::CheckState state);
+    QStringList checkedFiles() const;
 
     void loadBranches();
     void refreshAll();
@@ -96,15 +113,27 @@ private:
     void cleanupAskPass();
     void setupAuthEnv(QProcess *proc);
 
+    QCheckBox *m_selectAllCheck = nullptr;
+    QLabel *m_changedFilesLabel = nullptr;
+    QWidget *m_headerBar = nullptr;
+    QProcess *m_stageProcess = nullptr;
     QPushButton *m_projectButton = nullptr;
     QLabel *m_currentPathLabel = nullptr;
     QWidget *m_recentDrawer = nullptr;
     QPushButton *m_openProjectButton = nullptr;
     QListWidget *m_recentList = nullptr;
     QTreeWidget *m_gitStatusTree = nullptr;
-    QPlainTextEdit *m_fileContentViewer = nullptr;
+    DiffViewer *m_fileContentViewer = nullptr;
+    QAction *m_openGitHubAction = nullptr;
+    QAction *m_viewCommitPanelAction = nullptr;
+    QAction *m_viewCommitFilesAction = nullptr;
+    QWidget *m_commitContainer = nullptr;
+    QWidget *m_placeholderWidget = nullptr;
+    QStackedWidget *m_viewerStack = nullptr;
     QTabWidget *m_sidebarTabs = nullptr;
     QListWidget *m_commitHistoryList = nullptr;
+    QListWidget *m_commitFilesList = nullptr;
+    QWidget *m_commitFilesHeader = nullptr;
 
     QLineEdit *m_summaryInput = nullptr;
     QTextEdit *m_descriptionInput = nullptr;
@@ -121,6 +150,8 @@ private:
     QProcess *m_checkoutProcess = nullptr;
     QProcess *m_createBranchProcess = nullptr;
     QProcess *m_logProcess = nullptr;
+    QProcess *m_commitDetailProcess = nullptr;
+    QString m_selectedCommitHash;
     QString m_currentBranch;
     bool m_populatingBranches = false;
 
@@ -134,7 +165,6 @@ private:
     QProcess *m_gitProcess = nullptr;
     QString m_repoPath;
     GitQuery m_currentQuery = GitQuery::None;
-    QMap<QString, QTreeWidgetItem *> m_treeDirs;
     QStringList m_recentProjects;
 };
 

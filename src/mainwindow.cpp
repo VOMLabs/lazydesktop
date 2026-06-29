@@ -1,6 +1,9 @@
+#include "diffviewer.h"
 #include "mainwindow.h"
 
+#include <QCheckBox>
 #include <QComboBox>
+#include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDirIterator>
@@ -18,16 +21,20 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMenu>
+#include <QMenuBar>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QStyledItemDelegate>
 #include <QPainter>
 #include <QPixmap>
 #include <QSettings>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QStandardPaths>
 #include <QTemporaryFile>
 #include <QTextStream>
@@ -35,10 +42,65 @@
 #include <QTextEdit>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
+#include <QTreeWidgetItemIterator>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QStandardPaths>
 
 #include <yaml-cpp/yaml.h>
+
+class CommitDelegate : public QStyledItemDelegate {
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem opt = option;
+        initStyleOption(&opt, index);
+
+        painter->save();
+
+        // Draw background
+        if (opt.state & QStyle::State_Selected)
+            painter->fillRect(opt.rect, opt.palette.highlight());
+        else if (opt.state & QStyle::State_MouseOver)
+            painter->fillRect(opt.rect, opt.palette.alternateBase());
+
+        const QString text = index.data(Qt::DisplayRole).toString();
+        const int newlinePos = text.indexOf('\n');
+        const QString subject = newlinePos >= 0 ? text.left(newlinePos) : text;
+        const QString meta = newlinePos >= 0 ? text.mid(newlinePos + 1) : QString();
+
+        QRect r = opt.rect.adjusted(4, 2, -4, -2);
+
+        // Subject line — bold, default color
+        QFont subjFont = opt.font;
+        subjFont.setBold(true);
+        painter->setFont(subjFont);
+        painter->setPen(opt.palette.windowText().color());
+        painter->drawText(r, Qt::AlignLeft | Qt::AlignTop | Qt::TextSingleLine, subject);
+
+        // Meta line — smaller, gray
+        if (!meta.isEmpty()) {
+            QFont metaFont = opt.font;
+            metaFont.setPointSize(metaFont.pointSize() - 1);
+            painter->setFont(metaFont);
+            painter->setPen(opt.palette.color(QPalette::Disabled, QPalette::WindowText));
+            QRect metaRect = r.adjusted(0, r.height() / 2, 0, 0);
+            painter->drawText(metaRect, Qt::AlignLeft | Qt::AlignBottom | Qt::TextSingleLine, meta);
+        }
+
+        painter->restore();
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem &option,
+                   const QModelIndex &index) const override
+    {
+        Q_UNUSED(index);
+        return QSize(200, option.fontMetrics.height() * 2 + 4);
+    }
+};
 
 static const int kMaxRecentProjects = 10;
 
@@ -130,6 +192,36 @@ void MainWindow::setupUi()
     topLayout->addStretch();
     topLayout->addWidget(m_pushButton);
 
+    // --- Files menu (in menubar) ---
+    auto *menuBar = this->menuBar();
+    auto *filesMenu = menuBar->addMenu("Files");
+
+    auto *editorAction = filesMenu->addAction("Open in Editor");
+    connect(editorAction, &QAction::triggered, this, &MainWindow::onOpenEditor);
+
+    auto *fmAction = filesMenu->addAction("Open in File Manager");
+    connect(fmAction, &QAction::triggered, this, &MainWindow::onOpenFileManager);
+
+    auto *termAction = filesMenu->addAction("Open in Terminal");
+    connect(termAction, &QAction::triggered, this, &MainWindow::onOpenTerminal);
+
+    m_openGitHubAction = filesMenu->addAction("View on GitHub");
+    m_openGitHubAction->setEnabled(false);
+    connect(m_openGitHubAction, &QAction::triggered, this, &MainWindow::onOpenGitHub);
+
+    // --- View menu ---
+    auto *viewMenu = menuBar->addMenu("View");
+
+    m_viewCommitPanelAction = viewMenu->addAction("Commit Panel");
+    m_viewCommitPanelAction->setCheckable(true);
+    m_viewCommitPanelAction->setChecked(true);
+    connect(m_viewCommitPanelAction, &QAction::toggled, this, &MainWindow::toggleCommitPanel);
+
+    m_viewCommitFilesAction = viewMenu->addAction("Commit Files");
+    m_viewCommitFilesAction->setCheckable(true);
+    m_viewCommitFilesAction->setChecked(false);
+    connect(m_viewCommitFilesAction, &QAction::toggled, this, &MainWindow::toggleCommitFilesPanel);
+
     // --- Recent projects drawer (overlay, hidden by default) ---
     m_recentDrawer = new QWidget(centralWidget);
     m_recentDrawer->setFixedWidth(260);
@@ -160,11 +252,53 @@ void MainWindow::setupUi()
     m_gitStatusTree = new QTreeWidget();
     m_gitStatusTree->setHeaderHidden(true);
     m_gitStatusTree->setColumnCount(1);
+    m_gitStatusTree->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_gitStatusTree->setRootIsDecorated(false);
+    m_gitStatusTree->setIndentation(0);
+    m_gitStatusTree->setAnimated(false);
+    m_gitStatusTree->setIconSize(QSize(10, 10));
 
-    m_fileContentViewer = new QPlainTextEdit();
-    m_fileContentViewer->setReadOnly(true);
-    auto monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    m_fileContentViewer->setFont(monoFont);
+    // Header bar: master checkbox + changed-files count
+    m_headerBar = new QWidget();
+    m_headerBar->setFixedHeight(32);
+    m_headerBar->setAutoFillBackground(true);
+    {
+        QPalette hp = m_headerBar->palette();
+        hp.setColor(QPalette::Window, hp.color(QPalette::Window).darker(108));
+        m_headerBar->setPalette(hp);
+    }
+    auto *headerLayout = new QHBoxLayout(m_headerBar);
+    headerLayout->setContentsMargins(8, 0, 8, 0);
+    m_selectAllCheck = new QCheckBox();
+    m_changedFilesLabel = new QLabel("0 changed files");
+    {
+        QFont bf = m_changedFilesLabel->font();
+        bf.setBold(true);
+        m_changedFilesLabel->setFont(bf);
+        QPalette lp = m_changedFilesLabel->palette();
+        lp.setColor(QPalette::WindowText,
+                    lp.color(QPalette::Disabled, QPalette::WindowText));
+        m_changedFilesLabel->setPalette(lp);
+    }
+    headerLayout->addWidget(m_selectAllCheck);
+    headerLayout->addWidget(m_changedFilesLabel, 1);
+
+    m_fileContentViewer = new DiffViewer();
+    m_fileContentViewer->setMinimumWidth(200);
+
+    // Placeholder page shown when nothing is selected
+    m_placeholderWidget = new QWidget();
+    auto *placeholderLayout = new QVBoxLayout(m_placeholderWidget);
+    placeholderLayout->setAlignment(Qt::AlignCenter);
+    auto *placeholderLabel = new QLabel("No file selected");
+    placeholderLabel->setAlignment(Qt::AlignCenter);
+    placeholderLabel->setStyleSheet("color: gray; font-size: 14px;");
+    placeholderLayout->addWidget(placeholderLabel);
+
+    m_viewerStack = new QStackedWidget();
+    m_viewerStack->addWidget(m_fileContentViewer);  // page 0
+    m_viewerStack->addWidget(m_placeholderWidget);  // page 1
+    m_viewerStack->setCurrentIndex(1);
 
     // --- Commit pane ---
     m_summaryInput = new QLineEdit();
@@ -178,14 +312,41 @@ void MainWindow::setupUi()
     m_commitButton = new QPushButton("Commit");
     m_commitButton->setEnabled(false);
 
+    // Commit pane close button (top right)
+    auto *commitHeader = new QWidget();
+    auto *commitHeaderLayout = new QHBoxLayout(commitHeader);
+    commitHeaderLayout->setContentsMargins(4, 2, 4, 2);
+    auto *commitTitle = new QLabel("Commit");
+    commitTitle->setStyleSheet("font-weight: bold; font-size: 12px;");
+    auto *commitCloseBtn = new QPushButton(QStringLiteral("\u2716"));
+    commitCloseBtn->setFixedSize(20, 20);
+    commitCloseBtn->setFlat(true);
+    commitCloseBtn->setStyleSheet("QPushButton { border: none; color: #8b949e; }"
+                                   "QPushButton:hover { color: #e6edf3; }");
+    commitHeaderLayout->addWidget(commitTitle, 1);
+    commitHeaderLayout->addWidget(commitCloseBtn, 0, Qt::AlignRight);
+
     auto *commitLayout = new QVBoxLayout();
-    commitLayout->setContentsMargins(4, 4, 4, 4);
-    commitLayout->addWidget(m_summaryInput);
-    commitLayout->addWidget(m_descriptionInput);
-    commitLayout->addWidget(m_commitButton);
+    commitLayout->setContentsMargins(0, 0, 0, 0);
+    commitLayout->setSpacing(0);
+    commitLayout->addWidget(commitHeader);
+    auto *commitBody = new QWidget();
+    auto *commitBodyLayout = new QVBoxLayout(commitBody);
+    commitBodyLayout->setContentsMargins(4, 4, 4, 4);
+    commitBodyLayout->addWidget(m_summaryInput);
+    commitBodyLayout->addWidget(m_descriptionInput);
+    commitBodyLayout->addWidget(m_commitButton);
+    commitLayout->addWidget(commitBody, 1);
 
     auto *commitContainer = new QWidget();
     commitContainer->setLayout(commitLayout);
+    m_commitContainer = commitContainer;
+
+    connect(commitCloseBtn, &QPushButton::clicked, this, [this]() {
+        m_commitContainer->setVisible(false);
+        if (m_viewCommitPanelAction)
+            m_viewCommitPanelAction->setChecked(false);
+    });
 
     // Sidebar with tabs: Changes + History
     m_sidebarTabs = new QTabWidget();
@@ -195,6 +356,7 @@ void MainWindow::setupUi()
     auto *changesLayout = new QVBoxLayout(changesTab);
     changesLayout->setContentsMargins(0, 0, 0, 0);
     changesLayout->setSpacing(0);
+    changesLayout->addWidget(m_headerBar);
     auto *changesSplitter = new QSplitter(Qt::Vertical);
     changesSplitter->addWidget(m_gitStatusTree);
     changesSplitter->addWidget(commitContainer);
@@ -209,15 +371,52 @@ void MainWindow::setupUi()
     historyLayout->setContentsMargins(0, 0, 0, 0);
     m_commitHistoryList = new QListWidget();
     m_commitHistoryList->setAlternatingRowColors(true);
+    m_commitHistoryList->setItemDelegate(new CommitDelegate(m_commitHistoryList));
     historyLayout->addWidget(m_commitHistoryList);
     m_sidebarTabs->addTab(historyTab, "History");
+
+    // Commit detail panel (hidden by default)
+    auto *commitFilesWidget = new QWidget();
+    auto *commitFilesLayout = new QVBoxLayout(commitFilesWidget);
+    commitFilesLayout->setContentsMargins(0, 0, 0, 0);
+    commitFilesLayout->setSpacing(0);
+
+    auto *commitFilesHeader = new QWidget();
+    auto *cfHeaderLayout = new QHBoxLayout(commitFilesHeader);
+    cfHeaderLayout->setContentsMargins(6, 2, 6, 2);
+    auto *cfTitle = new QLabel("Commit Files");
+    cfTitle->setStyleSheet("font-weight: bold;");
+    auto *cfCloseBtn = new QPushButton(QStringLiteral("\u2716"));
+    cfCloseBtn->setFixedSize(20, 20);
+    cfCloseBtn->setFlat(true);
+    cfCloseBtn->setStyleSheet("QPushButton { border: none; color: #8b949e; }"
+                               "QPushButton:hover { color: #e6edf3; }");
+    cfHeaderLayout->addWidget(cfTitle, 1);
+    cfHeaderLayout->addWidget(cfCloseBtn, 0, Qt::AlignRight);
+    commitFilesHeader->setVisible(false);
+    m_commitFilesHeader = commitFilesHeader;
+
+    m_commitFilesList = new QListWidget();
+    m_commitFilesList->setVisible(false);
+
+    commitFilesLayout->addWidget(commitFilesHeader);
+    commitFilesLayout->addWidget(m_commitFilesList, 1);
+
+    connect(cfCloseBtn, &QPushButton::clicked, this, [this]() {
+        m_commitFilesHeader->setVisible(false);
+        m_commitFilesList->setVisible(false);
+        if (m_viewCommitFilesAction)
+            m_viewCommitFilesAction->setChecked(false);
+    });
 
     // Main horizontal splitter
     auto *splitter = new QSplitter(Qt::Horizontal);
     splitter->addWidget(m_sidebarTabs);
-    splitter->addWidget(m_fileContentViewer);
+    splitter->addWidget(commitFilesWidget);
+    splitter->addWidget(m_viewerStack);
     splitter->setStretchFactor(0, 1);
-    splitter->setStretchFactor(1, 2);
+    splitter->setStretchFactor(1, 0);
+    splitter->setStretchFactor(2, 2);
 
     // Drop shadow for overlay effect
     auto *shadow = new QGraphicsDropShadowEffect();
@@ -264,6 +463,10 @@ void MainWindow::setupUi()
     connect(m_logProcess, &QProcess::finished,
             this, &MainWindow::onLogFinished);
 
+    m_commitDetailProcess = new QProcess(this);
+    connect(m_commitDetailProcess, &QProcess::finished,
+            this, &MainWindow::onCommitDetailFinished);
+
     m_createBranchProcess = new QProcess(this);
     connect(m_createBranchProcess, &QProcess::finished,
             this, &MainWindow::onBranchesLoaded);
@@ -282,6 +485,13 @@ void MainWindow::setupUi()
     connect(m_pushProcess, &QProcess::errorOccurred,
             this, &MainWindow::onPushErrorOccurred);
 
+    m_stageProcess = new QProcess(this);
+    connect(m_stageProcess, &QProcess::finished,
+            this, [this](int ec, QProcess::ExitStatus es) {
+        if (es == QProcess::NormalExit && ec == 0)
+            startGitStatusQuery();
+    });
+
     // Connections
     connect(m_branchComboBox, &QComboBox::activated,
             this, &MainWindow::onBranchChanged);
@@ -297,12 +507,20 @@ void MainWindow::setupUi()
             this, &MainWindow::onTreeItemClicked);
     connect(m_commitHistoryList, &QListWidget::itemClicked,
             this, &MainWindow::onHistoryItemClicked);
+    connect(m_commitFilesList, &QListWidget::itemClicked,
+            this, &MainWindow::onCommitFileClicked);
     connect(m_summaryInput, &QLineEdit::textChanged,
             this, &MainWindow::onSummaryTextChanged);
     connect(m_commitButton, &QPushButton::clicked,
             this, &MainWindow::onCommitClicked);
     connect(m_pushButton, &QPushButton::clicked,
             this, &MainWindow::onPushClicked);
+
+    connect(m_gitStatusTree, &QTreeWidget::customContextMenuRequested,
+            this, &MainWindow::onTreeContextMenu);
+    connect(m_selectAllCheck, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState state) {
+        setAllCheckStates(state);
+    });
 
     m_fsWatcher = new QFileSystemWatcher(this);
     m_refreshTimer = new QTimer(this);
@@ -400,7 +618,7 @@ void MainWindow::populateRecentList()
         label->setFlat(true);
         label->setStyleSheet("QPushButton { text-align: left; border: none; padding: 0; }");
 
-        auto *btn = new QPushButton(QStringLiteral("\xF0\x9F\x97\x91"));
+        auto *btn = new QPushButton(QStringLiteral("\u2716"));
         btn->setFixedSize(22, 22);
         btn->setCursor(Qt::PointingHandCursor);
         btn->setFlat(true);
@@ -445,6 +663,8 @@ void MainWindow::onRemoveRecentProject()
         m_recentProjects.removeAll(path);
         saveRecentProjects();
         populateRecentList();
+        if (path == m_repoPath)
+            closeRepository();
     } else if (msg.clickedButton() == deleteBtn) {
         auto really = QMessageBox::question(this, "Confirm Deletion",
             QString("Are you really sure you want to permanently delete\n\"%1\"?\n\n"
@@ -455,6 +675,8 @@ void MainWindow::onRemoveRecentProject()
             m_recentProjects.removeAll(path);
             saveRecentProjects();
             populateRecentList();
+            if (path == m_repoPath)
+                closeRepository();
 
             QDir dir(path);
             if (dir.exists())
@@ -532,8 +754,8 @@ bool MainWindow::openRepository(const QString &path)
     m_currentPathLabel->setVisible(false);
     m_pushButton->setEnabled(true);
     m_gitStatusTree->clear();
-    m_treeDirs.clear();
     m_fileContentViewer->clear();
+    m_viewerStack->setCurrentIndex(0);
     m_recentDrawer->setVisible(false);
 
     addRecentProject(path);
@@ -552,71 +774,207 @@ bool MainWindow::openRepository(const QString &path)
     return true;
 }
 
+void MainWindow::closeRepository()
+{
+    if (m_repoPath.isEmpty())
+        return;
+
+    m_repoPath.clear();
+    m_projectButton->setText("Open Folder");
+    m_currentPathLabel->setVisible(false);
+    m_gitStatusTree->clear();
+    m_commitHistoryList->clear();
+    m_commitFilesList->clear();
+    m_commitFilesList->setVisible(false);
+    m_fileContentViewer->clear();
+    m_viewerStack->setCurrentIndex(1);
+    m_summaryInput->clear();
+    m_descriptionInput->clear();
+    m_commitButton->setEnabled(false);
+    m_pushButton->setEnabled(false);
+    m_branchComboBox->setEnabled(false);
+    m_branchComboBox->clear();
+    m_deleteBranchButton->setEnabled(false);
+    m_openGitHubAction->setEnabled(false);
+    m_currentBranch.clear();
+    m_selectedCommitHash.clear();
+    m_fsWatcher->removePaths(m_fsWatcher->files());
+    m_fsWatcher->removePaths(m_fsWatcher->directories());
+}
+
+void MainWindow::onOpenEditor()
+{
+    if (m_repoPath.isEmpty())
+        return;
+    QProcess::startDetached("kate", {m_repoPath});
+}
+
+void MainWindow::onOpenFileManager()
+{
+    if (m_repoPath.isEmpty())
+        return;
+    QDesktopServices::openUrl(QUrl::fromLocalFile(m_repoPath));
+}
+
+void MainWindow::onOpenTerminal()
+{
+    if (m_repoPath.isEmpty())
+        return;
+    QProcess::startDetached("konsole", {"--workdir", m_repoPath});
+}
+
+void MainWindow::onOpenGitHub()
+{
+    if (m_repoPath.isEmpty())
+        return;
+
+    auto *proc = new QProcess(this);
+    proc->setWorkingDirectory(m_repoPath);
+    proc->start("git", {"remote", "get-url", "origin"});
+
+    connect(proc, &QProcess::finished, this, [proc](int ec, QProcess::ExitStatus es) {
+        proc->deleteLater();
+        if (es != QProcess::NormalExit || ec != 0)
+            return;
+
+        QString url = QString::fromUtf8(proc->readAllStandardOutput()).trimmed();
+
+        // Convert SSH to HTTPS
+        if (url.startsWith("git@")) {
+            url.remove(0, 4); // "git@"
+            url.replace(':', '/');
+            url.prepend("https://");
+        }
+        // Remove trailing .git
+        if (url.endsWith(".git"))
+            url.chop(4);
+
+        if (!url.isEmpty())
+            QDesktopServices::openUrl(QUrl(url));
+    });
+}
+
 bool MainWindow::isGitRepository(const QString &path)
 {
     const QFileInfo gitInfo(QDir(path).filePath(".git"));
     return gitInfo.exists();
 }
 
-static QIcon circleIcon(const QColor &color, int size = 10)
+static QIcon statusIcon(const QColor &color)
 {
-    QPixmap pm(size, size);
-    pm.fill(Qt::transparent);
-    QPainter p(&pm);
-    p.setRenderHint(QPainter::Antialiasing);
-    p.setBrush(color);
-    p.setPen(Qt::NoPen);
-    p.drawEllipse(1, 1, size - 2, size - 2);
-    p.end();
+    QPixmap pm(10, 10);
+    pm.fill(color);
     return QIcon(pm);
 }
 
 void MainWindow::addGitFileToTree(const QString &path, const QString &prefix)
 {
-    const QStringList parts = path.split('/');
-
-    QTreeWidgetItem *parent = nullptr;
-    QString accumulated;
-
-    for (int i = 0; i < parts.size() - 1; ++i) {
-        if (!accumulated.isEmpty())
-            accumulated += '/';
-        accumulated += parts[i];
-
-        auto it = m_treeDirs.constFind(accumulated);
-        if (it != m_treeDirs.constEnd()) {
-            parent = it.value();
-        } else {
-            auto *dirItem = new QTreeWidgetItem();
-            dirItem->setText(0, parts[i] + '/');
-            dirItem->setFlags(dirItem->flags() & ~Qt::ItemIsSelectable);
-            if (parent)
-                parent->addChild(dirItem);
-            else
-                m_gitStatusTree->addTopLevelItem(dirItem);
-            m_treeDirs[accumulated] = dirItem;
-            parent = dirItem;
-        }
-    }
-
     auto *fileItem = new QTreeWidgetItem();
-    fileItem->setText(0, parts.last());
+    fileItem->setText(0, path);
     fileItem->setData(0, Qt::UserRole, path);
 
+    fileItem->setFlags(fileItem->flags() | Qt::ItemIsUserCheckable);
+    fileItem->setCheckState(0, Qt::Checked);
+
     const QChar status = prefix.trimmed().isEmpty() ? QChar() : prefix.trimmed().at(0);
+    fileItem->setData(0, Qt::UserRole + 1, status);
+
     switch (status.toLatin1()) {
-    case 'M': fileItem->setIcon(0, circleIcon(QColor("#f0c000"))); break;
-    case 'D': fileItem->setIcon(0, circleIcon(QColor("#e04040"))); break;
-    case 'A': fileItem->setIcon(0, circleIcon(QColor("#40c040"))); break;
-    case 'R': fileItem->setIcon(0, circleIcon(QColor("#c080ff"))); break;
-    case '?': fileItem->setIcon(0, circleIcon(QColor("#c0c0c0"))); break;
-    default:  fileItem->setIcon(0, circleIcon(QColor("#f0c000"))); break;
+    case 'M': fileItem->setIcon(0, statusIcon(QColor("#f0c000"))); break;
+    case 'D': fileItem->setIcon(0, statusIcon(QColor("#e04040"))); break;
+    case 'A': fileItem->setIcon(0, statusIcon(QColor("#40c040"))); break;
+    case 'R': fileItem->setIcon(0, statusIcon(QColor("#c080ff"))); break;
+    case '?': fileItem->setIcon(0, statusIcon(QColor("#c0c0c0"))); break;
+    default:  break;
     }
 
-    if (parent)
-        parent->addChild(fileItem);
-    else
-        m_gitStatusTree->addTopLevelItem(fileItem);
+    m_gitStatusTree->addTopLevelItem(fileItem);
+}
+
+// --- View menu toggles ---
+
+void MainWindow::toggleCommitPanel(bool visible)
+{
+    if (m_commitContainer)
+        m_commitContainer->setVisible(visible);
+}
+
+void MainWindow::toggleCommitFilesPanel(bool visible)
+{
+    if (m_commitFilesHeader)
+        m_commitFilesHeader->setVisible(visible);
+    if (m_commitFilesList)
+        m_commitFilesList->setVisible(visible);
+}
+
+// --- Checkbox helpers ---
+
+void MainWindow::setAllCheckStates(Qt::CheckState state)
+{
+    QTreeWidgetItemIterator it(m_gitStatusTree);
+    while (*it) {
+        (*it)->setCheckState(0, state);
+        ++it;
+    }
+}
+
+QStringList MainWindow::checkedFiles() const
+{
+    QStringList files;
+    QTreeWidgetItemIterator it(m_gitStatusTree);
+    while (*it) {
+        if ((*it)->checkState(0) == Qt::Checked)
+            files << (*it)->data(0, Qt::UserRole).toString();
+        ++it;
+    }
+    return files;
+}
+
+// --- Tree context menu (Discard) ---
+
+void MainWindow::onTreeContextMenu(const QPoint &pos)
+{
+    auto *item = m_gitStatusTree->itemAt(pos);
+    if (!item)
+        return;
+
+    const QString path = item->data(0, Qt::UserRole).toString();
+    if (path.isEmpty())
+        return;
+
+    const QChar status = item->data(0, Qt::UserRole + 1).toChar();
+    const bool isUntracked = (status == '?');
+
+    QMenu menu(this);
+    if (isUntracked) {
+        auto *deleteAct = menu.addAction("Delete File");
+        connect(deleteAct, &QAction::triggered, this, [this, path]() {
+            QFile::remove(QDir(m_repoPath).filePath(path));
+            startGitStatusQuery();
+        });
+    } else {
+        auto *discardAct = menu.addAction("Discard Changes");
+        connect(discardAct, &QAction::triggered, this, [this, path]() {
+            m_stageProcess->setWorkingDirectory(m_repoPath);
+            m_stageProcess->start("git", {"restore", path});
+        });
+    }
+
+    menu.exec(m_gitStatusTree->viewport()->mapToGlobal(pos));
+}
+
+void MainWindow::onDiscardFile()
+{
+    auto *btn = qobject_cast<QPushButton *>(sender());
+    if (!btn)
+        return;
+
+    const QString path = btn->property("filePath").toString();
+    if (path.isEmpty())
+        return;
+
+    m_stageProcess->setWorkingDirectory(m_repoPath);
+    m_stageProcess->start("git", {"restore", path});
 }
 
 // --- Tree item click (diff viewer) ---
@@ -635,14 +993,14 @@ void MainWindow::onTreeItemClicked(QTreeWidgetItem *item, int column)
 {
     Q_UNUSED(column);
 
-    if (!item || item->text(0).endsWith('/'))
+    if (!item)
         return;
 
     const QString relPath = item->data(0, Qt::UserRole).toString();
     if (relPath.isEmpty())
         return;
 
-    m_fileContentViewer->clear();
+    m_viewerStack->setCurrentIndex(0);
 
     QString diff = runGitDiff(m_repoPath, {"diff", "HEAD", "--", relPath});
 
@@ -650,54 +1008,11 @@ void MainWindow::onTreeItemClicked(QTreeWidgetItem *item, int column)
         diff = runGitDiff(m_repoPath, {"diff", "@{u}..HEAD", "--", relPath});
 
     if (diff.isEmpty()) {
-        m_fileContentViewer->setPlainText("No changes to display.");
+        m_fileContentViewer->clear();
         return;
     }
 
-    auto *doc = m_fileContentViewer->document();
-    QTextCursor cursor(doc);
-    QRegularExpression hunkRe(R"(@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@.*)");
-
-    const QStringList lines = diff.split('\n');
-    int oldLn = 0;
-    int newLn = 0;
-
-    for (const QString &line : lines) {
-        if (line.startsWith("---") || line.startsWith("+++")
-            || line.startsWith("diff --git")
-            || line.startsWith("\\ "))
-            continue;
-
-        QTextCharFormat fmt;
-        QString display;
-
-        auto match = hunkRe.match(line);
-        if (match.hasMatch()) {
-            oldLn = match.captured(1).toInt();
-            newLn = match.captured(2).toInt();
-            fmt.setForeground(QColor(80, 80, 200));
-            fmt.setFontWeight(QFont::Bold);
-            display = line;
-        } else if (line.startsWith('-')) {
-            fmt.setForeground(Qt::black);
-            fmt.setBackground(QColor(255, 200, 200));
-            display = QString("%1%2").arg(oldLn).arg(line);
-            oldLn++;
-        } else if (line.startsWith('+')) {
-            fmt.setForeground(Qt::black);
-            fmt.setBackground(QColor(200, 255, 200));
-            display = QString("%1%2").arg(newLn).arg(line);
-            newLn++;
-        } else if (line.startsWith(' ')) {
-            oldLn++;
-            newLn++;
-            continue;
-        } else {
-            continue;
-        }
-
-        cursor.insertText(display + '\n', fmt);
-    }
+    m_fileContentViewer->setDiff(diff);
 }
 
 // --- Commit pane ---
@@ -709,6 +1024,13 @@ void MainWindow::onSummaryTextChanged(const QString &text)
 
 void MainWindow::onCommitClicked()
 {
+    const QStringList files = checkedFiles();
+    if (files.isEmpty()) {
+        QMessageBox::information(this, "Nothing Selected",
+            "Check at least one file to commit.");
+        return;
+    }
+
     if (!m_commitProcess || m_commitProcess->state() != QProcess::NotRunning) {
         if (m_commitProcess) {
             m_commitProcess->deleteLater();
@@ -721,15 +1043,36 @@ void MainWindow::onCommitClicked()
                 this, &MainWindow::onCommitErrorOccurred);
     }
 
-    QStringList args = {"commit", "-a", "-m", m_summaryInput->text().trimmed()};
-
-    const QString desc = m_descriptionInput->toPlainText().trimmed();
-    if (!desc.isEmpty())
-        args << "-m" << desc;
+    // Stage all checked files first, then commit
+    auto *addProc = new QProcess(this);
+    addProc->setWorkingDirectory(m_repoPath);
+    QStringList addArgs = {"add", "--"};
+    addArgs.append(files);
+    addProc->start("git", addArgs);
 
     m_commitButton->setEnabled(false);
-    m_commitProcess->setWorkingDirectory(m_repoPath);
-    m_commitProcess->start("git", args);
+    m_commitButton->setText("Staging…");
+
+    connect(addProc, &QProcess::finished, this, [this, addProc](int ec, QProcess::ExitStatus es) {
+        addProc->deleteLater();
+        m_commitButton->setText("Commit");
+
+        if (es != QProcess::NormalExit || ec != 0) {
+            const QString err = QString::fromUtf8(addProc->readAllStandardError());
+            QMessageBox::warning(this, "Stage Failed", err);
+            m_commitButton->setEnabled(!m_summaryInput->text().trimmed().isEmpty());
+            return;
+        }
+
+        QStringList args = {"commit", "-m", m_summaryInput->text().trimmed()};
+
+        const QString desc = m_descriptionInput->toPlainText().trimmed();
+        if (!desc.isEmpty())
+            args << "-m" << desc;
+
+        m_commitProcess->setWorkingDirectory(m_repoPath);
+        m_commitProcess->start("git", args);
+    });
 }
 
 void MainWindow::onCommitFinished(int exitCode, QProcess::ExitStatus exitStatus)
@@ -754,9 +1097,9 @@ void MainWindow::onCommitFinished(int exitCode, QProcess::ExitStatus exitStatus)
     m_summaryInput->clear();
     m_descriptionInput->clear();
     m_commitButton->setEnabled(false);
+    m_commitButton->setText("Commit");
 
     m_gitStatusTree->clear();
-    m_treeDirs.clear();
     m_fileContentViewer->clear();
     startGitStatusQuery();
     startGitLogQuery();
@@ -769,6 +1112,8 @@ void MainWindow::onCommitErrorOccurred(QProcess::ProcessError error)
             "Git is not installed or not available on the system PATH.");
     }
 
+    if (!m_commitProcess)
+        return;
     m_commitProcess->deleteLater();
     m_commitProcess = nullptr;
     m_commitButton->setEnabled(!m_summaryInput->text().trimmed().isEmpty());
@@ -1002,7 +1347,6 @@ void MainWindow::createNewBranch()
 void MainWindow::refreshAll()
 {
     m_gitStatusTree->clear();
-    m_treeDirs.clear();
     m_fileContentViewer->clear();
     m_summaryInput->clear();
     m_descriptionInput->clear();
@@ -1069,7 +1413,6 @@ void MainWindow::onPushFinished(int exitCode, QProcess::ExitStatus exitStatus)
             m_pushButton->setText("Fetch");
         } else {
             m_gitStatusTree->clear();
-            m_treeDirs.clear();
             m_fileContentViewer->clear();
             startGitStatusQuery();
         }
@@ -1115,7 +1458,6 @@ void MainWindow::onPushFinished(int exitCode, QProcess::ExitStatus exitStatus)
         m_pushButton->setText("Push");
 
         m_gitStatusTree->clear();
-        m_treeDirs.clear();
         m_fileContentViewer->clear();
         startGitStatusQuery();
         m_pushButton->setEnabled(true);
@@ -1137,10 +1479,8 @@ void MainWindow::onPushErrorOccurred(QProcess::ProcessError error)
 
 void MainWindow::startGitStatusQuery()
 {
-    if (m_gitProcess->state() != QProcess::NotRunning) {
+    if (m_gitProcess->state() != QProcess::NotRunning)
         m_gitProcess->kill();
-        m_gitProcess->waitForFinished(500);
-    }
 
     m_currentQuery = GitQuery::Status;
     m_gitProcess->setWorkingDirectory(m_repoPath);
@@ -1149,10 +1489,8 @@ void MainWindow::startGitStatusQuery()
 
 void MainWindow::startGitUnpushedQuery()
 {
-    if (m_gitProcess->state() != QProcess::NotRunning) {
+    if (m_gitProcess->state() != QProcess::NotRunning)
         m_gitProcess->kill();
-        m_gitProcess->waitForFinished(500);
-    }
 
     m_currentQuery = GitQuery::Unpushed;
     m_gitProcess->setWorkingDirectory(m_repoPath);
@@ -1180,6 +1518,7 @@ void MainWindow::onGitProcessFinished(int exitCode, QProcess::ExitStatus exitSta
         m_gitProcess->readAllStandardOutput());
 
     if (m_currentQuery == GitQuery::Status) {
+        m_gitStatusTree->clear();
         const QStringList lines = output.split('\n', Qt::SkipEmptyParts);
 
         for (const QString &line : lines) {
@@ -1203,7 +1542,8 @@ void MainWindow::onGitProcessFinished(int exitCode, QProcess::ExitStatus exitSta
             addGitFileToTree(path, prefix);
         }
 
-        m_gitStatusTree->expandAll();
+        m_changedFilesLabel->setText(
+            QString("%1 changed files").arg(m_gitStatusTree->topLevelItemCount()));
         startGitUnpushedQuery();
     } else if (m_currentQuery == GitQuery::Unpushed) {
         const QStringList lines = output.split('\n', Qt::SkipEmptyParts);
@@ -1216,7 +1556,8 @@ void MainWindow::onGitProcessFinished(int exitCode, QProcess::ExitStatus exitSta
             addGitFileToTree(trimmed, "[P]");
         }
 
-        m_gitStatusTree->expandAll();
+        m_changedFilesLabel->setText(
+            QString("%1 changed files").arg(m_gitStatusTree->topLevelItemCount()));
         m_currentQuery = GitQuery::None;
     }
 }
@@ -1278,20 +1619,83 @@ void MainWindow::onHistoryItemClicked(QListWidgetItem *item)
     if (!item)
         return;
 
-    const QString hash = item->data(Qt::UserRole).toString();
-    if (hash.isEmpty())
+    m_selectedCommitHash = item->data(Qt::UserRole).toString();
+    if (m_selectedCommitHash.isEmpty())
         return;
 
-    // Fetch full commit details asynchronously
-    auto *detailProc = new QProcess(this);
-    detailProc->setWorkingDirectory(m_repoPath);
-    detailProc->start("git", {"show", "--stat", "--oneline", hash});
+    m_commitFilesList->clear();
+    m_commitFilesList->setVisible(true);
+    if (m_commitFilesHeader)
+        m_commitFilesHeader->setVisible(true);
+    if (m_viewCommitFilesAction)
+        m_viewCommitFilesAction->setChecked(true);
 
-    connect(detailProc, &QProcess::finished, this, [detailProc](int ec, QProcess::ExitStatus es) {
-        detailProc->deleteLater();
+    m_commitDetailProcess->setWorkingDirectory(m_repoPath);
+    m_commitDetailProcess->start("git", {
+        "diff-tree", "--no-commit-id", "-r", "--name-status",
+        m_selectedCommitHash
+    });
+}
+
+void MainWindow::onCommitDetailFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+    if (exitStatus != QProcess::NormalExit || exitCode != 0)
+        return;
+
+    m_commitFilesList->clear();
+
+    const QString output = QString::fromUtf8(
+        m_commitDetailProcess->readAllStandardOutput());
+    const QStringList lines = output.split('\n', Qt::SkipEmptyParts);
+
+    for (const QString &line : lines) {
+        // Format: "M\tpath/to/file" or "A\tpath/to/file" etc.
+        const int tabPos = line.indexOf('\t');
+        if (tabPos < 0)
+            continue;
+
+        const QString status = line.left(tabPos);
+        const QString filePath = line.mid(tabPos + 1);
+        const QString fileName = filePath.section('/', -1);
+
+        // Show "M  filename.ext" with status prefix
+        auto *item = new QListWidgetItem(status + "  " + fileName);
+        item->setData(Qt::UserRole, filePath);
+
+        // Color the status letter
+        QColor color;
+        if (status == "M")       color = QColor("#f0c000");
+        else if (status == "A")  color = QColor("#40c040");
+        else if (status == "D")  color = QColor("#e04040");
+        else if (status == "R")  color = QColor("#c080ff");
+        else                     color = QColor("#c0c0c0");
+
+        item->setForeground(color);
+        m_commitFilesList->addItem(item);
+    }
+}
+
+void MainWindow::onCommitFileClicked(QListWidgetItem *item)
+{
+    if (!item)
+        return;
+
+    const QString filePath = item->data(Qt::UserRole).toString();
+    if (filePath.isEmpty() || m_selectedCommitHash.isEmpty())
+        return;
+
+    auto *diffProc = new QProcess(this);
+    diffProc->setWorkingDirectory(m_repoPath);
+    diffProc->start("git", {"show", m_selectedCommitHash, "--", filePath});
+
+    m_viewerStack->setCurrentIndex(0);
+    connect(diffProc, &QProcess::finished, this, [this, diffProc](int ec, QProcess::ExitStatus es) {
+        diffProc->deleteLater();
         if (es != QProcess::NormalExit || ec != 0)
             return;
-        qDebug().noquote() << QString::fromUtf8(detailProc->readAllStandardOutput());
+
+        m_fileContentViewer->setDiff(
+            QString::fromUtf8(diffProc->readAllStandardOutput()));
     });
 }
 
