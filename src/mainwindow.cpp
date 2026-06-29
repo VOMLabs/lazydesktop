@@ -1672,6 +1672,9 @@ void MainWindow::onHistoryItemClicked(QListWidgetItem *item)
     if (m_selectedCommitHash.isEmpty())
         return;
 
+    m_fileContentViewer->clear();
+    m_viewerStack->setCurrentIndex(1);
+
     m_commitFilesList->clear();
     m_commitFilesList->setVisible(true);
     if (m_commitFilesHeader)
