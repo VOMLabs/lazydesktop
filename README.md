@@ -15,6 +15,7 @@ Built with Qt 6 and C++23 — the same frameworks KDE Plasma ships with, requiri
 - **Branch management** — Switch, create, and delete branches from a dropdown
 - **Commit history** — Tabbed sidebar with colored commit list; click a commit to see changed files; click a file to see its diff
 - **Recent projects** — Sidebar overlay with persistent project history (stored in `~/vomlabs/lazydesktop/projects.yaml`)
+- **Scan Folder for Projects** — Bulk-import all Git repos from a folder's subdirectories at once via the drawer button
 - **Git bootstrapping** — Detects missing Git at startup and offers to install it via `pkexec`/`sudo` (Linux), `xcode-select` (macOS), or `winget` (Windows)
 - **Credential handling** — GIT_ASKPASS integration with a credential dialog for remote auth
 - **Auto-refresh** — `QFileSystemWatcher` on `.git/index` and `.git/HEAD` triggers debounced status refresh
@@ -28,12 +29,16 @@ Built with Qt 6 and C++23 — the same frameworks KDE Plasma ships with, requiri
 - Standard Qt widget rendering (no custom painting for the file list)
 - Colored status squares match the system icon size
 
-## Build
+## Build & Run (without installing)
 
 ```bash
 meson setup build
 ninja -C build
+./build/src/lazydesktop
 ```
+
+The binary runs directly from the build directory — no `make install` needed.
+Your projects and settings persist in `~/vomlabs/lazydesktop/projects.yaml`, independent of the build directory, so they survive rebuilds and reconfigures.
 
 ## Requirements
 

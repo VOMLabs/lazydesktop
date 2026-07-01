@@ -41,6 +41,9 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
 
+protected:
+    void closeEvent(QCloseEvent *event) override;
+
 private slots:
     void onProjectButtonClicked();
     void onRecentProjectClicked(QListWidgetItem *item);
@@ -71,6 +74,7 @@ private slots:
     void onOpenFileManager();
     void onOpenTerminal();
     void onOpenGitHub();
+    void onOpenSettings();
     void closeRepository();
     void onTreeContextMenu(const QPoint &pos);
     void onDiscardFile();
@@ -84,6 +88,7 @@ private:
     void setupUi();
     bool openRepository(const QString &path);
     static bool isGitRepository(const QString &path);
+    static bool isDirtyRepository(const QString &path);
     void startGitStatusQuery();
     void startGitUnpushedQuery();
     void startGitLogQuery();
@@ -103,6 +108,7 @@ private:
     void addRecentProject(const QString &path);
     void populateRecentList();
     void onRemoveRecentProject();
+    void onScanFolder();
 
     bool checkGitAvailable();
     void installGit();

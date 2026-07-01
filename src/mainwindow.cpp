@@ -122,7 +122,7 @@ public:
     }
 };
 
-static const int kMaxRecentProjects = 10;
+static const int kMaxRecentProjects = 100;
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -167,6 +167,12 @@ MainWindow::~MainWindow()
         m_createBranchProcess->waitForFinished(3000);
     }
     cleanupAskPass();
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    saveRecentProjects();
+    QMainWindow::closeEvent(event);
 }
 
 void MainWindow::setupUi()
@@ -229,6 +235,11 @@ void MainWindow::setupUi()
     m_openGitHubAction->setEnabled(false);
     connect(m_openGitHubAction, &QAction::triggered, this, &MainWindow::onOpenGitHub);
 
+    filesMenu->addSeparator();
+
+    auto *settingsAction = filesMenu->addAction("Settings...");
+    connect(settingsAction, &QAction::triggered, this, &MainWindow::onOpenSettings);
+
     // --- View menu ---
     auto *viewMenu = menuBar->addMenu("View");
 
@@ -266,6 +277,13 @@ void MainWindow::setupUi()
     m_recentList->setAlternatingRowColors(true);
 
     frameLayout->addWidget(m_openProjectButton);
+
+    auto *scanButton = new QPushButton("Scan Folder for Projects");
+    scanButton->setMinimumHeight(28);
+    scanButton->setToolTip("Scan a folder for subdirectories that are Git repositories and add them all");
+    connect(scanButton, &QPushButton::clicked, this, &MainWindow::onScanFolder);
+    frameLayout->addWidget(scanButton);
+
     frameLayout->addWidget(m_recentList, 1);
 
     // --- Main content widgets ---
@@ -584,6 +602,24 @@ void MainWindow::setupUi()
             this, &MainWindow::onRefreshDebounce);
 }
 
+// --- Git config helpers ---
+
+static QString runGitConfig(const QString &key)
+{
+    QProcess proc;
+    proc.start("git", {"config", "--global", key});
+    if (!proc.waitForFinished(3000) || proc.exitCode() != 0)
+        return {};
+    return QString::fromUtf8(proc.readAllStandardOutput()).trimmed();
+}
+
+static void runGitConfigSet(const QString &key, const QString &value)
+{
+    QProcess proc;
+    proc.start("git", {"config", "--global", key, value});
+    proc.waitForFinished(3000);
+}
+
 // --- Recent projects persistence ---
 
 static QString projectsFilePath()
@@ -662,6 +698,13 @@ void MainWindow::populateRecentList()
         layout->setContentsMargins(4, 2, 4, 2);
         layout->setSpacing(4);
 
+        auto *dirtyDot = new QLabel();
+        dirtyDot->setFixedSize(8, 8);
+        if (isDirtyRepository(path)) {
+            dirtyDot->setStyleSheet("background: #f0c000; border-radius: 4px;");
+            dirtyDot->setToolTip("Uncommitted changes");
+        }
+
         auto *label = new QPushButton(QDir(path).dirName());
         label->setToolTip(path);
         label->setCursor(Qt::PointingHandCursor);
@@ -680,6 +723,7 @@ void MainWindow::populateRecentList()
         });
         connect(btn, &QPushButton::clicked, this, &MainWindow::onRemoveRecentProject);
 
+        layout->addWidget(dirtyDot);
         layout->addWidget(label, 1);
         layout->addWidget(btn, 0, Qt::AlignRight);
         row->setLayout(layout);
@@ -733,6 +777,45 @@ void MainWindow::onRemoveRecentProject()
                 dir.removeRecursively();
         }
     }
+}
+
+void MainWindow::onScanFolder()
+{
+    const QString dir = QFileDialog::getExistingDirectory(
+        this, "Select Folder to Scan for Git Repositories");
+    if (dir.isEmpty())
+        return;
+
+    QDir rootDir(dir);
+    const QStringList subdirs = rootDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+
+    int added = 0;
+    int skipped = 0;
+    for (const QString &subdir : subdirs) {
+        const QString fullPath = rootDir.filePath(subdir);
+        if (isGitRepository(fullPath)) {
+            m_recentProjects.removeAll(fullPath);
+            m_recentProjects.prepend(fullPath);
+            added++;
+        } else {
+            skipped++;
+        }
+    }
+
+    if (added == 0 && skipped == 0) {
+        QMessageBox::information(this, "No Subdirectories Found",
+            "The selected folder has no subdirectories.");
+        return;
+    }
+
+    saveRecentProjects();
+    populateRecentList();
+    m_recentDrawer->setVisible(false);
+
+    QMessageBox::information(this, "Scan Complete",
+        QString("Added %1 git project(s) to the list.\n"
+                "Skipped %2 folder(s) without a .git directory.")
+            .arg(added).arg(skipped));
 }
 
 // --- Project button & drawer ---
@@ -904,10 +987,113 @@ void MainWindow::onOpenGitHub()
     });
 }
 
+void MainWindow::onOpenSettings()
+{
+    QDialog dialog(this);
+    dialog.setWindowTitle("Settings");
+    dialog.setMinimumSize(500, 350);
+
+    auto *layout = new QHBoxLayout(&dialog);
+
+    auto *categories = new QListWidget();
+    categories->setFixedWidth(120);
+    categories->addItem("General");
+    categories->addItem("Appearance");
+    categories->addItem("Git");
+
+    auto *stack = new QStackedWidget();
+
+    // General page
+    auto *generalPage = new QWidget();
+    auto *generalLayout = new QVBoxLayout(generalPage);
+    auto *generalPlaceholder = new QLabel("General settings coming soon.");
+    generalPlaceholder->setAlignment(Qt::AlignCenter);
+    generalPlaceholder->setStyleSheet("color: gray;");
+    generalLayout->addWidget(generalPlaceholder);
+
+    // Appearance page
+    auto *appearancePage = new QWidget();
+    auto *appearanceLayout = new QVBoxLayout(appearancePage);
+    auto *appearancePlaceholder = new QLabel("Appearance settings coming soon.");
+    appearancePlaceholder->setAlignment(Qt::AlignCenter);
+    appearancePlaceholder->setStyleSheet("color: gray;");
+    appearanceLayout->addWidget(appearancePlaceholder);
+
+    // Git page
+    auto *gitPage = new QWidget();
+    auto *gitLayout = new QFormLayout(gitPage);
+    gitLayout->setContentsMargins(12, 12, 12, 12);
+    gitLayout->setSpacing(8);
+
+    auto *gitNameInput = new QLineEdit();
+    gitNameInput->setPlaceholderText("Your Name");
+    QString storedName = runGitConfig("user.name");
+    if (!storedName.isEmpty())
+        gitNameInput->setText(storedName);
+
+    auto *gitEmailInput = new QLineEdit();
+    gitEmailInput->setPlaceholderText("you@example.com");
+    QString storedEmail = runGitConfig("user.email");
+    if (!storedEmail.isEmpty())
+        gitEmailInput->setText(storedEmail);
+
+    gitLayout->addRow("User Name:", gitNameInput);
+    gitLayout->addRow("User Email:", gitEmailInput);
+
+    auto *gitInfoLabel = new QLabel("These values are read from and saved to global git config.");
+    gitInfoLabel->setStyleSheet("color: gray; font-size: 11px;");
+    gitInfoLabel->setWordWrap(true);
+    gitLayout->addRow(gitInfoLabel);
+
+    // Save on accept
+    connect(&dialog, &QDialog::accepted, this, [gitNameInput, gitEmailInput]() {
+        const QString name = gitNameInput->text().trimmed();
+        const QString email = gitEmailInput->text().trimmed();
+        if (!name.isEmpty())
+            runGitConfigSet("user.name", name);
+        if (!email.isEmpty())
+            runGitConfigSet("user.email", email);
+    });
+
+    stack->addWidget(generalPage);
+    stack->addWidget(appearancePage);
+    stack->addWidget(gitPage);
+
+    connect(categories, &QListWidget::currentRowChanged, stack, &QStackedWidget::setCurrentIndex);
+
+    auto *rightPanel = new QWidget();
+    auto *rightLayout = new QVBoxLayout(rightPanel);
+    rightLayout->addWidget(stack, 1);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    rightLayout->addWidget(buttons);
+
+    layout->addWidget(categories);
+    layout->addWidget(rightPanel, 1);
+
+    categories->setCurrentRow(0);
+
+    dialog.exec();
+}
+
 bool MainWindow::isGitRepository(const QString &path)
 {
     const QFileInfo gitInfo(QDir(path).filePath(".git"));
     return gitInfo.exists();
+}
+
+bool MainWindow::isDirtyRepository(const QString &path)
+{
+    if (!QDir(path).exists())
+        return false;
+    QProcess proc;
+    proc.setWorkingDirectory(path);
+    proc.start("git", {"status", "--porcelain"});
+    if (!proc.waitForFinished(3000) || proc.exitCode() != 0)
+        return false;
+    return !proc.readAllStandardOutput().trimmed().isEmpty();
 }
 
 static QIcon statusIcon(const QColor &color)
