@@ -1202,7 +1202,7 @@ void MainWindow::onGenerateCommitMessage()
     messages.append(msgUser);
 
     QJsonObject body;
-    body["model"] = "gpt-4o-mini";
+    body["model"] = settings.value("openrouter/model", "gpt-4o-mini").toString();
     body["messages"] = messages;
 
     QNetworkRequest req(QUrl("https://openrouter.ai/api/v1/chat/completions"));
@@ -1352,17 +1352,27 @@ void MainWindow::onOpenSettings()
     auto *aiPage = new QWidget();
     auto *aiLayout = new QVBoxLayout(aiPage);
     aiLayout->setContentsMargins(12, 12, 12, 12);
-    auto *aiLabel = new QLabel("System prompt sent to the AI with the diff:");
+
+    auto *aiModelLabel = new QLabel("Model:");
+    auto *aiModelInput = new QLineEdit();
+    aiModelInput->setPlaceholderText("gpt-4o-mini");
+    aiModelInput->setText(settings.value("openrouter/model", "gpt-4o-mini").toString());
+    aiLayout->addWidget(aiModelLabel);
+    aiLayout->addWidget(aiModelInput);
+
+    auto *aiPromptLabel = new QLabel("System prompt sent to the AI with the diff:");
     auto *aiPromptInput = new QPlainTextEdit();
     aiPromptInput->setPlainText(settings.value("ai/system_prompt",
         "Generate a Conventional Commits summary and a casual description of all changes.").toString());
     aiPromptInput->setFixedHeight(120);
-    aiLayout->addWidget(aiLabel);
+    aiLayout->addWidget(aiPromptLabel);
     aiLayout->addWidget(aiPromptInput, 1);
 
     // Save on accept
-    connect(&dialog, &QDialog::accepted, this, [&settings, apiKeyInput, themeCombo, gitNameInput, gitEmailInput, aiPromptInput]() {
+    connect(&dialog, &QDialog::accepted, this, [&settings, apiKeyInput, themeCombo, gitNameInput, gitEmailInput, aiModelInput, aiPromptInput]() {
         settings.setValue("openrouter/key", apiKeyInput->text());
+        settings.setValue("openrouter/model", aiModelInput->text().trimmed().isEmpty()
+            ? "gpt-4o-mini" : aiModelInput->text().trimmed());
         settings.setValue("appearance/theme", themeCombo->currentIndex() == 1 ? "dark" : "system");
         auto *app = qobject_cast<QApplication *>(qApp);
         if (app && themeCombo->currentIndex() == 1)
