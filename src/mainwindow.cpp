@@ -211,12 +211,14 @@ void MainWindow::setupUi()
     m_branchComboBox->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     m_branchComboBox->setEnabled(false);
 
-    m_deleteBranchButton = new QPushButton(QString::fromUtf8("\u2716"));
+    m_deleteBranchButton = new QPushButton();
     m_deleteBranchButton->setFixedSize(24, 24);
     m_deleteBranchButton->setEnabled(false);
+    m_deleteBranchButton->setIcon(style()->standardIcon(QStyle::SP_DialogCloseButton));
+    m_deleteBranchButton->setIconSize(QSize(14, 14));
     m_deleteBranchButton->setStyleSheet(
-        "QPushButton { color: red; border: none; font-weight: bold; }"
-        "QPushButton:hover { background: #ffcccc; }");
+        "QPushButton { border: none; }"
+        "QPushButton:hover { background: #ffcccc; border-radius: 3px; }");
 
     topLayout->addWidget(m_projectButton);
     topLayout->addWidget(m_currentPathLabel);
@@ -277,13 +279,20 @@ void MainWindow::setupUi()
     auto *frameLayout = new QVBoxLayout(drawerFrame);
     frameLayout->setContentsMargins(6, 6, 6, 6);
 
-    m_openProjectButton = new QPushButton("+ Open Project");
-    m_openProjectButton->setMinimumHeight(32);
+    m_addProjectButton = new QPushButton("+ Add");
+    m_addProjectButton->setMinimumHeight(32);
+    {
+        auto *menu = new QMenu(m_addProjectButton);
+        menu->addAction("Clone Repository", this, &MainWindow::onCloneRepository);
+        menu->addAction("Create Repository", this, &MainWindow::onCreateRepository);
+        menu->addAction("Load Existing", this, &MainWindow::onOpenExistingProject);
+        m_addProjectButton->setMenu(menu);
+    }
 
     m_recentList = new QListWidget();
     m_recentList->setAlternatingRowColors(true);
 
-    frameLayout->addWidget(m_openProjectButton);
+    frameLayout->addWidget(m_addProjectButton);
 
     auto *scanButton = new QPushButton("Scan Folder for Projects");
     scanButton->setMinimumHeight(28);
@@ -358,9 +367,16 @@ void MainWindow::setupUi()
     placeholderLabel->setStyleSheet("color: gray; font-size: 14px;");
     placeholderLayout->addWidget(placeholderLabel);
 
+    m_binaryPreview = new QLabel();
+    m_binaryPreview->setAlignment(Qt::AlignCenter);
+    m_binaryPreview->setScaledContents(false);
+    m_binaryPreview->setStyleSheet("background: #1e1e1e;");
+    m_binaryPreview->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
     m_viewerStack = new QStackedWidget();
-    m_viewerStack->addWidget(m_fileContentViewer);  // page 0
-    m_viewerStack->addWidget(m_placeholderWidget);  // page 1
+    m_viewerStack->addWidget(m_fileContentViewer);  // page 0 – diff
+    m_viewerStack->addWidget(m_placeholderWidget);  // page 1 – empty
+    m_viewerStack->addWidget(m_binaryPreview);      // page 2 – image/video
     m_viewerStack->setCurrentIndex(1);
 
     // --- Commit pane ---
@@ -381,9 +397,11 @@ void MainWindow::setupUi()
     commitHeaderLayout->setContentsMargins(4, 2, 4, 2);
     auto *commitTitle = new QLabel("Commit");
     commitTitle->setStyleSheet("font-weight: bold; font-size: 12px;");
-    auto *commitCloseBtn = new QPushButton(QStringLiteral("\u2716"));
+    auto *commitCloseBtn = new QPushButton();
     commitCloseBtn->setFixedSize(20, 20);
     commitCloseBtn->setFlat(true);
+    commitCloseBtn->setIcon(style()->standardIcon(QStyle::SP_DialogCloseButton));
+    commitCloseBtn->setIconSize(QSize(12, 12));
     commitCloseBtn->setStyleSheet("QPushButton { border: none; color: #8b949e; }"
                                    "QPushButton:hover { color: #e6edf3; }");
     commitHeaderLayout->addWidget(commitTitle, 1);
@@ -399,23 +417,88 @@ void MainWindow::setupUi()
     commitBodyLayout->addWidget(m_summaryInput);
     commitBodyLayout->addWidget(m_descriptionInput);
 
+    m_aiCommitButton = new QPushButton();
+    m_aiCommitButton->setFixedSize(28, 28);
+    m_aiCommitButton->setEnabled(false);
+    m_aiCommitButton->setFlat(true);
+    m_aiCommitButton->setToolTip("Generate commit message with AI");
+    {
+        QPixmap pm(20, 20);
+        pm.fill(Qt::transparent);
+        QPainter p(&pm);
+        p.setPen(QColor("#d4d4d4"));
+        QFont f = p.font();
+        f.setPixelSize(13);
+        f.setBold(true);
+        p.setFont(f);
+        p.drawText(QRect(0, 0, 20, 20), Qt::AlignCenter, "AI");
+        p.end();
+        m_aiCommitButton->setIcon(QIcon(pm));
+        m_aiCommitButton->setIconSize(QSize(20, 20));
+    }
+    connect(m_aiCommitButton, &QPushButton::clicked, this, &MainWindow::onGenerateCommitMessage);
+
+    m_aiCommitButton->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_aiCommitButton, &QPushButton::customContextMenuRequested, this, [this](const QPoint &pos) {
+        QMenu menu;
+        QStringList providers{"OpenRouter", "OpenAI", "Anthropic", "Gemini",
+                              "Ollama", "LMStudio", "Google AI Studio"};
+        QSettings s("lazydesktop", "lazydesktop");
+        QString current = s.value("ai/provider", "OpenRouter").toString();
+        for (const QString &p : providers) {
+            auto *action = menu.addAction(p, this, [p]() {
+                QSettings s("lazydesktop", "lazydesktop");
+                s.setValue("ai/provider", p);
+            });
+            if (p == current)
+                action->setCheckable(true);
+        }
+        menu.exec(m_aiCommitButton->mapToGlobal(pos));
+    });
+
+    // Skip hooks toggle
+    m_skipHooksButton = new QPushButton();
+    m_skipHooksButton->setFixedSize(28, 28);
+    m_skipHooksButton->setCheckable(true);
+    m_skipHooksButton->setFlat(true);
+    m_skipHooksButton->setToolTip("Skip pre-commit hooks");
+    {
+        QIcon icon = QIcon::fromTheme("media-skip-forward");
+        if (icon.isNull())
+            icon = style()->standardIcon(QStyle::SP_MediaSkipForward);
+        m_skipHooksButton->setIcon(icon);
+        m_skipHooksButton->setIconSize(QSize(18, 18));
+    }
+    m_skipHooksButton->setStyleSheet(
+        "QPushButton { border: none; }"
+        "QPushButton:checked { background: #264f78; border-radius: 4px; }");
+
+    // Co-author button
+    m_coAuthorButton = new QPushButton();
+    m_coAuthorButton->setFixedSize(28, 28);
+    m_coAuthorButton->setFlat(true);
+    m_coAuthorButton->setToolTip("Add co-authors from changes");
+    connect(m_coAuthorButton, &QPushButton::clicked, this, &MainWindow::onAddCoAuthors);
+    {
+        QIcon icon = QIcon::fromTheme("system-users");
+        if (icon.isNull())
+            icon = style()->standardIcon(QStyle::SP_ComputerIcon);
+        m_coAuthorButton->setIcon(icon);
+        m_coAuthorButton->setIconSize(QSize(18, 18));
+    }
+
     auto *aiRow = new QHBoxLayout();
     aiRow->setContentsMargins(0, 0, 0, 0);
-    m_aiCommitButton = new QPushButton(QString::fromUtf8("\xF0\x9F\xA4\x96 Generate"));
-    m_aiCommitButton->setFixedHeight(24);
-    m_aiCommitButton->setEnabled(false);
-    m_aiCommitButton->setToolTip("Generate commit message with AI");
-    connect(m_aiCommitButton, &QPushButton::clicked, this, &MainWindow::onGenerateCommitMessage);
-    auto *editPromptBtn = new QPushButton("Edit Prompt");
-    editPromptBtn->setFixedHeight(24);
-    editPromptBtn->setFlat(true);
-    editPromptBtn->setStyleSheet("QPushButton { color: #888; font-size: 11px; border: none; }"
-                                  "QPushButton:hover { color: palette(highlight); }");
-    connect(editPromptBtn, &QPushButton::clicked, this, &MainWindow::onEditSystemPrompt);
     aiRow->addWidget(m_aiCommitButton);
-    aiRow->addWidget(editPromptBtn);
+    aiRow->addWidget(m_skipHooksButton);
+    aiRow->addWidget(m_coAuthorButton);
     aiRow->addStretch();
-    commitBodyLayout->addLayout(aiRow);
+    m_aiRowContainer = new QWidget();
+    m_aiRowContainer->setLayout(aiRow);
+    commitBodyLayout->addWidget(m_aiRowContainer);
+
+    // AI row starts hidden; visibility checked asynchronously after setupUi
+    m_aiRowContainer->hide();
 
     commitBodyLayout->addWidget(m_commitButton);
     commitLayout->addWidget(commitBody, 1);
@@ -466,9 +549,11 @@ void MainWindow::setupUi()
     cfHeaderLayout->setContentsMargins(6, 2, 6, 2);
     auto *cfTitle = new QLabel("Commit Files");
     cfTitle->setStyleSheet("font-weight: bold;");
-    auto *cfCloseBtn = new QPushButton(QStringLiteral("\u2716"));
+    auto *cfCloseBtn = new QPushButton();
     cfCloseBtn->setFixedSize(20, 20);
     cfCloseBtn->setFlat(true);
+    cfCloseBtn->setIcon(style()->standardIcon(QStyle::SP_DialogCloseButton));
+    cfCloseBtn->setIconSize(QSize(12, 12));
     cfCloseBtn->setStyleSheet("QPushButton { border: none; color: #8b949e; }"
                                "QPushButton:hover { color: #e6edf3; }");
     cfHeaderLayout->addWidget(cfTitle, 1);
@@ -601,8 +686,7 @@ void MainWindow::setupUi()
             this, &MainWindow::onDeleteBranch);
     connect(m_projectButton, &QPushButton::clicked,
             this, &MainWindow::onProjectButtonClicked);
-    connect(m_openProjectButton, &QPushButton::clicked,
-            this, &MainWindow::onProjectButtonClicked);
+    // m_addProjectButton uses setMenu() instead of clicked
     connect(m_recentList, &QListWidget::itemClicked,
             this, &MainWindow::onRecentProjectClicked);
     connect(m_gitStatusTree, &QTreeWidget::itemClicked,
@@ -636,6 +720,26 @@ void MainWindow::setupUi()
             this, &MainWindow::onRefreshDebounce);
 
     m_networkManager = new QNetworkAccessManager(this);
+
+    // Check AI availability asynchronously
+    QTimer::singleShot(0, this, [this]() {
+        QSettings s("lazydesktop", "lazydesktop");
+        if (!s.value("openrouter/key").toString().isEmpty()) {
+            m_aiRowContainer->show();
+            return;
+        }
+        auto tryLocal = [this](const QString &url) {
+            auto *reply = m_networkManager->get(QNetworkRequest(QUrl(url)));
+            connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+                if (reply->error() != QNetworkReply::ConnectionRefusedError
+                    && reply->error() != QNetworkReply::HostNotFoundError)
+                    m_aiRowContainer->show();
+                reply->deleteLater();
+            });
+        };
+        tryLocal("http://localhost:11434/api/tags");   // Ollama
+        tryLocal("http://localhost:1234/v1/models");    // LMStudio
+    });
 }
 
 // --- Git config helpers ---
@@ -658,25 +762,34 @@ static void runGitConfigSet(const QString &key, const QString &value)
 
 static QString gitRemoteOwner(const QString &path)
 {
-    QProcess proc;
-    proc.setWorkingDirectory(path);
-    proc.start("git", {"config", "--local", "remote.origin.url"});
-    if (!proc.waitForFinished(3000) || proc.exitCode() != 0)
-        return {};
+    auto readUrl = [&](const QStringList &args) -> QString {
+        QProcess proc;
+        proc.setWorkingDirectory(path);
+        proc.start("git", args);
+        if (!proc.waitForFinished(3000) || proc.exitCode() != 0)
+            return {};
+        return QString::fromUtf8(proc.readAllStandardOutput()).trimmed();
+    };
 
-    QString url = QString::fromUtf8(proc.readAllStandardOutput()).trimmed();
+    QString url = readUrl({"config", "--local", "remote.origin.url"});
+    if (url.isEmpty())
+        url = readUrl({"remote", "get-url", "origin"});
     if (url.isEmpty())
         return {};
 
     if (url.endsWith(".git"))
         url.chop(4);
 
-    // Normalize SSH: git@github.com:owner/repo → ssh://git@github.com/owner/repo
-    if (url.startsWith("git@"))
-        url.replace(':', '/').prepend("ssh://");
+    // Normalize SSH: git@github.com:owner/repo → https://github.com/owner/repo
+    if (url.startsWith("git@")) {
+        url.remove(0, 4);
+        url.replace(':', '/');
+        url.prepend("https://");
+    }
 
-    // Extract the path segment right after the hostname
-    QRegularExpression re("^[a-z]+://[^@]*@?[^/]+/([^/]+)");
+    // Extract owner: the path segment right after the host
+    // Works for https://host/owner/repo, ssh://git@host/owner/repo, etc.
+    QRegularExpression re("^[a-z]+://[^/]+/([^/]+)");
     auto m = re.match(url);
     if (m.hasMatch())
         return m.captured(1);
@@ -924,6 +1037,91 @@ void MainWindow::onClearAllProjects()
     populateRecentList();
 }
 
+void MainWindow::onCloneRepository()
+{
+    bool ok = false;
+    QString url = QInputDialog::getText(this, "Clone Repository",
+        "Git remote URL:", QLineEdit::Normal, {}, &ok);
+    if (!ok || url.trimmed().isEmpty())
+        return;
+
+    QString dest = QFileDialog::getExistingDirectory(this, "Destination Directory");
+    if (dest.isEmpty())
+        return;
+
+    // Derive folder name from URL (e.g. "owner/repo" → "repo", "repo.git" → "repo")
+    QString repoName = url.section('/', -1);
+    if (repoName.endsWith(".git"))
+        repoName.chop(4);
+    dest = dest + "/" + repoName;
+
+    QProcess proc;
+    proc.setWorkingDirectory(QFileInfo(dest).absolutePath());
+    proc.start("git", {"clone", url.trimmed(), dest});
+    proc.setProcessChannelMode(QProcess::MergedChannels);
+
+    QMessageBox info(this);
+    info.setWindowTitle("Cloning");
+    info.setText("Cloning " + repoName + "…");
+    info.setStandardButtons(QMessageBox::NoButton);
+    info.show();
+
+    if (!proc.waitForFinished(120000) || proc.exitCode() != 0) {
+        info.done(0);
+        QMessageBox::warning(this, "Clone Failed",
+            "Failed to clone repository:\n" + QString::fromUtf8(proc.readAll()));
+        return;
+    }
+    info.done(0);
+
+    m_recentProjects.removeAll(dest);
+    m_recentProjects.prepend(dest);
+    saveRecentProjects();
+    populateRecentList();
+    m_recentDrawer->setVisible(false);
+    openRepository(dest);
+}
+
+void MainWindow::onCreateRepository()
+{
+    QString dir = QFileDialog::getExistingDirectory(this, "Directory for New Repository");
+    if (dir.isEmpty())
+        return;
+
+    QMessageBox info(this);
+    info.setWindowTitle("Creating");
+    info.setText("Initializing git repository…");
+    info.setStandardButtons(QMessageBox::NoButton);
+    info.show();
+
+    QProcess proc;
+    proc.setWorkingDirectory(dir);
+    proc.start("git", {"init"});
+    if (!proc.waitForFinished(10000) || proc.exitCode() != 0) {
+        info.done(0);
+        QMessageBox::warning(this, "Init Failed",
+            "Failed to initialize git repository:\n"
+            + QString::fromUtf8(proc.readAll()));
+        return;
+    }
+    info.done(0);
+
+    m_recentProjects.removeAll(dir);
+    m_recentProjects.prepend(dir);
+    saveRecentProjects();
+    populateRecentList();
+    m_recentDrawer->setVisible(false);
+    openRepository(dir);
+}
+
+void MainWindow::onOpenExistingProject()
+{
+    const QString dir = QFileDialog::getExistingDirectory(
+        this, "Open Git Repository");
+    if (!dir.isEmpty())
+        openRepository(dir);
+}
+
 void MainWindow::onScanFolder()
 {
     const QString dir = QFileDialog::getExistingDirectory(
@@ -970,15 +1168,6 @@ void MainWindow::onProjectButtonClicked()
     auto *btn = qobject_cast<QPushButton *>(sender());
     if (!btn)
         return;
-
-    // "Open Project" button inside the drawer always opens folder dialog
-    if (btn == m_openProjectButton) {
-        const QString dir = QFileDialog::getExistingDirectory(
-            this, "Open Git Repository");
-        if (!dir.isEmpty())
-            openRepository(dir);
-        return;
-    }
 
     // m_projectButton behaviour depends on state
     if (m_repoPath.isEmpty()) {
@@ -1038,6 +1227,8 @@ bool MainWindow::openRepository(const QString &path)
 
     addRecentProject(path);
     m_aiCommitButton->setEnabled(true);
+    m_skipHooksButton->setEnabled(true);
+    m_coAuthorButton->setEnabled(true);
     loadBranches();
     startGitStatusQuery();
     startGitLogQuery();
@@ -1076,6 +1267,8 @@ void MainWindow::closeRepository()
     m_deleteBranchButton->setEnabled(false);
     m_openGitHubAction->setEnabled(false);
     m_aiCommitButton->setEnabled(false);
+    m_skipHooksButton->setEnabled(false);
+    m_coAuthorButton->setEnabled(false);
     m_currentBranch.clear();
     m_selectedCommitHash.clear();
     m_fsWatcher->removePaths(m_fsWatcher->files());
@@ -1134,6 +1327,80 @@ void MainWindow::onOpenGitHub()
     });
 }
 
+// --- Custom YAML themes ---
+
+struct Theme {
+    QString name;
+    QMap<QString, QString> colors;
+};
+
+static QString themesDirPath()
+{
+#ifdef Q_OS_WIN
+    return QString("C:/Users/%1/vomlabs/lazydesktop/themes")
+        .arg(qEnvironmentVariable("USERNAME"));
+#else
+    return QDir::homePath() + "/.config/lazydesktop/themes";
+#endif
+}
+
+static QList<Theme> loadCustomThemes()
+{
+    QList<Theme> list;
+    QDir dir(themesDirPath());
+    if (!dir.exists())
+        return list;
+    const QStringList files = dir.entryList({"*.theme.yaml"}, QDir::Files, QDir::Name);
+    for (const QString &fn : files) {
+        try {
+            YAML::Node root = YAML::LoadFile(dir.filePath(fn).toStdString());
+            if (!root["name"] || !root["colors"])
+                continue;
+            Theme t;
+            t.name = QString::fromStdString(root["name"].as<std::string>());
+            auto colors = root["colors"];
+            for (auto it = colors.begin(); it != colors.end(); ++it) {
+                QString key = QString::fromStdString(it->first.as<std::string>());
+                QString val = QString::fromStdString(it->second.as<std::string>());
+                t.colors[key] = val;
+            }
+            list.append(t);
+        } catch (...) {
+            continue;
+        }
+    }
+    return list;
+}
+
+static QString generateStylesheet(const Theme &t)
+{
+    auto c = [&](const QString &k, const QString &fallback) -> QString {
+        return t.colors.value(k, fallback);
+    };
+    return QString(
+        "QWidget { background-color: %1; color: %2; }"
+        "QTreeWidget, QListWidget { background-color: %3; }"
+        "QPushButton { background-color: %4; color: %5; }"
+        "QLineEdit, QTextEdit { background-color: %6; color: %7; }"
+        "QToolTip { background-color: %8; color: %9; }")
+        .arg(c("background", "#1e1e1e"))
+        .arg(c("foreground", "#d4d4d4"))
+        .arg(c("widget_background", "#252526"))
+        .arg(c("button_background", "#0e639c"))
+        .arg(c("button_foreground", "white"))
+        .arg(c("input_background", "#3c3c3c"))
+        .arg(c("input_foreground", "#d4d4d4"))
+        .arg(c("tooltip_background", "#3c3c3c"))
+        .arg(c("tooltip_foreground", "#d4d4d4"));
+}
+
+static Theme findTheme(const QString &name, const QList<Theme> &customs)
+{
+    for (const auto &t : customs)
+        if (t.name == name) return t;
+    return {};
+}
+
 void MainWindow::applySavedTheme()
 {
     QSettings settings("lazydesktop", "lazydesktop");
@@ -1141,25 +1408,45 @@ void MainWindow::applySavedTheme()
     if (!app)
         return;
 
-    if (settings.value("appearance/theme", "system").toString() == "dark")
-        app->setStyleSheet("QWidget { background-color: #1e1e1e; color: #d4d4d4; }"
-                           "QTreeWidget, QListWidget { background-color: #252526; }"
-                           "QPushButton { background-color: #0e639c; color: white; }"
-                           "QLineEdit, QTextEdit { background-color: #3c3c3c; color: #d4d4d4; }"
-                           "QToolTip { background-color: #3c3c3c; color: #d4d4d4; }");
-    else
+    QString theme = settings.value("appearance/theme", "system").toString();
+
+    if (theme == "system") {
         app->setStyleSheet({});
+    } else if (theme == "dark") {
+        app->setStyleSheet(
+            "QWidget { background-color: #1e1e1e; color: #d4d4d4; }"
+            "QTreeWidget, QListWidget { background-color: #252526; }"
+            "QPushButton { background-color: #0e639c; color: white; }"
+            "QLineEdit, QTextEdit { background-color: #3c3c3c; color: #d4d4d4; }"
+            "QToolTip { background-color: #3c3c3c; color: #d4d4d4; }");
+    } else {
+        // Custom theme by name
+        Theme t = findTheme(theme, loadCustomThemes());
+        if (t.name.isEmpty())
+            app->setStyleSheet({});
+        else
+            app->setStyleSheet(generateStylesheet(t));
+    }
 }
 
 void MainWindow::onGenerateCommitMessage()
 {
     QSettings settings("lazydesktop", "lazydesktop");
-    const QString apiKey = settings.value("openrouter/key").toString();
-    if (apiKey.isEmpty()) {
-        QMessageBox::information(this, "API Key Required",
-            "No OpenRouter API key configured.\n\n"
-            "Go to Settings \u2192 General to add one.");
-        return;
+    const QString provider = settings.value("ai/provider", "OpenRouter").toString();
+    const QString model = settings.value("openrouter/model", "gpt-4o-mini").toString();
+
+    // Local providers don't need an API key
+    bool isLocal = provider == "Ollama" || provider == "LMStudio";
+
+    QString apiKey;
+    if (!isLocal) {
+        apiKey = settings.value("openrouter/key").toString();
+        if (apiKey.isEmpty()) {
+            QMessageBox::information(this, "API Key Required",
+                "No OpenRouter API key configured.\n\n"
+                "Go to Settings \u2192 AI to add one.");
+            return;
+        }
     }
 
     QStringList files = checkedFiles();
@@ -1170,7 +1457,8 @@ void MainWindow::onGenerateCommitMessage()
     }
 
     m_aiCommitButton->setEnabled(false);
-    m_aiCommitButton->setText(QString::fromUtf8("\xF0\x9F\xA4\x96 Generating\u2026"));
+    m_summaryInput->setEnabled(false);
+    m_descriptionInput->setEnabled(false);
 
     // Collect diffs
     QStringList diffParts;
@@ -1202,24 +1490,105 @@ void MainWindow::onGenerateCommitMessage()
     messages.append(msgUser);
 
     QJsonObject body;
-    body["model"] = settings.value("openrouter/model", "gpt-4o-mini").toString();
+    body["model"] = model;
     body["messages"] = messages;
 
-    QNetworkRequest req(QUrl("https://openrouter.ai/api/v1/chat/completions"));
-    req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-    req.setRawHeader("Authorization", ("Bearer " + apiKey).toUtf8());
+    // Determine endpoint and auth based on provider
+    QUrl url;
+    QByteArray authHeader;
 
-    QNetworkReply *reply = m_networkManager->post(req, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    if (provider == "OpenRouter") {
+        url = "https://openrouter.ai/api/v1/chat/completions";
+        authHeader = "Bearer " + apiKey.toUtf8();
+    } else if (provider == "OpenAI") {
+        url = "https://api.openai.com/v1/chat/completions";
+        authHeader = "Bearer " + apiKey.toUtf8();
+    } else if (provider == "Anthropic") {
+        url = "https://api.anthropic.com/v1/messages";
+        authHeader = "Bearer " + apiKey.toUtf8();
+        // Anthropic uses a different request format
+        body.remove("messages");
+        QJsonObject anonMsg;
+        anonMsg["role"] = "user";
+        anonMsg["content"] = "System: " + systemPrompt + "\n\n" + userContent;
+        QJsonArray anonMessages;
+        anonMessages.append(anonMsg);
+        body["messages"] = anonMessages;
+        body["max_tokens"] = 1024;
+    } else if (provider == "Gemini" || provider == "Google AI Studio") {
+        // Gemini uses key as query param and different format
+        QString geminiKey = apiKey;
+        url = "https://generativelanguage.googleapis.com/v1beta/models/"
+              + model + ":generateContent?key=" + geminiKey;
+        // Convert messages to Gemini format
+        body.remove("messages");
+        QJsonArray contents;
+        QJsonObject part;
+        part["text"] = "System: " + systemPrompt + "\n\n" + userContent;
+        QJsonArray parts;
+        parts.append(part);
+        QJsonObject content;
+        content["role"] = "user";
+        content["parts"] = parts;
+        contents.append(content);
+        body["contents"] = contents;
+        authHeader.clear();
+    } else if (provider == "Ollama") {
+        url = "http://localhost:11434/api/chat";
+        body.remove("model");
+        body["model"] = model;
+        // Ollama uses stream=false by default in /api/chat
+        body["stream"] = false;
+        authHeader.clear();
+    } else if (provider == "LMStudio") {
+        url = "http://localhost:1234/v1/chat/completions";
+        authHeader.clear();
+    }
+
+    QNetworkRequest req(url);
+    req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    if (!authHeader.isEmpty())
+        req.setRawHeader("Authorization", authHeader);
+    if (provider == "Anthropic")
+        req.setRawHeader("anthropic-version", "2023-06-01");
+
+    QByteArray payload = QJsonDocument(body).toJson(QJsonDocument::Compact);
+    QNetworkReply *reply = m_networkManager->post(req, payload);
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         reply->deleteLater();
         onAiResponse(reply);
     });
 }
 
+static QString extractAiText(const QJsonObject &obj, const QString &provider)
+{
+    if (provider == "Anthropic") {
+        QJsonArray c = obj["content"].toArray();
+        if (!c.isEmpty())
+            return c[0].toObject()["text"].toString().trimmed();
+        return {};
+    }
+    if (provider == "Gemini" || provider == "Google AI Studio") {
+        QJsonArray cands = obj["candidates"].toArray();
+        if (cands.isEmpty()) return {};
+        QJsonArray parts = cands[0].toObject()["content"].toObject()["parts"].toArray();
+        if (parts.isEmpty()) return {};
+        return parts[0].toObject()["text"].toString().trimmed();
+    }
+    if (provider == "Ollama") {
+        return obj["message"].toObject()["content"].toString().trimmed();
+    }
+    // OpenAI-compatible (OpenRouter, OpenAI, LMStudio)
+    QJsonArray choices = obj["choices"].toArray();
+    if (choices.isEmpty()) return {};
+    return choices[0].toObject()["message"].toObject()["content"].toString().trimmed();
+}
+
 void MainWindow::onAiResponse(QNetworkReply *reply)
 {
     m_aiCommitButton->setEnabled(true);
-    m_aiCommitButton->setText(QString::fromUtf8("\xF0\x9F\xA4\x96 Generate"));
+    m_summaryInput->setEnabled(true);
+    m_descriptionInput->setEnabled(true);
 
     if (reply->error() != QNetworkReply::NoError) {
         QMessageBox::warning(this, "AI Request Failed",
@@ -1227,53 +1596,129 @@ void MainWindow::onAiResponse(QNetworkReply *reply)
         return;
     }
 
+    QString provider = QSettings("lazydesktop", "lazydesktop").value("ai/provider", "OpenRouter").toString();
     QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
     QJsonObject obj = doc.object();
-    QJsonArray choices = obj["choices"].toArray();
-    if (choices.isEmpty()) {
+    QString content = extractAiText(obj, provider);
+    if (content.isEmpty()) {
         QMessageBox::warning(this, "AI Error", "No response from AI.");
         return;
     }
-
-    QString content = choices[0].toObject()["message"].toObject()["content"].toString().trimmed();
-    if (content.isEmpty())
-        return;
 
     QStringList lines = content.split('\n', Qt::SkipEmptyParts);
     if (lines.isEmpty())
         return;
 
-    m_summaryInput->setText(lines.first());
-    if (lines.size() > 1) {
-        lines.removeFirst();
-        m_descriptionInput->setPlainText(lines.join('\n').trimmed());
+    QString summary = lines.first();
+    summary.remove(QRegularExpression("^#+\\s*"));
+    summary = summary.trimmed();
+    m_summaryInput->setText(summary);
+
+    int descStart = -1;
+    for (int i = 0; i < lines.size(); i++) {
+        if (lines[i].contains("Casual Description", Qt::CaseInsensitive)) {
+            descStart = i + 1;
+            break;
+        }
+    }
+
+    if (descStart > 0 && descStart < lines.size()) {
+        QStringList descLines;
+        for (int i = descStart; i < lines.size(); i++) {
+            if (!lines[i].trimmed().isEmpty())
+                descLines << lines[i];
+        }
+        m_descriptionInput->setPlainText(descLines.join('\n').trimmed());
     }
 }
 
-void MainWindow::onEditSystemPrompt()
+void MainWindow::onAddCoAuthors()
 {
-    QSettings settings("lazydesktop", "lazydesktop");
+    if (m_repoPath.isEmpty())
+        return;
 
-    QDialog dialog(this);
-    dialog.setWindowTitle("Edit AI System Prompt");
-    dialog.setMinimumSize(500, 300);
+    QStringList files = checkedFiles();
+    if (files.isEmpty()) {
+        QMessageBox::information(this, "No Files Selected",
+            "Check at least one file to find co-authors from.");
+        return;
+    }
 
-    auto *layout = new QVBoxLayout(&dialog);
-    auto *label = new QLabel("This prompt is sent to the AI along with the diff:");
-    layout->addWidget(label);
+    QSet<QString> authors;
+    for (const QString &file : files) {
+        QProcess p;
+        p.setWorkingDirectory(m_repoPath);
+        p.start("git", {"log", "--follow", "--format=%an <%ae>", "--", file});
+        if (p.waitForFinished(5000) && p.exitCode() == 0) {
+            const QStringList lines = QString::fromUtf8(p.readAllStandardOutput())
+                .split('\n', Qt::SkipEmptyParts);
+            for (const QString &l : lines)
+                authors.insert(l.trimmed());
+        }
+    }
 
-    auto *editor = new QPlainTextEdit();
-    editor->setPlainText(settings.value("ai/system_prompt",
-        "Generate a Conventional Commits summary and a casual description of all changes.").toString());
-    layout->addWidget(editor, 1);
+    if (authors.isEmpty()) {
+        QMessageBox::information(this, "No Authors Found",
+            "Could not find any co-authors for the selected files.");
+        return;
+    }
 
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    layout->addWidget(buttons);
+    QStringList sorted = authors.values();
+    sorted.sort(Qt::CaseInsensitive);
 
-    if (dialog.exec() == QDialog::Accepted)
-        settings.setValue("ai/system_prompt", editor->toPlainText().trimmed());
+    // Remove current user from the list
+    QProcess whoami;
+    whoami.start("git", {"config", "user.name"});
+    QString currentName;
+    if (whoami.waitForFinished(2000) && whoami.exitCode() == 0)
+        currentName = QString::fromUtf8(whoami.readAllStandardOutput()).trimmed();
+    sorted.erase(std::remove_if(sorted.begin(), sorted.end(),
+        [&](const QString &a) { return a.startsWith(currentName); }),
+        sorted.end());
+
+    if (sorted.isEmpty()) {
+        QMessageBox::information(this, "No Co-Authors",
+            "No other authors found for the selected files.");
+        return;
+    }
+
+    QDialog dlg(this);
+    dlg.setWindowTitle("Select Co-Authors");
+    dlg.setMinimumWidth(350);
+    auto *dlgLayout = new QVBoxLayout(&dlg);
+    auto *list = new QListWidget();
+    list->setAlternatingRowColors(true);
+    for (const QString &a : sorted) {
+        auto *item = new QListWidgetItem(a);
+        item->setCheckState(Qt::Unchecked);
+        list->addItem(item);
+    }
+    dlgLayout->addWidget(new QLabel("Select co-authors to add to the commit:"));
+    dlgLayout->addWidget(list, 1);
+
+    auto *btnBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    connect(btnBox, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(btnBox, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    dlgLayout->addWidget(btnBox);
+
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    QStringList trailers;
+    for (int i = 0; i < list->count(); i++) {
+        if (list->item(i)->checkState() == Qt::Checked)
+            trailers << "Co-authored-by: " + list->item(i)->text().trimmed();
+    }
+
+    if (trailers.isEmpty())
+        return;
+
+    // Preserve existing description content
+    QString desc = m_descriptionInput->toPlainText().trimmed();
+    if (!desc.isEmpty())
+        desc += "\n\n";
+    desc += trailers.join('\n');
+    m_descriptionInput->setPlainText(desc);
 }
 
 void MainWindow::onOpenSettings()
@@ -1297,17 +1742,11 @@ void MainWindow::onOpenSettings()
 
     // General page
     auto *generalPage = new QWidget();
-    auto *generalLayout = new QFormLayout(generalPage);
-    generalLayout->setContentsMargins(12, 12, 12, 12);
-    generalLayout->setSpacing(8);
-
-    auto *apiKeyInput = new QLineEdit();
-    apiKeyInput->setPlaceholderText("sk-or-v1-...");
-    apiKeyInput->setEchoMode(QLineEdit::Password);
-    QString storedKey = settings.value("openrouter/key").toString();
-    if (!storedKey.isEmpty())
-        apiKeyInput->setText(storedKey);
-    generalLayout->addRow("OpenRouter API Key:", apiKeyInput);
+    auto *generalLayout = new QVBoxLayout(generalPage);
+    auto *generalPlaceholder = new QLabel("General settings coming soon.");
+    generalPlaceholder->setAlignment(Qt::AlignCenter);
+    generalPlaceholder->setStyleSheet("color: gray;");
+    generalLayout->addWidget(generalPlaceholder);
 
     // Appearance page
     auto *appearancePage = new QWidget();
@@ -1318,8 +1757,23 @@ void MainWindow::onOpenSettings()
     auto *themeCombo = new QComboBox();
     themeCombo->addItem("System Default");
     themeCombo->addItem("Dark");
+
+    QList<Theme> customThemes = loadCustomThemes();
+    if (!customThemes.isEmpty()) {
+        themeCombo->insertSeparator(themeCombo->count());
+        for (const auto &t : customThemes)
+            themeCombo->addItem(t.name);
+    }
+
     QString storedTheme = settings.value("appearance/theme", "system").toString();
-    themeCombo->setCurrentIndex(storedTheme == "dark" ? 1 : 0);
+    if (storedTheme == "dark")
+        themeCombo->setCurrentIndex(1);
+    else if (storedTheme == "system")
+        themeCombo->setCurrentIndex(0);
+    else {
+        int ci = themeCombo->findText(storedTheme);
+        if (ci >= 0) themeCombo->setCurrentIndex(ci);
+    }
     appearanceLayout->addRow("Theme:", themeCombo);
 
     // Git page
@@ -1353,6 +1807,16 @@ void MainWindow::onOpenSettings()
     auto *aiLayout = new QVBoxLayout(aiPage);
     aiLayout->setContentsMargins(12, 12, 12, 12);
 
+    auto *aiKeyLabel = new QLabel("OpenRouter API Key:");
+    auto *apiKeyInput = new QLineEdit();
+    apiKeyInput->setPlaceholderText("sk-or-v1-...");
+    apiKeyInput->setEchoMode(QLineEdit::Password);
+    QString storedKey = settings.value("openrouter/key").toString();
+    if (!storedKey.isEmpty())
+        apiKeyInput->setText(storedKey);
+    aiLayout->addWidget(aiKeyLabel);
+    aiLayout->addWidget(apiKeyInput);
+
     auto *aiModelLabel = new QLabel("Model:");
     auto *aiModelInput = new QLineEdit();
     aiModelInput->setPlaceholderText("gpt-4o-mini");
@@ -1369,20 +1833,35 @@ void MainWindow::onOpenSettings()
     aiLayout->addWidget(aiPromptInput, 1);
 
     // Save on accept
-    connect(&dialog, &QDialog::accepted, this, [&settings, apiKeyInput, themeCombo, gitNameInput, gitEmailInput, aiModelInput, aiPromptInput]() {
+    connect(&dialog, &QDialog::accepted, this, [&settings, apiKeyInput, themeCombo, gitNameInput, gitEmailInput, aiModelInput, aiPromptInput, this]() {
         settings.setValue("openrouter/key", apiKeyInput->text());
         settings.setValue("openrouter/model", aiModelInput->text().trimmed().isEmpty()
             ? "gpt-4o-mini" : aiModelInput->text().trimmed());
-        settings.setValue("appearance/theme", themeCombo->currentIndex() == 1 ? "dark" : "system");
+
         auto *app = qobject_cast<QApplication *>(qApp);
-        if (app && themeCombo->currentIndex() == 1)
-            app->setStyleSheet("QWidget { background-color: #1e1e1e; color: #d4d4d4; }"
-                               "QTreeWidget, QListWidget { background-color: #252526; }"
-                               "QPushButton { background-color: #0e639c; color: white; }"
-                               "QLineEdit, QTextEdit { background-color: #3c3c3c; color: #d4d4d4; }"
-                               "QToolTip { background-color: #3c3c3c; color: #d4d4d4; }");
-        else if (app)
-            app->setStyleSheet({});
+        QString themeText = themeCombo->currentText();
+        if (themeText == "System Default") {
+            settings.setValue("appearance/theme", "system");
+            if (app) app->setStyleSheet({});
+        } else if (themeText == "Dark") {
+            settings.setValue("appearance/theme", "dark");
+            if (app)
+                app->setStyleSheet("QWidget { background-color: #1e1e1e; color: #d4d4d4; }"
+                                   "QTreeWidget, QListWidget { background-color: #252526; }"
+                                   "QPushButton { background-color: #0e639c; color: white; }"
+                                   "QLineEdit, QTextEdit { background-color: #3c3c3c; color: #d4d4d4; }"
+                                   "QToolTip { background-color: #3c3c3c; color: #d4d4d4; }");
+        } else {
+            // Custom theme
+            settings.setValue("appearance/theme", themeText);
+            if (app) {
+                Theme t = findTheme(themeText, loadCustomThemes());
+                if (!t.name.isEmpty())
+                    app->setStyleSheet(generateStylesheet(t));
+                else
+                    app->setStyleSheet({});
+            }
+        }
 
         settings.setValue("ai/system_prompt", aiPromptInput->toPlainText().trimmed());
 
@@ -1392,6 +1871,10 @@ void MainWindow::onOpenSettings()
             runGitConfigSet("user.name", name);
         if (!email.isEmpty())
             runGitConfigSet("user.email", email);
+
+        // Show AI row if a key was just set
+        if (!apiKeyInput->text().trimmed().isEmpty() && m_aiRowContainer && !m_aiRowContainer->isVisible())
+            m_aiRowContainer->show();
     });
 
     stack->addWidget(generalPage);
@@ -1576,6 +2059,29 @@ void MainWindow::onTreeItemClicked(QTreeWidgetItem *item, int column)
     if (relPath.isEmpty())
         return;
 
+    // Check if it's a binary (image/video) file by extension
+    static const QStringList imgExts{"png","jpg","jpeg","gif","bmp","webp","svg","ico","tiff","tif"};
+    static const QStringList vidExts{"mp4","webm","avi","mov","mkv","wmv","flv"};
+    QString ext = QFileInfo(relPath).suffix().toLower();
+    bool isImg = imgExts.contains(ext);
+    bool isVid = vidExts.contains(ext);
+
+    if (isImg || isVid) {
+        if (isImg) {
+            QPixmap pm(m_repoPath + "/" + relPath);
+            if (pm.isNull()) {
+                m_binaryPreview->setText("Could not load image:\n" + relPath);
+            } else {
+                // Scale down if larger than 800x600 while keeping aspect ratio
+                m_binaryPreview->setPixmap(pm.scaled(800, 600, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            }
+        } else {
+            m_binaryPreview->setText("Video file:\n" + relPath + "\n\nOpen externally to view.");
+        }
+        m_viewerStack->setCurrentIndex(2);
+        return;
+    }
+
     m_viewerStack->setCurrentIndex(0);
 
     QString diff = runGitDiff(m_repoPath, {"diff", "HEAD", "--", relPath});
@@ -1640,7 +2146,10 @@ void MainWindow::onCommitClicked()
             return;
         }
 
-        QStringList args = {"commit", "-m", m_summaryInput->text().trimmed()};
+        QStringList args = {"commit"};
+        if (m_skipHooksButton && m_skipHooksButton->isChecked())
+            args << "--no-verify";
+        args << "-m" << m_summaryInput->text().trimmed();
 
         const QString desc = m_descriptionInput->toPlainText().trimmed();
         if (!desc.isEmpty())

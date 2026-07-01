@@ -78,7 +78,7 @@ private slots:
     void onOpenGitHub();
     void onOpenSettings();
     void onGenerateCommitMessage();
-    void onEditSystemPrompt();
+    void onAddCoAuthors();
     void closeRepository();
     void onTreeContextMenu(const QPoint &pos);
     void onDiscardFile();
@@ -114,6 +114,9 @@ private:
     void onRemoveRecentProject();
     void onClearAllProjects();
     void onScanFolder();
+    void onCloneRepository();
+    void onCreateRepository();
+    void onOpenExistingProject();
     void applySavedTheme();
     void onAiResponse(QNetworkReply *reply);
 
@@ -133,10 +136,11 @@ private:
     QPushButton *m_projectButton = nullptr;
     QLabel *m_currentPathLabel = nullptr;
     QWidget *m_recentDrawer = nullptr;
-    QPushButton *m_openProjectButton = nullptr;
+    QPushButton *m_addProjectButton = nullptr;
     QListWidget *m_recentList = nullptr;
     QTreeWidget *m_gitStatusTree = nullptr;
     DiffViewer *m_fileContentViewer = nullptr;
+    QLabel *m_binaryPreview = nullptr;
     QAction *m_openGitHubAction = nullptr;
     QAction *m_viewCommitPanelAction = nullptr;
     QAction *m_viewCommitFilesAction = nullptr;
@@ -153,6 +157,9 @@ private:
     QTextEdit *m_descriptionInput = nullptr;
     QPushButton *m_commitButton = nullptr;
     QPushButton *m_aiCommitButton = nullptr;
+    QPushButton *m_skipHooksButton = nullptr;
+    QPushButton *m_coAuthorButton = nullptr;
+    QWidget *m_aiRowContainer = nullptr;
     QProcess *m_commitProcess = nullptr;
     QNetworkAccessManager *m_networkManager = nullptr;
 
