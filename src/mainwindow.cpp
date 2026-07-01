@@ -688,7 +688,13 @@ void MainWindow::addRecentProject(const QString &path)
 void MainWindow::populateRecentList()
 {
     m_recentList->clear();
-    for (const QString &path : m_recentProjects) {
+
+    QStringList sorted = m_recentProjects;
+    std::sort(sorted.begin(), sorted.end(), [](const QString &a, const QString &b) {
+        return QString::localeAwareCompare(QDir(a).dirName(), QDir(b).dirName()) < 0;
+    });
+
+    for (const QString &path : sorted) {
         auto *item = new QListWidgetItem();
         item->setData(Qt::UserRole, path);
         m_recentList->addItem(item);
