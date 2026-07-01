@@ -620,6 +620,34 @@ static void runGitConfigSet(const QString &key, const QString &value)
     proc.waitForFinished(3000);
 }
 
+static QString gitRemoteOwner(const QString &path)
+{
+    QProcess proc;
+    proc.setWorkingDirectory(path);
+    proc.start("git", {"config", "--local", "remote.origin.url"});
+    if (!proc.waitForFinished(3000) || proc.exitCode() != 0)
+        return {};
+
+    QString url = QString::fromUtf8(proc.readAllStandardOutput()).trimmed();
+    if (url.isEmpty())
+        return {};
+
+    if (url.endsWith(".git"))
+        url.chop(4);
+
+    // Normalize SSH: git@github.com:owner/repo → ssh://git@github.com/owner/repo
+    if (url.startsWith("git@"))
+        url.replace(':', '/').prepend("ssh://");
+
+    // Extract the path segment right after the hostname
+    QRegularExpression re("^[a-z]+://[^@]*@?[^/]+/([^/]+)");
+    auto m = re.match(url);
+    if (m.hasMatch())
+        return m.captured(1);
+
+    return {};
+}
+
 // --- Recent projects persistence ---
 
 static QString projectsFilePath()
@@ -689,12 +717,36 @@ void MainWindow::populateRecentList()
 {
     m_recentList->clear();
 
-    QStringList sorted = m_recentProjects;
-    std::sort(sorted.begin(), sorted.end(), [](const QString &a, const QString &b) {
-        return QString::localeAwareCompare(QDir(a).dirName(), QDir(b).dirName()) < 0;
+    // Group projects by remote owner
+    QMap<QString, QStringList> groups;
+    QStringList ungrouped;
+
+    for (const QString &path : m_recentProjects) {
+        QString owner = gitRemoteOwner(path);
+        if (owner.isEmpty())
+            ungrouped.append(path);
+        else
+            groups[owner].append(path);
+    }
+
+    // Sort projects within each group
+    auto sortByDirName = [](QStringList &paths) {
+        std::sort(paths.begin(), paths.end(), [](const QString &a, const QString &b) {
+            return QString::localeAwareCompare(QDir(a).dirName(), QDir(b).dirName()) < 0;
+        });
+    };
+    for (auto it = groups.begin(); it != groups.end(); ++it)
+        sortByDirName(it.value());
+    sortByDirName(ungrouped);
+
+    // Build sorted owner list
+    QStringList owners = groups.keys();
+    std::sort(owners.begin(), owners.end(), [](const QString &a, const QString &b) {
+        return QString::localeAwareCompare(a, b) < 0;
     });
 
-    for (const QString &path : sorted) {
+    // Lambda to create a project row widget
+    auto addProjectRow = [this](const QString &path) {
         auto *item = new QListWidgetItem();
         item->setData(Qt::UserRole, path);
         m_recentList->addItem(item);
@@ -735,6 +787,38 @@ void MainWindow::populateRecentList()
         row->setLayout(layout);
 
         m_recentList->setItemWidget(item, row);
+    };
+
+    auto addCategoryRow = [this](const QString &title) {
+        auto *item = new QListWidgetItem();
+        item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
+        m_recentList->addItem(item);
+
+        auto *row = new QWidget();
+        auto *layout = new QHBoxLayout(row);
+        layout->setContentsMargins(4, 4, 4, 2);
+        auto *label = new QLabel(title);
+        QFont f = label->font();
+        f.setBold(true);
+        f.setPointSize(f.pointSize() - 1);
+        label->setFont(f);
+        label->setStyleSheet("color: #888;");
+        layout->addWidget(label);
+        m_recentList->setItemWidget(item, row);
+    };
+
+    // Render grouped projects
+    for (const QString &owner : owners) {
+        addCategoryRow(owner);
+        for (const QString &path : groups[owner])
+            addProjectRow(path);
+    }
+
+    // Ungrouped projects at the bottom
+    if (!ungrouped.isEmpty()) {
+        addCategoryRow("Other");
+        for (const QString &path : ungrouped)
+            addProjectRow(path);
     }
 }
 
