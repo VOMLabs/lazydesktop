@@ -43,6 +43,7 @@
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QTreeWidgetItemIterator>
+#include <QApplication>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QStandardPaths>
@@ -130,6 +131,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupUi();
     loadRecentProjects();
     checkGitAvailable();
+    applySavedTheme();
 }
 
 MainWindow::~MainWindow()
@@ -285,6 +287,14 @@ void MainWindow::setupUi()
     frameLayout->addWidget(scanButton);
 
     frameLayout->addWidget(m_recentList, 1);
+
+    auto *clearAllBtn = new QPushButton("Remove All");
+    clearAllBtn->setFixedHeight(24);
+    clearAllBtn->setStyleSheet(
+        "QPushButton { color: #888; font-size: 11px; border: none; }"
+        "QPushButton:hover { color: #e04040; }");
+    connect(clearAllBtn, &QPushButton::clicked, this, &MainWindow::onClearAllProjects);
+    frameLayout->addWidget(clearAllBtn);
 
     // --- Main content widgets ---
     m_gitStatusTree = new QTreeWidget();
@@ -869,6 +879,25 @@ void MainWindow::onRemoveRecentProject()
     }
 }
 
+void MainWindow::onClearAllProjects()
+{
+    if (m_recentProjects.isEmpty())
+        return;
+
+    auto reply = QMessageBox::question(this, "Remove All Projects",
+        "Remove all projects from the list?\n\n"
+        "This will not delete any directories.",
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+
+    if (reply != QMessageBox::Yes)
+        return;
+
+    closeRepository();
+    m_recentProjects.clear();
+    saveRecentProjects();
+    populateRecentList();
+}
+
 void MainWindow::onScanFolder()
 {
     const QString dir = QFileDialog::getExistingDirectory(
@@ -1077,6 +1106,23 @@ void MainWindow::onOpenGitHub()
     });
 }
 
+void MainWindow::applySavedTheme()
+{
+    QSettings settings("lazydesktop", "lazydesktop");
+    auto *app = qobject_cast<QApplication *>(qApp);
+    if (!app)
+        return;
+
+    if (settings.value("appearance/theme", "system").toString() == "dark")
+        app->setStyleSheet("QWidget { background-color: #1e1e1e; color: #d4d4d4; }"
+                           "QTreeWidget, QListWidget { background-color: #252526; }"
+                           "QPushButton { background-color: #0e639c; color: white; }"
+                           "QLineEdit, QTextEdit { background-color: #3c3c3c; color: #d4d4d4; }"
+                           "QToolTip { background-color: #3c3c3c; color: #d4d4d4; }");
+    else
+        app->setStyleSheet({});
+}
+
 void MainWindow::onOpenSettings()
 {
     QDialog dialog(this);
@@ -1093,21 +1139,34 @@ void MainWindow::onOpenSettings()
 
     auto *stack = new QStackedWidget();
 
+    QSettings settings("lazydesktop", "lazydesktop");
+
     // General page
     auto *generalPage = new QWidget();
-    auto *generalLayout = new QVBoxLayout(generalPage);
-    auto *generalPlaceholder = new QLabel("General settings coming soon.");
-    generalPlaceholder->setAlignment(Qt::AlignCenter);
-    generalPlaceholder->setStyleSheet("color: gray;");
-    generalLayout->addWidget(generalPlaceholder);
+    auto *generalLayout = new QFormLayout(generalPage);
+    generalLayout->setContentsMargins(12, 12, 12, 12);
+    generalLayout->setSpacing(8);
+
+    auto *apiKeyInput = new QLineEdit();
+    apiKeyInput->setPlaceholderText("sk-or-v1-...");
+    apiKeyInput->setEchoMode(QLineEdit::Password);
+    QString storedKey = settings.value("openrouter/key").toString();
+    if (!storedKey.isEmpty())
+        apiKeyInput->setText(storedKey);
+    generalLayout->addRow("OpenRouter API Key:", apiKeyInput);
 
     // Appearance page
     auto *appearancePage = new QWidget();
-    auto *appearanceLayout = new QVBoxLayout(appearancePage);
-    auto *appearancePlaceholder = new QLabel("Appearance settings coming soon.");
-    appearancePlaceholder->setAlignment(Qt::AlignCenter);
-    appearancePlaceholder->setStyleSheet("color: gray;");
-    appearanceLayout->addWidget(appearancePlaceholder);
+    auto *appearanceLayout = new QFormLayout(appearancePage);
+    appearanceLayout->setContentsMargins(12, 12, 12, 12);
+    appearanceLayout->setSpacing(8);
+
+    auto *themeCombo = new QComboBox();
+    themeCombo->addItem("System Default");
+    themeCombo->addItem("Dark");
+    QString storedTheme = settings.value("appearance/theme", "system").toString();
+    themeCombo->setCurrentIndex(storedTheme == "dark" ? 1 : 0);
+    appearanceLayout->addRow("Theme:", themeCombo);
 
     // Git page
     auto *gitPage = new QWidget();
@@ -1136,7 +1195,19 @@ void MainWindow::onOpenSettings()
     gitLayout->addRow(gitInfoLabel);
 
     // Save on accept
-    connect(&dialog, &QDialog::accepted, this, [gitNameInput, gitEmailInput]() {
+    connect(&dialog, &QDialog::accepted, this, [&settings, apiKeyInput, themeCombo, gitNameInput, gitEmailInput]() {
+        settings.setValue("openrouter/key", apiKeyInput->text());
+        settings.setValue("appearance/theme", themeCombo->currentIndex() == 1 ? "dark" : "system");
+        auto *app = qobject_cast<QApplication *>(qApp);
+        if (app && themeCombo->currentIndex() == 1)
+            app->setStyleSheet("QWidget { background-color: #1e1e1e; color: #d4d4d4; }"
+                               "QTreeWidget, QListWidget { background-color: #252526; }"
+                               "QPushButton { background-color: #0e639c; color: white; }"
+                               "QLineEdit, QTextEdit { background-color: #3c3c3c; color: #d4d4d4; }"
+                               "QToolTip { background-color: #3c3c3c; color: #d4d4d4; }");
+        else if (app)
+            app->setStyleSheet({});
+
         const QString name = gitNameInput->text().trimmed();
         const QString email = gitEmailInput->text().trimmed();
         if (!name.isEmpty())
@@ -1844,6 +1915,10 @@ void MainWindow::onGitProcessFinished(int exitCode, QProcess::ExitStatus exitSta
         m_gitProcess->readAllStandardOutput());
 
     if (m_currentQuery == GitQuery::Status) {
+        // Preserve selection across refresh
+        auto *current = m_gitStatusTree->currentItem();
+        QString selectedPath = current ? current->data(0, Qt::UserRole).toString() : QString();
+
         m_gitStatusTree->clear();
         const QStringList lines = output.split('\n', Qt::SkipEmptyParts);
 
@@ -1866,6 +1941,19 @@ void MainWindow::onGitProcessFinished(int exitCode, QProcess::ExitStatus exitSta
 
             const QString path = line.mid(3).trimmed();
             addGitFileToTree(path, prefix);
+        }
+
+        // Restore selection and diff after refresh
+        if (!selectedPath.isEmpty()) {
+            QTreeWidgetItemIterator it(m_gitStatusTree);
+            while (*it) {
+                if ((*it)->data(0, Qt::UserRole).toString() == selectedPath) {
+                    m_gitStatusTree->setCurrentItem(*it);
+                    onTreeItemClicked(*it, 0);
+                    break;
+                }
+                ++it;
+            }
         }
 
         m_changedFilesLabel->setText(

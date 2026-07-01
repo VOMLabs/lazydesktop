@@ -108,7 +108,9 @@ private:
     void addRecentProject(const QString &path);
     void populateRecentList();
     void onRemoveRecentProject();
+    void onClearAllProjects();
     void onScanFolder();
+    void applySavedTheme();
 
     bool checkGitAvailable();
     void installGit();
