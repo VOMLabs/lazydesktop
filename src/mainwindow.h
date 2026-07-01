@@ -6,6 +6,7 @@
 
 #include <QFileSystemWatcher>
 #include <QTimer>
+#include <QNetworkAccessManager>
 
 class DiffViewer;
 class QAction;
@@ -17,6 +18,7 @@ class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
 class QMenu;
+class QNetworkReply;
 class QPlainTextEdit;
 class QPushButton;
 class QStackedWidget;
@@ -75,6 +77,8 @@ private slots:
     void onOpenTerminal();
     void onOpenGitHub();
     void onOpenSettings();
+    void onGenerateCommitMessage();
+    void onEditSystemPrompt();
     void closeRepository();
     void onTreeContextMenu(const QPoint &pos);
     void onDiscardFile();
@@ -111,6 +115,7 @@ private:
     void onClearAllProjects();
     void onScanFolder();
     void applySavedTheme();
+    void onAiResponse(QNetworkReply *reply);
 
     bool checkGitAvailable();
     void installGit();
@@ -147,7 +152,9 @@ private:
     QLineEdit *m_summaryInput = nullptr;
     QTextEdit *m_descriptionInput = nullptr;
     QPushButton *m_commitButton = nullptr;
+    QPushButton *m_aiCommitButton = nullptr;
     QProcess *m_commitProcess = nullptr;
+    QNetworkAccessManager *m_networkManager = nullptr;
 
     PushState m_pushState = PushState::Push;
     QPushButton *m_pushButton = nullptr;

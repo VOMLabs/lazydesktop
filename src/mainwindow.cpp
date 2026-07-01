@@ -44,6 +44,11 @@
 #include <QTreeWidgetItem>
 #include <QTreeWidgetItemIterator>
 #include <QApplication>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QStandardPaths>
@@ -393,6 +398,25 @@ void MainWindow::setupUi()
     commitBodyLayout->setContentsMargins(4, 4, 4, 4);
     commitBodyLayout->addWidget(m_summaryInput);
     commitBodyLayout->addWidget(m_descriptionInput);
+
+    auto *aiRow = new QHBoxLayout();
+    aiRow->setContentsMargins(0, 0, 0, 0);
+    m_aiCommitButton = new QPushButton(QString::fromUtf8("\xF0\x9F\xA4\x96 Generate"));
+    m_aiCommitButton->setFixedHeight(24);
+    m_aiCommitButton->setEnabled(false);
+    m_aiCommitButton->setToolTip("Generate commit message with AI");
+    connect(m_aiCommitButton, &QPushButton::clicked, this, &MainWindow::onGenerateCommitMessage);
+    auto *editPromptBtn = new QPushButton("Edit Prompt");
+    editPromptBtn->setFixedHeight(24);
+    editPromptBtn->setFlat(true);
+    editPromptBtn->setStyleSheet("QPushButton { color: #888; font-size: 11px; border: none; }"
+                                  "QPushButton:hover { color: palette(highlight); }");
+    connect(editPromptBtn, &QPushButton::clicked, this, &MainWindow::onEditSystemPrompt);
+    aiRow->addWidget(m_aiCommitButton);
+    aiRow->addWidget(editPromptBtn);
+    aiRow->addStretch();
+    commitBodyLayout->addLayout(aiRow);
+
     commitBodyLayout->addWidget(m_commitButton);
     commitLayout->addWidget(commitBody, 1);
 
@@ -603,13 +627,15 @@ void MainWindow::setupUi()
     m_fsWatcher = new QFileSystemWatcher(this);
     m_refreshTimer = new QTimer(this);
     m_refreshTimer->setSingleShot(true);
-    m_refreshTimer->setInterval(500);
+    m_refreshTimer->setInterval(2000);
     connect(m_fsWatcher, &QFileSystemWatcher::directoryChanged,
             this, &MainWindow::onRepoDirChanged);
     connect(m_fsWatcher, &QFileSystemWatcher::fileChanged,
             this, &MainWindow::onRepoDirChanged);
     connect(m_refreshTimer, &QTimer::timeout,
             this, &MainWindow::onRefreshDebounce);
+
+    m_networkManager = new QNetworkAccessManager(this);
 }
 
 // --- Git config helpers ---
@@ -1011,6 +1037,7 @@ bool MainWindow::openRepository(const QString &path)
     m_recentDrawer->setVisible(false);
 
     addRecentProject(path);
+    m_aiCommitButton->setEnabled(true);
     loadBranches();
     startGitStatusQuery();
     startGitLogQuery();
@@ -1048,6 +1075,7 @@ void MainWindow::closeRepository()
     m_branchComboBox->clear();
     m_deleteBranchButton->setEnabled(false);
     m_openGitHubAction->setEnabled(false);
+    m_aiCommitButton->setEnabled(false);
     m_currentBranch.clear();
     m_selectedCommitHash.clear();
     m_fsWatcher->removePaths(m_fsWatcher->files());
@@ -1123,6 +1151,131 @@ void MainWindow::applySavedTheme()
         app->setStyleSheet({});
 }
 
+void MainWindow::onGenerateCommitMessage()
+{
+    QSettings settings("lazydesktop", "lazydesktop");
+    const QString apiKey = settings.value("openrouter/key").toString();
+    if (apiKey.isEmpty()) {
+        QMessageBox::information(this, "API Key Required",
+            "No OpenRouter API key configured.\n\n"
+            "Go to Settings \u2192 General to add one.");
+        return;
+    }
+
+    QStringList files = checkedFiles();
+    if (files.isEmpty()) {
+        QMessageBox::information(this, "No Files Selected",
+            "Check at least one file to include in the commit message.");
+        return;
+    }
+
+    m_aiCommitButton->setEnabled(false);
+    m_aiCommitButton->setText(QString::fromUtf8("\xF0\x9F\xA4\x96 Generating\u2026"));
+
+    // Collect diffs
+    QStringList diffParts;
+    for (const QString &file : files) {
+        QProcess p;
+        p.setWorkingDirectory(m_repoPath);
+        p.start("git", {"diff", "HEAD", "--", file});
+        if (p.waitForFinished(3000) && p.exitCode() == 0) {
+            QString d = QString::fromUtf8(p.readAllStandardOutput()).trimmed();
+            if (!d.isEmpty())
+                diffParts << "--- " + file + "\n" + d;
+        }
+    }
+
+    QString systemPrompt = settings.value("ai/system_prompt",
+        "Generate a Conventional Commits summary and a casual description of all changes.")
+        .toString();
+
+    QString userContent = "Changes:\n" + diffParts.join("\n\n");
+
+    QJsonObject msgSystem, msgUser;
+    msgSystem["role"] = "system";
+    msgSystem["content"] = systemPrompt;
+    msgUser["role"] = "user";
+    msgUser["content"] = userContent;
+
+    QJsonArray messages;
+    messages.append(msgSystem);
+    messages.append(msgUser);
+
+    QJsonObject body;
+    body["model"] = "gpt-4o-mini";
+    body["messages"] = messages;
+
+    QNetworkRequest req(QUrl("https://openrouter.ai/api/v1/chat/completions"));
+    req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    req.setRawHeader("Authorization", ("Bearer " + apiKey).toUtf8());
+
+    QNetworkReply *reply = m_networkManager->post(req, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        reply->deleteLater();
+        onAiResponse(reply);
+    });
+}
+
+void MainWindow::onAiResponse(QNetworkReply *reply)
+{
+    m_aiCommitButton->setEnabled(true);
+    m_aiCommitButton->setText(QString::fromUtf8("\xF0\x9F\xA4\x96 Generate"));
+
+    if (reply->error() != QNetworkReply::NoError) {
+        QMessageBox::warning(this, "AI Request Failed",
+            "Failed to generate commit message:\n" + reply->errorString());
+        return;
+    }
+
+    QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+    QJsonObject obj = doc.object();
+    QJsonArray choices = obj["choices"].toArray();
+    if (choices.isEmpty()) {
+        QMessageBox::warning(this, "AI Error", "No response from AI.");
+        return;
+    }
+
+    QString content = choices[0].toObject()["message"].toObject()["content"].toString().trimmed();
+    if (content.isEmpty())
+        return;
+
+    QStringList lines = content.split('\n', Qt::SkipEmptyParts);
+    if (lines.isEmpty())
+        return;
+
+    m_summaryInput->setText(lines.first());
+    if (lines.size() > 1) {
+        lines.removeFirst();
+        m_descriptionInput->setPlainText(lines.join('\n').trimmed());
+    }
+}
+
+void MainWindow::onEditSystemPrompt()
+{
+    QSettings settings("lazydesktop", "lazydesktop");
+
+    QDialog dialog(this);
+    dialog.setWindowTitle("Edit AI System Prompt");
+    dialog.setMinimumSize(500, 300);
+
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *label = new QLabel("This prompt is sent to the AI along with the diff:");
+    layout->addWidget(label);
+
+    auto *editor = new QPlainTextEdit();
+    editor->setPlainText(settings.value("ai/system_prompt",
+        "Generate a Conventional Commits summary and a casual description of all changes.").toString());
+    layout->addWidget(editor, 1);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+
+    if (dialog.exec() == QDialog::Accepted)
+        settings.setValue("ai/system_prompt", editor->toPlainText().trimmed());
+}
+
 void MainWindow::onOpenSettings()
 {
     QDialog dialog(this);
@@ -1136,6 +1289,7 @@ void MainWindow::onOpenSettings()
     categories->addItem("General");
     categories->addItem("Appearance");
     categories->addItem("Git");
+    categories->addItem("AI");
 
     auto *stack = new QStackedWidget();
 
@@ -1194,8 +1348,20 @@ void MainWindow::onOpenSettings()
     gitInfoLabel->setWordWrap(true);
     gitLayout->addRow(gitInfoLabel);
 
+    // AI page (declared early so the lambda captures it)
+    auto *aiPage = new QWidget();
+    auto *aiLayout = new QVBoxLayout(aiPage);
+    aiLayout->setContentsMargins(12, 12, 12, 12);
+    auto *aiLabel = new QLabel("System prompt sent to the AI with the diff:");
+    auto *aiPromptInput = new QPlainTextEdit();
+    aiPromptInput->setPlainText(settings.value("ai/system_prompt",
+        "Generate a Conventional Commits summary and a casual description of all changes.").toString());
+    aiPromptInput->setFixedHeight(120);
+    aiLayout->addWidget(aiLabel);
+    aiLayout->addWidget(aiPromptInput, 1);
+
     // Save on accept
-    connect(&dialog, &QDialog::accepted, this, [&settings, apiKeyInput, themeCombo, gitNameInput, gitEmailInput]() {
+    connect(&dialog, &QDialog::accepted, this, [&settings, apiKeyInput, themeCombo, gitNameInput, gitEmailInput, aiPromptInput]() {
         settings.setValue("openrouter/key", apiKeyInput->text());
         settings.setValue("appearance/theme", themeCombo->currentIndex() == 1 ? "dark" : "system");
         auto *app = qobject_cast<QApplication *>(qApp);
@@ -1208,6 +1374,8 @@ void MainWindow::onOpenSettings()
         else if (app)
             app->setStyleSheet({});
 
+        settings.setValue("ai/system_prompt", aiPromptInput->toPlainText().trimmed());
+
         const QString name = gitNameInput->text().trimmed();
         const QString email = gitEmailInput->text().trimmed();
         if (!name.isEmpty())
@@ -1219,6 +1387,7 @@ void MainWindow::onOpenSettings()
     stack->addWidget(generalPage);
     stack->addWidget(appearancePage);
     stack->addWidget(gitPage);
+    stack->addWidget(aiPage);
 
     connect(categories, &QListWidget::currentRowChanged, stack, &QStackedWidget::setCurrentIndex);
 
@@ -2121,12 +2290,16 @@ void MainWindow::onCommitFileClicked(QListWidgetItem *item)
 
 void MainWindow::onRepoDirChanged()
 {
+    if (m_commitProcess && m_commitProcess->state() != QProcess::NotRunning)
+        return;
     m_refreshTimer->start();
 }
 
 void MainWindow::onRefreshDebounce()
 {
     if (m_repoPath.isEmpty())
+        return;
+    if (m_commitProcess && m_commitProcess->state() != QProcess::NotRunning)
         return;
     m_currentQuery = GitQuery::None;
     startGitStatusQuery();

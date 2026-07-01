@@ -10,6 +10,6 @@ project('lazydesktop', 'cpp',
 
 qt6 = import('qt6')
 
-qt6_dep = dependency('qt6', modules: ['Core', 'Gui', 'Widgets'])
+qt6_dep = dependency('qt6', modules: ['Core', 'Gui', 'Widgets', 'Network'])
 
 subdir('src')
