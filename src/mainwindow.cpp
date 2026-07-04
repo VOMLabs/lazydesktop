@@ -310,7 +310,104 @@ void MainWindow::setupUi()
     connect(clearAllBtn, &QPushButton::clicked, this, &MainWindow::onClearAllProjects);
     frameLayout->addWidget(clearAllBtn);
 
-    // --- Main content widgets ---
+    // --- Staging area UI ---
+    // Staged changes section
+    m_stagedHeader = new QWidget();
+    m_stagedHeader->setFixedHeight(28);
+    m_stagedHeader->setAutoFillBackground(true);
+    {
+        QPalette hp = m_stagedHeader->palette();
+        hp.setColor(QPalette::Window, hp.color(QPalette::Window).darker(108));
+        m_stagedHeader->setPalette(hp);
+    }
+    auto *stagedHeaderLayout = new QHBoxLayout(m_stagedHeader);
+    stagedHeaderLayout->setContentsMargins(8, 0, 8, 0);
+    auto *stagedLabel = new QLabel("Staged Changes");
+    {
+        QFont bf = stagedLabel->font();
+        bf.setBold(true);
+        stagedLabel->setFont(bf);
+    }
+    m_stagedCountLabel = new QLabel("0 files");
+    {
+        QFont bf = m_stagedCountLabel->font();
+        bf.setBold(true);
+        m_stagedCountLabel->setFont(bf);
+        QPalette lp = m_stagedCountLabel->palette();
+        lp.setColor(QPalette::WindowText, QColor("#40c040"));
+        m_stagedCountLabel->setPalette(lp);
+    }
+    stagedHeaderLayout->addWidget(stagedLabel);
+    stagedHeaderLayout->addWidget(m_stagedCountLabel, 1);
+
+    m_stagedTree = new QTreeWidget();
+    m_stagedTree->setHeaderHidden(true);
+    m_stagedTree->setColumnCount(1);
+    m_stagedTree->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_stagedTree->setRootIsDecorated(false);
+    m_stagedTree->setIndentation(0);
+    m_stagedTree->setAnimated(false);
+    m_stagedTree->setIconSize(QSize(10, 10));
+    m_stagedTree->setStyleSheet(
+        "QTreeWidget::item:selected {"
+        "  background: palette(highlight);"
+        "  color: palette(highlighted-text);"
+        "}"
+        "QTreeWidget::item:selected:!active {"
+        "  background: palette(highlight);"
+        "  color: palette(highlighted-text);"
+        "}"
+    );
+
+    // Unstaged changes section
+    m_unstagedHeader = new QWidget();
+    m_unstagedHeader->setFixedHeight(28);
+    m_unstagedHeader->setAutoFillBackground(true);
+    {
+        QPalette hp = m_unstagedHeader->palette();
+        hp.setColor(QPalette::Window, hp.color(QPalette::Window).darker(108));
+        m_unstagedHeader->setPalette(hp);
+    }
+    auto *unstagedHeaderLayout = new QHBoxLayout(m_unstagedHeader);
+    unstagedHeaderLayout->setContentsMargins(8, 0, 8, 0);
+    auto *unstagedLabel = new QLabel("Unstaged Changes");
+    {
+        QFont bf = unstagedLabel->font();
+        bf.setBold(true);
+        unstagedLabel->setFont(bf);
+    }
+    m_unstagedCountLabel = new QLabel("0 files");
+    {
+        QFont bf = m_unstagedCountLabel->font();
+        bf.setBold(true);
+        m_unstagedCountLabel->setFont(bf);
+        QPalette lp = m_unstagedCountLabel->palette();
+        lp.setColor(QPalette::WindowText, QColor("#f0c000"));
+        m_unstagedCountLabel->setPalette(lp);
+    }
+    unstagedHeaderLayout->addWidget(unstagedLabel);
+    unstagedHeaderLayout->addWidget(m_unstagedCountLabel, 1);
+
+    m_unstagedTree = new QTreeWidget();
+    m_unstagedTree->setHeaderHidden(true);
+    m_unstagedTree->setColumnCount(1);
+    m_unstagedTree->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_unstagedTree->setRootIsDecorated(false);
+    m_unstagedTree->setIndentation(0);
+    m_unstagedTree->setAnimated(false);
+    m_unstagedTree->setIconSize(QSize(10, 10));
+    m_unstagedTree->setStyleSheet(
+        "QTreeWidget::item:selected {"
+        "  background: palette(highlight);"
+        "  color: palette(highlighted-text);"
+        "}"
+        "QTreeWidget::item:selected:!active {"
+        "  background: palette(highlight);"
+        "  color: palette(highlighted-text);"
+        "}"
+    );
+
+    // Old git status tree (used for unpushed files and backward compatibility)
     m_gitStatusTree = new QTreeWidget();
     m_gitStatusTree->setHeaderHidden(true);
     m_gitStatusTree->setColumnCount(1);
@@ -330,30 +427,36 @@ void MainWindow::setupUi()
         "}"
     );
 
-    // Header bar: master checkbox + changed-files count
-    m_headerBar = new QWidget();
-    m_headerBar->setFixedHeight(32);
-    m_headerBar->setAutoFillBackground(true);
-    {
-        QPalette hp = m_headerBar->palette();
-        hp.setColor(QPalette::Window, hp.color(QPalette::Window).darker(108));
-        m_headerBar->setPalette(hp);
-    }
-    auto *headerLayout = new QHBoxLayout(m_headerBar);
-    headerLayout->setContentsMargins(8, 0, 8, 0);
-    m_selectAllCheck = new QCheckBox();
-    m_changedFilesLabel = new QLabel("0 changed files");
-    {
-        QFont bf = m_changedFilesLabel->font();
-        bf.setBold(true);
-        m_changedFilesLabel->setFont(bf);
-        QPalette lp = m_changedFilesLabel->palette();
-        lp.setColor(QPalette::WindowText,
-                    lp.color(QPalette::Disabled, QPalette::WindowText));
-        m_changedFilesLabel->setPalette(lp);
-    }
-    headerLayout->addWidget(m_selectAllCheck);
-    headerLayout->addWidget(m_changedFilesLabel, 1);
+    // Stage/Unstage buttons
+    auto *stageButtonLayout = new QHBoxLayout();
+    m_stageButton = new QPushButton("Stage →");
+    m_stageButton->setEnabled(false);
+    m_stageButton->setFixedHeight(24);
+    m_unstageButton = new QPushButton("← Unstage");
+    m_unstageButton->setEnabled(false);
+    m_unstageButton->setFixedHeight(24);
+    m_stageAllButton = new QPushButton("Stage All");
+    m_stageAllButton->setFixedHeight(24);
+    m_unstageAllButton = new QPushButton("Unstage All");
+    m_unstageAllButton->setFixedHeight(24);
+    stageButtonLayout->addWidget(m_stageButton);
+    stageButtonLayout->addWidget(m_unstageButton);
+    stageButtonLayout->addWidget(m_stageAllButton);
+    stageButtonLayout->addWidget(m_unstageAllButton);
+
+    connect(m_stageButton, &QPushButton::clicked, this, &MainWindow::onStageSelected);
+    connect(m_unstageButton, &QPushButton::clicked, this, &MainWindow::onUnstageSelected);
+    connect(m_stageAllButton, &QPushButton::clicked, this, &MainWindow::onStageAllFiles);
+    connect(m_unstageAllButton, &QPushButton::clicked, this, &MainWindow::onUnstageAllFiles);
+
+    connect(m_stagedTree, &QTreeWidget::itemClicked,
+            this, &MainWindow::onStagedItemClicked);
+    connect(m_unstagedTree, &QTreeWidget::itemClicked,
+            this, &MainWindow::onUnstagedItemClicked);
+    connect(m_stagedTree, &QTreeWidget::customContextMenuRequested,
+            this, &MainWindow::onStagedContextMenu);
+    connect(m_unstagedTree, &QTreeWidget::customContextMenuRequested,
+            this, &MainWindow::onUnstagedContextMenu);
 
     m_fileContentViewer = new DiffViewer();
     m_fileContentViewer->setMinimumWidth(200);
@@ -500,6 +603,49 @@ void MainWindow::setupUi()
     // AI row starts hidden; visibility checked asynchronously after setupUi
     m_aiRowContainer->hide();
 
+    // AI thinking indicator overlay
+    m_aiThinkingOverlay = new QWidget(m_commitContainer);
+    m_aiThinkingOverlay->setVisible(false);
+    m_aiThinkingOverlay->setStyleSheet(
+        "background: rgba(30, 30, 30, 0.95);"
+        "border: 1px solid #0e639c;"
+        "border-radius: 4px;"
+    );
+    auto *thinkingLayout = new QVBoxLayout(m_aiThinkingOverlay);
+    thinkingLayout->setContentsMargins(8, 8, 8, 8);
+    thinkingLayout->setSpacing(4);
+    
+    m_aiThinkingLabel = new QLabel("AI is thinking...");
+    m_aiThinkingLabel->setStyleSheet("color: #d4d4d4; font-weight: bold;");
+    thinkingLayout->addWidget(m_aiThinkingLabel);
+    
+    m_aiShowMoreButton = new QPushButton("Show more ▼");
+    m_aiShowMoreButton->setFlat(true);
+    m_aiShowMoreButton->setStyleSheet(
+        "QPushButton { border: none; color: #0e639c; text-align: left; padding: 4px; }"
+        "QPushButton:hover { color: #1177bb; }"
+    );
+    thinkingLayout->addWidget(m_aiShowMoreButton);
+    
+    m_aiThinkingText = new QTextEdit();
+    m_aiThinkingText->setVisible(false);
+    m_aiThinkingText->setReadOnly(true);
+    m_aiThinkingText->setMaximumHeight(200);
+    m_aiThinkingText->setStyleSheet(
+        "background: #1e1e1e;"
+        "color: #d4d4d4;"
+        "border: 1px solid #3c3c3c;"
+        "font-family: monospace;"
+        "font-size: 11px;"
+    );
+    thinkingLayout->addWidget(m_aiThinkingText);
+    
+    connect(m_aiShowMoreButton, &QPushButton::clicked, this, [this]() {
+        m_aiThinkingVisible = !m_aiThinkingVisible;
+        m_aiThinkingText->setVisible(m_aiThinkingVisible);
+        m_aiShowMoreButton->setText(m_aiThinkingVisible ? "Show less ▲" : "Show more ▼");
+    });
+
     commitBodyLayout->addWidget(m_commitButton);
     commitLayout->addWidget(commitBody, 1);
 
@@ -521,13 +667,34 @@ void MainWindow::setupUi()
     auto *changesLayout = new QVBoxLayout(changesTab);
     changesLayout->setContentsMargins(0, 0, 0, 0);
     changesLayout->setSpacing(0);
-    changesLayout->addWidget(m_headerBar);
-    auto *changesSplitter = new QSplitter(Qt::Vertical);
-    changesSplitter->addWidget(m_gitStatusTree);
-    changesSplitter->addWidget(commitContainer);
-    changesSplitter->setStretchFactor(0, 1);
-    changesSplitter->setStretchFactor(1, 0);
-    changesLayout->addWidget(changesSplitter);
+
+    // Staged + unstaged splitter
+    auto *stagingSplitter = new QSplitter(Qt::Vertical);
+    stagingSplitter->addWidget(m_stagedHeader);
+    stagingSplitter->addWidget(m_stagedTree);
+    stagingSplitter->addWidget(m_unstagedHeader);
+    stagingSplitter->addWidget(m_unstagedTree);
+    stagingSplitter->setStretchFactor(1, 1);
+    stagingSplitter->setStretchFactor(3, 1);
+
+    // Stage/unstage buttons between the two trees
+    auto *stageMiddleWidget = new QWidget();
+    auto *stageMiddleLayout = new QHBoxLayout(stageMiddleWidget);
+    stageMiddleLayout->setContentsMargins(4, 2, 4, 2);
+    stageMiddleLayout->addWidget(m_stageButton);
+    stageMiddleLayout->addWidget(m_unstageButton);
+    stageMiddleLayout->addWidget(m_stageAllButton);
+    stageMiddleLayout->addWidget(m_unstageAllButton);
+
+    // Vertical layout: staged tree, buttons, unstaged tree, commit pane
+    auto *changesContentLayout = new QVBoxLayout();
+    changesContentLayout->setContentsMargins(0, 0, 0, 0);
+    changesContentLayout->setSpacing(0);
+    changesContentLayout->addWidget(stagingSplitter, 1);
+    changesContentLayout->addWidget(stageMiddleWidget);
+    changesContentLayout->addWidget(commitContainer);
+
+    changesLayout->addLayout(changesContentLayout);
     m_sidebarTabs->addTab(changesTab, "Changes");
 
     // Tab 2 — History (commit list + commit files in a vertical splitter)
@@ -704,9 +871,6 @@ void MainWindow::setupUi()
 
     connect(m_gitStatusTree, &QTreeWidget::customContextMenuRequested,
             this, &MainWindow::onTreeContextMenu);
-    connect(m_selectAllCheck, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState state) {
-        setAllCheckStates(state);
-    });
 
     m_fsWatcher = new QFileSystemWatcher(this);
     m_refreshTimer = new QTimer(this);
@@ -724,6 +888,15 @@ void MainWindow::setupUi()
     // Check AI availability asynchronously
     QTimer::singleShot(0, this, [this]() {
         QSettings s("lazydesktop", "lazydesktop");
+        
+        // Check if AI is enabled in settings
+        bool aiEnabled = s.value("ai/enabled", false).toBool();
+        if (!aiEnabled) {
+            m_aiRowContainer->hide();
+            return;
+        }
+        
+        // Check for API key or local services
         if (!s.value("openrouter/key").toString().isEmpty()) {
             m_aiRowContainer->show();
             return;
@@ -739,6 +912,8 @@ void MainWindow::setupUi()
         };
         tryLocal("http://localhost:11434/api/tags");   // Ollama
         tryLocal("http://localhost:1234/v1/models");    // LMStudio
+        tryLocal("http://localhost:8080/health");       // llama.cpp
+        tryLocal("http://localhost:8000/health");       // LLMQore
     });
 }
 
@@ -1234,8 +1409,12 @@ bool MainWindow::openRepository(const QString &path)
     startGitLogQuery();
 
     // Watch for file changes to auto-refresh
-    m_fsWatcher->removePaths(m_fsWatcher->files());
-    m_fsWatcher->removePaths(m_fsWatcher->directories());
+    QStringList currentFiles = m_fsWatcher->files();
+    QStringList currentDirs = m_fsWatcher->directories();
+    if (!currentFiles.isEmpty())
+        m_fsWatcher->removePaths(currentFiles);
+    if (!currentDirs.isEmpty())
+        m_fsWatcher->removePaths(currentDirs);
     const QString gitDir = QDir(path).filePath(".git");
     m_fsWatcher->addPath(gitDir);
     m_fsWatcher->addPath(QDir(gitDir).filePath("index"));
@@ -1271,8 +1450,14 @@ void MainWindow::closeRepository()
     m_coAuthorButton->setEnabled(false);
     m_currentBranch.clear();
     m_selectedCommitHash.clear();
-    m_fsWatcher->removePaths(m_fsWatcher->files());
-    m_fsWatcher->removePaths(m_fsWatcher->directories());
+    
+    // Safely remove paths from watcher
+    QStringList files = m_fsWatcher->files();
+    QStringList dirs = m_fsWatcher->directories();
+    if (!files.isEmpty())
+        m_fsWatcher->removePaths(files);
+    if (!dirs.isEmpty())
+        m_fsWatcher->removePaths(dirs);
 }
 
 void MainWindow::onOpenEditor()
@@ -1436,7 +1621,8 @@ void MainWindow::onGenerateCommitMessage()
     const QString model = settings.value("openrouter/model", "gpt-4o-mini").toString();
 
     // Local providers don't need an API key
-    bool isLocal = provider == "Ollama" || provider == "LMStudio";
+    bool isLocal = provider == "Ollama" || provider == "LMStudio" || 
+                   provider == "llama.cpp" || provider == "LLMQore";
 
     QString apiKey;
     if (!isLocal) {
@@ -1449,16 +1635,33 @@ void MainWindow::onGenerateCommitMessage()
         }
     }
 
-    QStringList files = checkedFiles();
+    // Get staged files (not checked files) for commit message
+    QStringList files;
+    for (int i = 0; i < m_stagedTree->topLevelItemCount(); ++i) {
+        auto *item = m_stagedTree->topLevelItem(i);
+        files << item->data(0, Qt::UserRole).toString();
+    }
+
     if (files.isEmpty()) {
-        QMessageBox::information(this, "No Files Selected",
-            "Check at least one file to include in the commit message.");
+        QMessageBox::information(this, "No Files Staged",
+            "Stage at least one file to generate a commit message.\n\n"
+            "Select files in the 'Unstaged Changes' section and click 'Stage →' to stage them.");
         return;
     }
 
     m_aiCommitButton->setEnabled(false);
     m_summaryInput->setEnabled(false);
     m_descriptionInput->setEnabled(false);
+    
+    // Show thinking indicator
+    if (m_aiThinkingOverlay && m_commitContainer) {
+        m_aiThinkingOverlay->setGeometry(m_commitContainer->rect());
+        m_aiThinkingOverlay->setVisible(true);
+        m_aiThinkingText->clear();
+        m_aiThinkingText->setVisible(false);
+        m_aiShowMoreButton->setText("Show more ▼");
+        m_aiThinkingVisible = false;
+    }
 
     // Collect diffs
     QStringList diffParts;
@@ -1543,6 +1746,19 @@ void MainWindow::onGenerateCommitMessage()
     } else if (provider == "LMStudio") {
         url = "http://localhost:1234/v1/chat/completions";
         authHeader.clear();
+    } else if (provider == "llama.cpp") {
+        url = "http://localhost:8080/completion";
+        authHeader.clear();
+        // llama.cpp uses a different format
+        body.remove("messages");
+        QJsonObject prompt;
+        prompt["prompt"] = systemPrompt + "\n\n" + userContent;
+        prompt["n_predict"] = 1024;
+        body = prompt;
+    } else if (provider == "LLMQore") {
+        url = "http://localhost:8000/v1/chat/completions";
+        authHeader.clear();
+        body["model"] = model;
     }
 
     QNetworkRequest req(url);
@@ -1586,6 +1802,10 @@ static QString extractAiText(const QJsonObject &obj, const QString &provider)
 
 void MainWindow::onAiResponse(QNetworkReply *reply)
 {
+    // Hide thinking indicator
+    if (m_aiThinkingOverlay)
+        m_aiThinkingOverlay->setVisible(false);
+
     m_aiCommitButton->setEnabled(true);
     m_summaryInput->setEnabled(true);
     m_descriptionInput->setEnabled(true);
@@ -1750,7 +1970,7 @@ void MainWindow::onOpenSettings()
     infoLabel->setStyleSheet("font-weight: bold;");
     generalLayout->addWidget(infoLabel);
 
-    auto *addInfo = [&](const QString &label, const QString &path) {
+    auto addInfo = [&](const QString &label, const QString &path) {
         auto *row = new QHBoxLayout();
         auto *hdr = new QLabel(label);
         hdr->setStyleSheet("color: gray;");
@@ -1827,6 +2047,12 @@ void MainWindow::onOpenSettings()
     auto *aiLayout = new QVBoxLayout(aiPage);
     aiLayout->setContentsMargins(12, 12, 12, 12);
 
+    // Experimental AI toggle
+    auto *aiEnableCheck = new QCheckBox("Enable AI Features");
+    aiEnableCheck->setChecked(settings.value("ai/enabled", false).toBool());
+    aiEnableCheck->setToolTip("Enable or disable all AI-powered features (experimental)");
+    aiLayout->addWidget(aiEnableCheck);
+
     auto *aiKeyLabel = new QLabel("OpenRouter API Key:");
     auto *apiKeyInput = new QLineEdit();
     apiKeyInput->setPlaceholderText("sk-or-v1-...");
@@ -1839,8 +2065,14 @@ void MainWindow::onOpenSettings()
 
     auto *aiModelLabel = new QLabel("Model:");
     auto *aiModelInput = new QLineEdit();
+    // Set default model based on provider
+    QString defaultModel = "gpt-4o-mini";
+    QString provider = settings.value("ai/provider", "OpenRouter").toString();
+    if (provider == "llama.cpp" || provider == "LLMQore") {
+        defaultModel = "Qwen2.5-0.5B-Instruct-GGUF";
+    }
     aiModelInput->setPlaceholderText("gpt-4o-mini");
-    aiModelInput->setText(settings.value("openrouter/model", "gpt-4o-mini").toString());
+    aiModelInput->setText(settings.value("openrouter/model", defaultModel).toString());
     aiLayout->addWidget(aiModelLabel);
     aiLayout->addWidget(aiModelInput);
 
@@ -1853,7 +2085,8 @@ void MainWindow::onOpenSettings()
     aiLayout->addWidget(aiPromptInput, 1);
 
     // Save on accept
-    connect(&dialog, &QDialog::accepted, this, [&settings, apiKeyInput, themeCombo, gitNameInput, gitEmailInput, aiModelInput, aiPromptInput, this]() {
+    connect(&dialog, &QDialog::accepted, this, [&settings, apiKeyInput, themeCombo, gitNameInput, gitEmailInput, aiModelInput, aiPromptInput, aiEnableCheck, this]() {
+        settings.setValue("ai/enabled", aiEnableCheck->isChecked());
         settings.setValue("openrouter/key", apiKeyInput->text());
         settings.setValue("openrouter/model", aiModelInput->text().trimmed().isEmpty()
             ? "gpt-4o-mini" : aiModelInput->text().trimmed());
@@ -1892,9 +2125,13 @@ void MainWindow::onOpenSettings()
         if (!email.isEmpty())
             runGitConfigSet("user.email", email);
 
-        // Show AI row if a key was just set
-        if (!apiKeyInput->text().trimmed().isEmpty() && m_aiRowContainer && !m_aiRowContainer->isVisible())
+        // Show/hide AI row based on enabled state and API key
+        bool aiEnabled = aiEnableCheck->isChecked();
+        bool hasKey = !apiKeyInput->text().trimmed().isEmpty();
+        if (aiEnabled && hasKey && m_aiRowContainer && !m_aiRowContainer->isVisible())
             m_aiRowContainer->show();
+        else if (!aiEnabled || !hasKey)
+            m_aiRowContainer->hide();
     });
 
     stack->addWidget(generalPage);
@@ -1946,8 +2183,9 @@ static QIcon statusIcon(const QColor &color)
     return QIcon(pm);
 }
 
-void MainWindow::addGitFileToTree(const QString &path, const QString &prefix)
+void MainWindow::addGitFileToTree(const QString &path, const QString &prefix, QTreeWidgetItem *parent)
 {
+    Q_UNUSED(parent);
     auto *fileItem = new QTreeWidgetItem();
     fileItem->setText(0, path);
     fileItem->setData(0, Qt::UserRole, path);
@@ -2126,10 +2364,17 @@ void MainWindow::onSummaryTextChanged(const QString &text)
 
 void MainWindow::onCommitClicked()
 {
-    const QStringList files = checkedFiles();
+    // Get staged files from the staged tree
+    QStringList files;
+    for (int i = 0; i < m_stagedTree->topLevelItemCount(); ++i) {
+        auto *item = m_stagedTree->topLevelItem(i);
+        files << item->data(0, Qt::UserRole).toString();
+    }
+
     if (files.isEmpty()) {
-        QMessageBox::information(this, "Nothing Selected",
-            "Check at least one file to commit.");
+        QMessageBox::information(this, "Nothing Staged",
+            "Stage at least one file to commit.\n\n"
+            "Select files in the 'Unstaged Changes' section and click 'Stage →' to stage them.");
         return;
     }
 
@@ -2145,39 +2390,21 @@ void MainWindow::onCommitClicked()
                 this, &MainWindow::onCommitErrorOccurred);
     }
 
-    // Stage all checked files first, then commit
-    auto *addProc = new QProcess(this);
-    addProc->setWorkingDirectory(m_repoPath);
-    QStringList addArgs = {"add", "--"};
-    addArgs.append(files);
-    addProc->start("git", addArgs);
-
+    // Files are already staged, just commit
     m_commitButton->setEnabled(false);
-    m_commitButton->setText("Staging…");
+    m_commitButton->setText("Committing…");
 
-    connect(addProc, &QProcess::finished, this, [this, addProc](int ec, QProcess::ExitStatus es) {
-        addProc->deleteLater();
-        m_commitButton->setText("Commit");
+    QStringList args = {"commit"};
+    if (m_skipHooksButton && m_skipHooksButton->isChecked())
+        args << "--no-verify";
+    args << "-m" << m_summaryInput->text().trimmed();
 
-        if (es != QProcess::NormalExit || ec != 0) {
-            const QString err = QString::fromUtf8(addProc->readAllStandardError());
-            QMessageBox::warning(this, "Stage Failed", err);
-            m_commitButton->setEnabled(!m_summaryInput->text().trimmed().isEmpty());
-            return;
-        }
+    const QString desc = m_descriptionInput->toPlainText().trimmed();
+    if (!desc.isEmpty())
+        args << "-m" << desc;
 
-        QStringList args = {"commit"};
-        if (m_skipHooksButton && m_skipHooksButton->isChecked())
-            args << "--no-verify";
-        args << "-m" << m_summaryInput->text().trimmed();
-
-        const QString desc = m_descriptionInput->toPlainText().trimmed();
-        if (!desc.isEmpty())
-            args << "-m" << desc;
-
-        m_commitProcess->setWorkingDirectory(m_repoPath);
-        m_commitProcess->start("git", args);
-    });
+    m_commitProcess->setWorkingDirectory(m_repoPath);
+    m_commitProcess->start("git", args);
 }
 
 void MainWindow::onCommitFinished(int exitCode, QProcess::ExitStatus exitStatus)
@@ -2452,6 +2679,8 @@ void MainWindow::createNewBranch()
 void MainWindow::refreshAll()
 {
     m_gitStatusTree->clear();
+    m_stagedTree->clear();
+    m_unstagedTree->clear();
     m_fileContentViewer->clear();
     m_summaryInput->clear();
     m_descriptionInput->clear();
@@ -2592,6 +2821,159 @@ void MainWindow::startGitStatusQuery()
     m_gitProcess->start("git", {"status", "--porcelain"});
 }
 
+void MainWindow::onStageSelected()
+{
+    QList<QTreeWidgetItem*> items = m_unstagedTree->selectedItems();
+    if (items.isEmpty())
+        return;
+
+    QStringList paths;
+    for (auto *item : items)
+        paths << item->data(0, Qt::UserRole).toString();
+
+    if (paths.isEmpty())
+        return;
+
+    m_stageProcess->setWorkingDirectory(m_repoPath);
+    QStringList args = {"add", "--"};
+    args << paths;
+    m_stageProcess->start("git", args);
+}
+
+void MainWindow::onUnstageSelected()
+{
+    QList<QTreeWidgetItem*> items = m_stagedTree->selectedItems();
+    if (items.isEmpty())
+        return;
+
+    QStringList paths;
+    for (auto *item : items)
+        paths << item->data(0, Qt::UserRole).toString();
+
+    if (paths.isEmpty())
+        return;
+
+    m_stageProcess->setWorkingDirectory(m_repoPath);
+    QStringList args = {"reset", "HEAD", "--"};
+    args << paths;
+    m_stageProcess->start("git", args);
+}
+
+void MainWindow::onStageAllFiles()
+{
+    if (m_unstagedTree->topLevelItemCount() == 0)
+        return;
+
+    m_stageProcess->setWorkingDirectory(m_repoPath);
+    m_stageProcess->start("git", {"add", "--", "."});
+}
+
+void MainWindow::onUnstageAllFiles()
+{
+    if (m_stagedTree->topLevelItemCount() == 0)
+        return;
+
+    m_stageProcess->setWorkingDirectory(m_repoPath);
+    m_stageProcess->start("git", {"reset", "HEAD", "."});
+}
+
+void MainWindow::readDiffForFile(const QString &file) const
+{
+    Q_UNUSED(file);
+}
+
+void MainWindow::onEnableAiSystem()
+{
+    // AI system is always enabled when configured
+}
+
+void MainWindow::onStagedItemClicked(QTreeWidgetItem *item, int column)
+{
+    Q_UNUSED(column);
+    if (!item)
+        return;
+
+    const QString relPath = item->data(0, Qt::UserRole).toString();
+    if (relPath.isEmpty())
+        return;
+
+    m_viewerStack->setCurrentIndex(0);
+    QString diff = runGitDiff(m_repoPath, {"diff", "--cached", "--", relPath});
+    if (diff.isEmpty())
+        m_fileContentViewer->clear();
+    else
+        m_fileContentViewer->setDiff(diff);
+}
+
+void MainWindow::onUnstagedItemClicked(QTreeWidgetItem *item, int column)
+{
+    Q_UNUSED(column);
+    if (!item)
+        return;
+
+    const QString relPath = item->data(0, Qt::UserRole).toString();
+    if (relPath.isEmpty())
+        return;
+
+    m_viewerStack->setCurrentIndex(0);
+    QString diff = runGitDiff(m_repoPath, {"diff", "HEAD", "--", relPath});
+    if (diff.isEmpty())
+        m_fileContentViewer->clear();
+    else
+        m_fileContentViewer->setDiff(diff);
+}
+
+void MainWindow::onStagedContextMenu(const QPoint &pos)
+{
+    auto *item = m_stagedTree->itemAt(pos);
+    if (!item)
+        return;
+
+    const QString path = item->data(0, Qt::UserRole).toString();
+    if (path.isEmpty())
+        return;
+
+    QMenu menu(this);
+    auto *unstageAct = menu.addAction("Unstage");
+    connect(unstageAct, &QAction::triggered, this, [this, path]() {
+        m_stageProcess->setWorkingDirectory(m_repoPath);
+        m_stageProcess->start("git", {"reset", "HEAD", "--", path});
+    });
+    auto *discardAct = menu.addAction("Discard Changes");
+    connect(discardAct, &QAction::triggered, this, [this, path]() {
+        m_stageProcess->setWorkingDirectory(m_repoPath);
+        m_stageProcess->start("git", {"restore", "--staged", path});
+        m_stageProcess->start("git", {"restore", path});
+    });
+
+    menu.exec(m_stagedTree->viewport()->mapToGlobal(pos));
+}
+
+void MainWindow::onUnstagedContextMenu(const QPoint &pos)
+{
+    auto *item = m_unstagedTree->itemAt(pos);
+    if (!item)
+        return;
+
+    const QString path = item->data(0, Qt::UserRole).toString();
+    if (path.isEmpty())
+        return;
+
+    QMenu menu(this);
+    auto *stageAct = menu.addAction("Stage");
+    connect(stageAct, &QAction::triggered, this, [this, path]() {
+        m_stageProcess->setWorkingDirectory(m_repoPath);
+        m_stageProcess->start("git", {"add", "--", path});
+    });
+    auto *discardAct = menu.addAction("Discard Changes");
+    connect(discardAct, &QAction::triggered, this, [this, path]() {
+        m_stageProcess->setWorkingDirectory(m_repoPath);
+        m_stageProcess->start("git", {"restore", path});
+    });
+
+    menu.exec(m_unstagedTree->viewport()->mapToGlobal(pos));
+}
+
 void MainWindow::startGitUnpushedQuery()
 {
     if (m_gitProcess->state() != QProcess::NotRunning)
@@ -2623,49 +3005,7 @@ void MainWindow::onGitProcessFinished(int exitCode, QProcess::ExitStatus exitSta
         m_gitProcess->readAllStandardOutput());
 
     if (m_currentQuery == GitQuery::Status) {
-        // Preserve selection across refresh
-        auto *current = m_gitStatusTree->currentItem();
-        QString selectedPath = current ? current->data(0, Qt::UserRole).toString() : QString();
-
-        m_gitStatusTree->clear();
-        const QStringList lines = output.split('\n', Qt::SkipEmptyParts);
-
-        for (const QString &line : lines) {
-            QString prefix;
-            const QString xy = line.left(2);
-
-            if (xy == "??")
-                prefix = "[?]";
-            else if (xy.contains('M'))
-                prefix = "[M]";
-            else if (xy.contains('A'))
-                prefix = "[A]";
-            else if (xy.contains('D'))
-                prefix = "[D]";
-            else if (xy.contains('R'))
-                prefix = "[R]";
-            else
-                prefix = "[*]";
-
-            const QString path = line.mid(3).trimmed();
-            addGitFileToTree(path, prefix);
-        }
-
-        // Restore selection and diff after refresh
-        if (!selectedPath.isEmpty()) {
-            QTreeWidgetItemIterator it(m_gitStatusTree);
-            while (*it) {
-                if ((*it)->data(0, Qt::UserRole).toString() == selectedPath) {
-                    m_gitStatusTree->setCurrentItem(*it);
-                    onTreeItemClicked(*it, 0);
-                    break;
-                }
-                ++it;
-            }
-        }
-
-        m_changedFilesLabel->setText(
-            QString("%1 changed files").arg(m_gitStatusTree->topLevelItemCount()));
+        updateStagedUnstagedTrees(output);
         startGitUnpushedQuery();
     } else if (m_currentQuery == GitQuery::Unpushed) {
         const QStringList lines = output.split('\n', Qt::SkipEmptyParts);
@@ -2678,8 +3018,6 @@ void MainWindow::onGitProcessFinished(int exitCode, QProcess::ExitStatus exitSta
             addGitFileToTree(trimmed, "[P]");
         }
 
-        m_changedFilesLabel->setText(
-            QString("%1 changed files").arg(m_gitStatusTree->topLevelItemCount()));
         m_currentQuery = GitQuery::None;
     }
 }
@@ -2693,6 +3031,62 @@ void MainWindow::onGitProcessErrorOccurred(QProcess::ProcessError error)
     }
 
     m_currentQuery = GitQuery::None;
+}
+
+void MainWindow::updateStagedUnstagedTrees(const QString &output)
+{
+    m_stagedTree->clear();
+    m_unstagedTree->clear();
+
+    const QStringList lines = output.split('\n', Qt::SkipEmptyParts);
+
+    for (const QString &line : lines) {
+        QString prefix;
+        const QString xy = line.left(2);
+
+        if (xy == "??")
+            prefix = "[?]";
+        else if (xy.contains('M'))
+            prefix = "[M]";
+        else if (xy.contains('A'))
+            prefix = "[A]";
+        else if (xy.contains('D'))
+            prefix = "[D]";
+        else if (xy.contains('R'))
+            prefix = "[R]";
+        else
+            prefix = "[*]";
+
+        const QString path = line.mid(3).trimmed();
+
+        // Check if file is staged (first char of XY is not space)
+        bool isStaged = (xy.at(0) != ' ');
+
+        auto *fileItem = new QTreeWidgetItem();
+        fileItem->setText(0, path);
+        fileItem->setData(0, Qt::UserRole, path);
+
+        const QChar status = prefix.trimmed().isEmpty() ? QChar() : prefix.trimmed().at(1);
+        fileItem->setData(0, Qt::UserRole + 1, status);
+
+        switch (status.toLatin1()) {
+        case 'M': fileItem->setIcon(0, statusIcon(QColor("#f0c000"))); break;
+        case 'D': fileItem->setIcon(0, statusIcon(QColor("#e04040"))); break;
+        case 'A': fileItem->setIcon(0, statusIcon(QColor("#40c040"))); break;
+        case 'R': fileItem->setIcon(0, statusIcon(QColor("#c080ff"))); break;
+        case '?': fileItem->setIcon(0, statusIcon(QColor("#c0c0c0"))); break;
+        default:  break;
+        }
+
+        if (isStaged) {
+            m_stagedTree->addTopLevelItem(fileItem);
+        } else {
+            m_unstagedTree->addTopLevelItem(fileItem);
+        }
+    }
+
+    m_stagedCountLabel->setText(QString("%1 files").arg(m_stagedTree->topLevelItemCount()));
+    m_unstagedCountLabel->setText(QString("%1 files").arg(m_unstagedTree->topLevelItemCount()));
 }
 
 // --- Git log (History tab) ---

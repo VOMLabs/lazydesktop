@@ -27,6 +27,8 @@ class QTextEdit;
 class QTreeWidget;
 class QTreeWidgetItem;
 
+class AddonManager;
+
 struct GitCredentials
 {
     QString host;
@@ -81,18 +83,20 @@ private slots:
     void onEnableAiSystem();
     void readDiffForFile(const QString &file) const;
     void onAddCoAuthors();
-    void onStageHunk(int hunkIndex, const QSet<int> &skippedLines = {});
-    void onUnstageHunk(int hunkIndex, const QSet<int> &skippedLines = {});
-    void onDiscardHunk(int hunkIndex);
     void onStageAllFiles();
     void onUnstageAllFiles();
-    void onCopyHunkPatch(int hunkIndex);
-    void reSelectCurrentFile();
     void closeRepository();
     void onTreeContextMenu(const QPoint &pos);
     void onDiscardFile();
     void toggleCommitPanel(bool visible);
     void toggleCommitFilesPanel(bool visible);
+    void onStageSelected();
+    void onUnstageSelected();
+    void onStagedItemClicked(QTreeWidgetItem *item, int column);
+    void onUnstagedItemClicked(QTreeWidgetItem *item, int column);
+    void onStagedContextMenu(const QPoint &pos);
+    void onUnstagedContextMenu(const QPoint &pos);
+    void updateStagedUnstagedTrees(const QString &output);
 
 private:
     enum class GitQuery { None, Status, Unpushed };
@@ -148,10 +152,19 @@ private:
     QPushButton *m_addProjectButton = nullptr;
     QListWidget *m_recentList = nullptr;
     QTreeWidget *m_gitStatusTree = nullptr;
+    QAction *m_openGitHubAction = nullptr;
+    QAction *m_viewCommitPanelAction = nullptr;
+    QAction *m_viewCommitFilesAction = nullptr;
     DiffViewer *m_fileContentViewer = nullptr;
     QLabel *m_binaryPreview = nullptr;
+    QWidget *m_placeholderWidget = nullptr;
+    QStackedWidget *m_viewerStack = nullptr;
     QWidget *m_commitFilesHeader = nullptr;
     QWidget *m_commitFilesContainer = nullptr;
+    QWidget *m_commitContainer = nullptr;
+    QTabWidget *m_sidebarTabs = nullptr;
+    QListWidget *m_commitHistoryList = nullptr;
+    QListWidget *m_commitFilesList = nullptr;
 
     QLineEdit *m_summaryInput = nullptr;
     QTextEdit *m_descriptionInput = nullptr;
@@ -164,6 +177,25 @@ private:
     QWidget *m_aiRowContainer = nullptr;
     QProcess *m_commitProcess = nullptr;
     QNetworkAccessManager *m_networkManager = nullptr;
+    
+    // AI thinking indicator
+    QWidget *m_aiThinkingOverlay = nullptr;
+    QLabel *m_aiThinkingLabel = nullptr;
+    QPushButton *m_aiShowMoreButton = nullptr;
+    QTextEdit *m_aiThinkingText = nullptr;
+    bool m_aiThinkingVisible = false;
+
+    // Staging area UI
+    QWidget *m_stagedHeader = nullptr;
+    QTreeWidget *m_stagedTree = nullptr;
+    QLabel *m_stagedCountLabel = nullptr;
+    QWidget *m_unstagedHeader = nullptr;
+    QTreeWidget *m_unstagedTree = nullptr;
+    QLabel *m_unstagedCountLabel = nullptr;
+    QPushButton *m_stageButton = nullptr;
+    QPushButton *m_unstageButton = nullptr;
+    QPushButton *m_stageAllButton = nullptr;
+    QPushButton *m_unstageAllButton = nullptr;
 
     PushState m_pushState = PushState::Push;
     QPushButton *m_pushButton = nullptr;
