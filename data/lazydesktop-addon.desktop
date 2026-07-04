@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=LazyDesktop Addon Installer
+Comment=Install LazyAddons packages for LazyDesktop
+Exec=lazydesktop %f
+Terminal=false
+NoDisplay=true
+Categories=Development;Utility;
+MimeType=application/vnd.lazydesktop.addon;application/zip;

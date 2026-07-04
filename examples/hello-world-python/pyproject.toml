@@ -1,0 +1,6 @@
+[project]
+name = "hello-world-python"
+version = "1.0.0"
+description = "Hello World example for LazyAddons"
+requires-python = ">=3.10"
+dependencies = []

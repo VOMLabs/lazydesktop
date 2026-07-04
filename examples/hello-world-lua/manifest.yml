@@ -1,0 +1,11 @@
+id: com.example.hello-world-lua
+name: Hello World (Lua)
+version: 1.0.0
+runtime: lua
+entry: src/main.lua
+api: 1
+author: LazyDesktop Team
+description: A simple Hello World plugin written in Lua
+license: MIT
+permissions:
+  - notifications

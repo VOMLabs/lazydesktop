@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=LazyDesktop
+Comment=A KDE-native Git GUI alternative
+Exec=lazydesktop %F
+Icon=lazydesktop
+Terminal=false
+Categories=Development;RevisionControl;Qt;
+StartupNotify=true
+MimeType=application/vnd.lazydesktop.addon;
+Keywords=git;github;version-control;

@@ -78,7 +78,16 @@ private slots:
     void onOpenGitHub();
     void onOpenSettings();
     void onGenerateCommitMessage();
+    void onEnableAiSystem();
+    void readDiffForFile(const QString &file) const;
     void onAddCoAuthors();
+    void onStageHunk(int hunkIndex, const QSet<int> &skippedLines = {});
+    void onUnstageHunk(int hunkIndex, const QSet<int> &skippedLines = {});
+    void onDiscardHunk(int hunkIndex);
+    void onStageAllFiles();
+    void onUnstageAllFiles();
+    void onCopyHunkPatch(int hunkIndex);
+    void reSelectCurrentFile();
     void closeRepository();
     void onTreeContextMenu(const QPoint &pos);
     void onDiscardFile();
@@ -96,7 +105,7 @@ private:
     void startGitStatusQuery();
     void startGitUnpushedQuery();
     void startGitLogQuery();
-    void addGitFileToTree(const QString &path, const QString &prefix);
+    void addGitFileToTree(const QString &path, const QString &prefix, QTreeWidgetItem *parent = nullptr);
     void setAllCheckStates(Qt::CheckState state);
     QStringList checkedFiles() const;
 
@@ -141,15 +150,6 @@ private:
     QTreeWidget *m_gitStatusTree = nullptr;
     DiffViewer *m_fileContentViewer = nullptr;
     QLabel *m_binaryPreview = nullptr;
-    QAction *m_openGitHubAction = nullptr;
-    QAction *m_viewCommitPanelAction = nullptr;
-    QAction *m_viewCommitFilesAction = nullptr;
-    QWidget *m_commitContainer = nullptr;
-    QWidget *m_placeholderWidget = nullptr;
-    QStackedWidget *m_viewerStack = nullptr;
-    QTabWidget *m_sidebarTabs = nullptr;
-    QListWidget *m_commitHistoryList = nullptr;
-    QListWidget *m_commitFilesList = nullptr;
     QWidget *m_commitFilesHeader = nullptr;
     QWidget *m_commitFilesContainer = nullptr;
 
@@ -159,6 +159,8 @@ private:
     QPushButton *m_aiCommitButton = nullptr;
     QPushButton *m_skipHooksButton = nullptr;
     QPushButton *m_coAuthorButton = nullptr;
+    QPushButton *m_aiEnableButton = nullptr;
+    QLabel *m_aiExperimentalLabel = nullptr;
     QWidget *m_aiRowContainer = nullptr;
     QProcess *m_commitProcess = nullptr;
     QNetworkAccessManager *m_networkManager = nullptr;
@@ -189,6 +191,8 @@ private:
     QString m_repoPath;
     GitQuery m_currentQuery = GitQuery::None;
     QStringList m_recentProjects;
+    AddonManager *m_addonManager = nullptr;
+    bool m_aiEnabled = false;
 };
 
 #endif // MAINWINDOW_H

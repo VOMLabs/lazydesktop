@@ -1,0 +1,8 @@
+usr/bin/lazydesktop
+usr/share/applications/lazydesktop.desktop
+usr/share/applications/lazydesktop-addon.desktop
+usr/share/mime/packages/lazydesktop-addons.xml
+usr/share/icons/hicolor/scalable/apps/lazydesktop.svg
+usr/share/doc/lazydesktop/addons/
+usr/share/lazydesktop/templates/
+usr/share/lazydesktop/examples/

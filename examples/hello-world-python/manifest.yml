@@ -1,0 +1,11 @@
+id: com.example.hello-world-python
+name: Hello World (Python)
+version: 1.0.0
+runtime: python
+entry: src/main.py
+api: 1
+author: LazyDesktop Team
+description: A simple Hello World plugin written in Python
+license: MIT
+permissions:
+  - notifications
