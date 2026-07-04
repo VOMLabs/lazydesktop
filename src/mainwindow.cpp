@@ -1743,10 +1743,30 @@ void MainWindow::onOpenSettings()
     // General page
     auto *generalPage = new QWidget();
     auto *generalLayout = new QVBoxLayout(generalPage);
-    auto *generalPlaceholder = new QLabel("General settings coming soon.");
-    generalPlaceholder->setAlignment(Qt::AlignCenter);
-    generalPlaceholder->setStyleSheet("color: gray;");
-    generalLayout->addWidget(generalPlaceholder);
+    generalLayout->setContentsMargins(12, 12, 12, 12);
+    generalLayout->setSpacing(8);
+
+    auto *infoLabel = new QLabel("Data locations:");
+    infoLabel->setStyleSheet("font-weight: bold;");
+    generalLayout->addWidget(infoLabel);
+
+    auto *addInfo = [&](const QString &label, const QString &path) {
+        auto *row = new QHBoxLayout();
+        auto *hdr = new QLabel(label);
+        hdr->setStyleSheet("color: gray;");
+        hdr->setFixedWidth(80);
+        auto *val = new QLabel(path);
+        val->setWordWrap(true);
+        val->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        row->addWidget(hdr);
+        row->addWidget(val, 1);
+        generalLayout->addLayout(row);
+    };
+    addInfo("Projects:", QString("%1/vomlabs/lazydesktop/projects.yaml").arg(QDir::homePath()));
+    addInfo("Settings:", QSettings("lazydesktop", "lazydesktop").fileName());
+    addInfo("Themes:", themesDirPath());
+
+    generalLayout->addStretch();
 
     // Appearance page
     auto *appearancePage = new QWidget();
