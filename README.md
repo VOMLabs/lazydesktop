@@ -21,7 +21,7 @@ Built with Qt 6 and C++23 — the same frameworks KDE Plasma ships with, requiri
 - **Branch management** — Switch, create, and delete branches from a dropdown
 - **Commit history** — Tabbed sidebar with colored commit list; click a commit to see changed files; click a file to see its diff
 - **Add project dropdown** — Drawer button shows a dropdown with **Clone Repository** (prompt for URL + destination, runs `git clone`), **Create Repository** (prompts for directory, runs `git init`), and **Load Existing** (folder picker)
-- **Recent projects** — Sidebar overlay with persistent project history (stored in `~/vomlabs/lazydesktop/projects.yaml`); yellow dot indicates dirty repos
+- **Recent projects** — Sidebar overlay with persistent project history (stored in `~/.config/lazydesktop/projects.yaml`); yellow dot indicates dirty repos
 - **Projects grouped by remote owner** — Recent list organizes projects under category headers (GitHub owner/org extracted from `remote.origin.url`)
 - **Scan Folder for Projects** — Bulk-import all Git repos from a folder's subdirectories via the drawer button
 - **Remove All** — Clears the entire recent projects list with confirmation
@@ -55,8 +55,8 @@ ninja -C build
 
 The binary runs directly from the build directory — no `make install` needed.
 Your projects and settings persist across rebuilds:
-- Projects: `~/vomlabs/lazydesktop/projects.yaml`
-- Settings (API key, theme, model, system prompt): `~/.config/itzzmateo/lazydesktop/lazydesktop.conf`
+- Projects: `~/.config/lazydesktop/projects.yaml`
+- Settings (API key, theme, model, system prompt): `~/.config/lazydesktop/lazydesktop.conf`
 - Custom themes: `~/.config/lazydesktop/themes/*.theme.yaml`
 
 ## Custom Themes

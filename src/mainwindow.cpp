@@ -53,6 +53,8 @@
 #include <QVBoxLayout>
 #include <QStandardPaths>
 
+#include <memory>
+
 #include <yaml-cpp/yaml.h>
 
 class CommitDelegate : public QStyledItemDelegate {
@@ -129,6 +131,61 @@ public:
 };
 
 static const int kMaxRecentProjects = 100;
+
+static QString defaultSettingsDir()
+{
+#ifdef Q_OS_WIN
+    return QString("C:/Users/%1/.config/lazydesktop")
+        .arg(qEnvironmentVariable("USERNAME"));
+#else
+    return QDir::homePath() + "/.config/lazydesktop";
+#endif
+}
+
+static QString defaultProjectsPath()
+{
+    return defaultSettingsDir() + "/projects.yaml";
+}
+
+static QString defaultSettingsPath()
+{
+    return defaultSettingsDir() + "/lazydesktop.conf";
+}
+
+static QString defaultThemesDir()
+{
+#ifdef Q_OS_WIN
+    return QString("C:/Users/%1/vomlabs/lazydesktop/themes")
+        .arg(qEnvironmentVariable("USERNAME"));
+#else
+    return QDir::homePath() + "/.config/lazydesktop/themes";
+#endif
+}
+
+static std::unique_ptr<QSettings> lazySettings()
+{
+    const QString path = defaultSettingsPath();
+    QDir().mkpath(defaultSettingsDir());
+    return std::make_unique<QSettings>(path, QSettings::IniFormat);
+}
+
+static QString projectsFilePath()
+{
+    auto s = lazySettings();
+    return s->value("paths/projects", defaultProjectsPath()).toString();
+}
+
+static QString settingsFilePath()
+{
+    auto s = lazySettings();
+    return s->value("paths/settings", defaultSettingsPath()).toString();
+}
+
+static QString themesDirPath()
+{
+    auto s = lazySettings();
+    return s->value("paths/themes", defaultThemesDir()).toString();
+}
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -546,12 +603,12 @@ void MainWindow::setupUi()
         QMenu menu;
         QStringList providers{"OpenRouter", "OpenAI", "Anthropic", "Gemini",
                               "Ollama", "LMStudio", "Google AI Studio"};
-        QSettings s("lazydesktop", "lazydesktop");
-        QString current = s.value("ai/provider", "OpenRouter").toString();
+        auto settings = lazySettings();
+        QString current = settings->value("ai/provider", "OpenRouter").toString();
         for (const QString &p : providers) {
             auto *action = menu.addAction(p, this, [p]() {
-                QSettings s("lazydesktop", "lazydesktop");
-                s.setValue("ai/provider", p);
+                auto s = lazySettings();
+                s->setValue("ai/provider", p);
             });
             if (p == current)
                 action->setCheckable(true);
@@ -887,17 +944,17 @@ void MainWindow::setupUi()
 
     // Check AI availability asynchronously
     QTimer::singleShot(0, this, [this]() {
-        QSettings s("lazydesktop", "lazydesktop");
+        auto s = lazySettings();
         
         // Check if AI is enabled in settings
-        bool aiEnabled = s.value("ai/enabled", false).toBool();
+        bool aiEnabled = s->value("ai/enabled", false).toBool();
         if (!aiEnabled) {
             m_aiRowContainer->hide();
             return;
         }
         
         // Check for API key or local services
-        if (!s.value("openrouter/key").toString().isEmpty()) {
+        if (!s->value("openrouter/key").toString().isEmpty()) {
             m_aiRowContainer->show();
             return;
         }
@@ -912,8 +969,6 @@ void MainWindow::setupUi()
         };
         tryLocal("http://localhost:11434/api/tags");   // Ollama
         tryLocal("http://localhost:1234/v1/models");    // LMStudio
-        tryLocal("http://localhost:8080/health");       // llama.cpp
-        tryLocal("http://localhost:8000/health");       // LLMQore
     });
 }
 
@@ -973,16 +1028,6 @@ static QString gitRemoteOwner(const QString &path)
 }
 
 // --- Recent projects persistence ---
-
-static QString projectsFilePath()
-{
-#ifdef Q_OS_WIN
-    return QString("C:/Users/%1/vomlabs/lazydesktop/projects.yaml")
-        .arg(qEnvironmentVariable("USERNAME"));
-#else
-    return QDir::homePath() + "/vomlabs/lazydesktop/projects.yaml";
-#endif
-}
 
 void MainWindow::loadRecentProjects()
 {
@@ -1519,15 +1564,6 @@ struct Theme {
     QMap<QString, QString> colors;
 };
 
-static QString themesDirPath()
-{
-#ifdef Q_OS_WIN
-    return QString("C:/Users/%1/vomlabs/lazydesktop/themes")
-        .arg(qEnvironmentVariable("USERNAME"));
-#else
-    return QDir::homePath() + "/.config/lazydesktop/themes";
-#endif
-}
 
 static QList<Theme> loadCustomThemes()
 {
@@ -1588,12 +1624,12 @@ static Theme findTheme(const QString &name, const QList<Theme> &customs)
 
 void MainWindow::applySavedTheme()
 {
-    QSettings settings("lazydesktop", "lazydesktop");
+    auto settings = lazySettings();
     auto *app = qobject_cast<QApplication *>(qApp);
     if (!app)
         return;
 
-    QString theme = settings.value("appearance/theme", "system").toString();
+    QString theme = settings->value("appearance/theme", "system").toString();
 
     if (theme == "system") {
         app->setStyleSheet({});
@@ -1616,17 +1652,16 @@ void MainWindow::applySavedTheme()
 
 void MainWindow::onGenerateCommitMessage()
 {
-    QSettings settings("lazydesktop", "lazydesktop");
-    const QString provider = settings.value("ai/provider", "OpenRouter").toString();
-    const QString model = settings.value("openrouter/model", "gpt-4o-mini").toString();
+    auto settings = lazySettings();
+    const QString provider = settings->value("ai/provider", "OpenRouter").toString();
+    const QString model = settings->value("openrouter/model", "gpt-4o-mini").toString();
 
     // Local providers don't need an API key
-    bool isLocal = provider == "Ollama" || provider == "LMStudio" || 
-                   provider == "llama.cpp" || provider == "LLMQore";
+    bool isLocal = provider == "Ollama" || provider == "LMStudio";
 
     QString apiKey;
     if (!isLocal) {
-        apiKey = settings.value("openrouter/key").toString();
+        apiKey = settings->value("openrouter/key").toString();
         if (apiKey.isEmpty()) {
             QMessageBox::information(this, "API Key Required",
                 "No OpenRouter API key configured.\n\n"
@@ -1676,7 +1711,7 @@ void MainWindow::onGenerateCommitMessage()
         }
     }
 
-    QString systemPrompt = settings.value("ai/system_prompt",
+    QString systemPrompt = settings->value("ai/system_prompt",
         "Generate a Conventional Commits summary and a casual description of all changes.")
         .toString();
 
@@ -1746,19 +1781,6 @@ void MainWindow::onGenerateCommitMessage()
     } else if (provider == "LMStudio") {
         url = "http://localhost:1234/v1/chat/completions";
         authHeader.clear();
-    } else if (provider == "llama.cpp") {
-        url = "http://localhost:8080/completion";
-        authHeader.clear();
-        // llama.cpp uses a different format
-        body.remove("messages");
-        QJsonObject prompt;
-        prompt["prompt"] = systemPrompt + "\n\n" + userContent;
-        prompt["n_predict"] = 1024;
-        body = prompt;
-    } else if (provider == "LLMQore") {
-        url = "http://localhost:8000/v1/chat/completions";
-        authHeader.clear();
-        body["model"] = model;
     }
 
     QNetworkRequest req(url);
@@ -1816,7 +1838,8 @@ void MainWindow::onAiResponse(QNetworkReply *reply)
         return;
     }
 
-    QString provider = QSettings("lazydesktop", "lazydesktop").value("ai/provider", "OpenRouter").toString();
+    auto s = lazySettings();
+    QString provider = s->value("ai/provider", "OpenRouter").toString();
     QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
     QJsonObject obj = doc.object();
     QString content = extractAiText(obj, provider);
@@ -1958,7 +1981,7 @@ void MainWindow::onOpenSettings()
 
     auto *stack = new QStackedWidget();
 
-    QSettings settings("lazydesktop", "lazydesktop");
+    auto settings = lazySettings();
 
     // General page
     auto *generalPage = new QWidget();
@@ -1966,25 +1989,29 @@ void MainWindow::onOpenSettings()
     generalLayout->setContentsMargins(12, 12, 12, 12);
     generalLayout->setSpacing(8);
 
-    auto *infoLabel = new QLabel("Data locations:");
+    auto *infoLabel = new QLabel("Data locations (changes apply after restart):");
     infoLabel->setStyleSheet("font-weight: bold;");
     generalLayout->addWidget(infoLabel);
 
-    auto addInfo = [&](const QString &label, const QString &path) {
+    auto *projectsPathInput = new QLineEdit();
+    projectsPathInput->setText(projectsFilePath());
+    auto *settingsPathInput = new QLineEdit();
+    settingsPathInput->setText(settingsFilePath());
+    auto *themesPathInput = new QLineEdit();
+    themesPathInput->setText(themesDirPath());
+
+    auto addPathRow = [&](const QString &label, QLineEdit *input) {
         auto *row = new QHBoxLayout();
         auto *hdr = new QLabel(label);
         hdr->setStyleSheet("color: gray;");
         hdr->setFixedWidth(80);
-        auto *val = new QLabel(path);
-        val->setWordWrap(true);
-        val->setTextInteractionFlags(Qt::TextSelectableByMouse);
         row->addWidget(hdr);
-        row->addWidget(val, 1);
+        row->addWidget(input, 1);
         generalLayout->addLayout(row);
     };
-    addInfo("Projects:", QString("%1/vomlabs/lazydesktop/projects.yaml").arg(QDir::homePath()));
-    addInfo("Settings:", QSettings("lazydesktop", "lazydesktop").fileName());
-    addInfo("Themes:", themesDirPath());
+    addPathRow("Projects:", projectsPathInput);
+    addPathRow("Settings:", settingsPathInput);
+    addPathRow("Themes:", themesPathInput);
 
     generalLayout->addStretch();
 
@@ -2005,7 +2032,7 @@ void MainWindow::onOpenSettings()
             themeCombo->addItem(t.name);
     }
 
-    QString storedTheme = settings.value("appearance/theme", "system").toString();
+    QString storedTheme = settings->value("appearance/theme", "system").toString();
     if (storedTheme == "dark")
         themeCombo->setCurrentIndex(1);
     else if (storedTheme == "system")
@@ -2049,7 +2076,7 @@ void MainWindow::onOpenSettings()
 
     // Experimental AI toggle
     auto *aiEnableCheck = new QCheckBox("Enable AI Features");
-    aiEnableCheck->setChecked(settings.value("ai/enabled", false).toBool());
+    aiEnableCheck->setChecked(settings->value("ai/enabled", false).toBool());
     aiEnableCheck->setToolTip("Enable or disable all AI-powered features (experimental)");
     aiLayout->addWidget(aiEnableCheck);
 
@@ -2057,47 +2084,91 @@ void MainWindow::onOpenSettings()
     auto *apiKeyInput = new QLineEdit();
     apiKeyInput->setPlaceholderText("sk-or-v1-...");
     apiKeyInput->setEchoMode(QLineEdit::Password);
-    QString storedKey = settings.value("openrouter/key").toString();
+    QString storedKey = settings->value("openrouter/key").toString();
     if (!storedKey.isEmpty())
         apiKeyInput->setText(storedKey);
     aiLayout->addWidget(aiKeyLabel);
     aiLayout->addWidget(apiKeyInput);
 
+    auto *aiProviderLabel = new QLabel("Provider:");
+    auto *aiProviderCombo = new QComboBox();
+    aiProviderCombo->addItems({"OpenRouter", "OpenAI", "Anthropic", "Gemini", "Google AI Studio",
+                               "Ollama", "LMStudio"});
+    QString currentProvider = settings->value("ai/provider", "OpenRouter").toString();
+    int providerIndex = aiProviderCombo->findText(currentProvider);
+    if (providerIndex >= 0)
+        aiProviderCombo->setCurrentIndex(providerIndex);
+    aiLayout->addWidget(aiProviderLabel);
+    aiLayout->addWidget(aiProviderCombo);
+
     auto *aiModelLabel = new QLabel("Model:");
     auto *aiModelInput = new QLineEdit();
-    // Set default model based on provider
-    QString defaultModel = "gpt-4o-mini";
-    QString provider = settings.value("ai/provider", "OpenRouter").toString();
-    if (provider == "llama.cpp" || provider == "LLMQore") {
-        defaultModel = "Qwen2.5-0.5B-Instruct-GGUF";
-    }
     aiModelInput->setPlaceholderText("gpt-4o-mini");
-    aiModelInput->setText(settings.value("openrouter/model", defaultModel).toString());
+    aiModelInput->setText(settings->value("openrouter/model", "gpt-4o-mini").toString());
     aiLayout->addWidget(aiModelLabel);
     aiLayout->addWidget(aiModelInput);
 
+    // Local provider URL fields
+    auto *aiUrlLabel = new QLabel("Base URL:");
+    auto *aiUrlInput = new QLineEdit();
+    aiUrlInput->setPlaceholderText("http://localhost:11434");
+    
+    // Load saved URL based on provider
+    QString defaultUrl;
+    if (currentProvider == "Ollama")
+        defaultUrl = "http://localhost:11434";
+    else if (currentProvider == "LMStudio")
+        defaultUrl = "http://localhost:1234/v1";
+    
+    QString savedUrl = settings->value("ai/base_url", defaultUrl).toString();
+    aiUrlInput->setText(savedUrl);
+    aiUrlInput->setEnabled(currentProvider == "Ollama" || currentProvider == "LMStudio");
+    aiLayout->addWidget(aiUrlLabel);
+    aiLayout->addWidget(aiUrlInput);
+
+    // Update URL field when provider changes
+    connect(aiProviderCombo, &QComboBox::currentTextChanged, this, [aiUrlInput](const QString &provider) {
+        QString defaultUrl;
+        if (provider == "Ollama")
+            defaultUrl = "http://localhost:11434";
+        else if (provider == "LMStudio")
+            defaultUrl = "http://localhost:1234/v1";
+        else
+            defaultUrl.clear();
+        
+        if (!defaultUrl.isEmpty())
+            aiUrlInput->setText(defaultUrl);
+        aiUrlInput->setEnabled(!defaultUrl.isEmpty());
+    });
+
     auto *aiPromptLabel = new QLabel("System prompt sent to the AI with the diff:");
     auto *aiPromptInput = new QPlainTextEdit();
-    aiPromptInput->setPlainText(settings.value("ai/system_prompt",
+    aiPromptInput->setPlainText(settings->value("ai/system_prompt",
         "Generate a Conventional Commits summary and a casual description of all changes.").toString());
     aiPromptInput->setFixedHeight(120);
     aiLayout->addWidget(aiPromptLabel);
     aiLayout->addWidget(aiPromptInput, 1);
 
     // Save on accept
-    connect(&dialog, &QDialog::accepted, this, [&settings, apiKeyInput, themeCombo, gitNameInput, gitEmailInput, aiModelInput, aiPromptInput, aiEnableCheck, this]() {
-        settings.setValue("ai/enabled", aiEnableCheck->isChecked());
-        settings.setValue("openrouter/key", apiKeyInput->text());
-        settings.setValue("openrouter/model", aiModelInput->text().trimmed().isEmpty()
+    connect(&dialog, &QDialog::accepted, this, [settings = settings.get(), apiKeyInput, themeCombo, gitNameInput, gitEmailInput, aiModelInput, aiPromptInput, aiEnableCheck, aiProviderCombo, aiUrlInput, projectsPathInput, settingsPathInput, themesPathInput, this]() {
+        settings->setValue("paths/projects", projectsPathInput->text().trimmed());
+        settings->setValue("paths/settings", settingsPathInput->text().trimmed());
+        settings->setValue("paths/themes", themesPathInput->text().trimmed());
+        settings->sync();
+        settings->setValue("ai/enabled", aiEnableCheck->isChecked());
+        settings->setValue("ai/provider", aiProviderCombo->currentText());
+        settings->setValue("openrouter/key", apiKeyInput->text());
+        settings->setValue("openrouter/model", aiModelInput->text().trimmed().isEmpty()
             ? "gpt-4o-mini" : aiModelInput->text().trimmed());
+        settings->setValue("ai/base_url", aiUrlInput->text().trimmed());
 
         auto *app = qobject_cast<QApplication *>(qApp);
         QString themeText = themeCombo->currentText();
         if (themeText == "System Default") {
-            settings.setValue("appearance/theme", "system");
+            settings->setValue("appearance/theme", "system");
             if (app) app->setStyleSheet({});
         } else if (themeText == "Dark") {
-            settings.setValue("appearance/theme", "dark");
+            settings->setValue("appearance/theme", "dark");
             if (app)
                 app->setStyleSheet("QWidget { background-color: #1e1e1e; color: #d4d4d4; }"
                                    "QTreeWidget, QListWidget { background-color: #252526; }"
@@ -2106,7 +2177,7 @@ void MainWindow::onOpenSettings()
                                    "QToolTip { background-color: #3c3c3c; color: #d4d4d4; }");
         } else {
             // Custom theme
-            settings.setValue("appearance/theme", themeText);
+            settings->setValue("appearance/theme", themeText);
             if (app) {
                 Theme t = findTheme(themeText, loadCustomThemes());
                 if (!t.name.isEmpty())
@@ -2116,7 +2187,7 @@ void MainWindow::onOpenSettings()
             }
         }
 
-        settings.setValue("ai/system_prompt", aiPromptInput->toPlainText().trimmed());
+        settings->setValue("ai/system_prompt", aiPromptInput->toPlainText().trimmed());
 
         const QString name = gitNameInput->text().trimmed();
         const QString email = gitEmailInput->text().trimmed();
@@ -3377,7 +3448,6 @@ void MainWindow::showAuthDialog()
     form->addRow("Username:", userEdit);
     form->addRow("Token / Password:", tokenEdit);
     form->addRow(buttons);
-
     connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
