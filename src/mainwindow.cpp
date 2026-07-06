@@ -1,4 +1,5 @@
 #include "diffviewer.h"
+#include "llamaai.h"
 #include "mainwindow.h"
 
 #include <QCheckBox>
@@ -27,8 +28,11 @@
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QScrollArea>
+#include <QSet>
 #include <QStyledItemDelegate>
 #include <QPainter>
 #include <QPixmap>
@@ -185,6 +189,154 @@ static QString themesDirPath()
 {
     auto s = lazySettings();
     return s->value("paths/themes", defaultThemesDir()).toString();
+}
+
+static QString defaultModelsDir()
+{
+    return defaultSettingsDir() + "/models";
+}
+
+static QString modelsDirPath()
+{
+    return defaultModelsDir();
+}
+
+static QJsonArray loadLocalModels()
+{
+    auto s = lazySettings();
+    QJsonDocument doc = QJsonDocument::fromJson(
+        s->value("ai/local_models").toByteArray());
+    return doc.isArray() ? doc.array() : QJsonArray();
+}
+
+static void saveLocalModels(const QJsonArray &models)
+{
+    auto s = lazySettings();
+    s->setValue("ai/local_models", QJsonDocument(models).toJson(QJsonDocument::Compact));
+    s->sync();
+}
+
+struct LocalModelEntry {
+    QString name;
+    QString url;
+    QString path;
+    int64_t sizeBytes = 0;
+    QString sizeLabel;
+
+    QJsonObject toJson() const {
+        return QJsonObject{
+            {"name", name},
+            {"url", url},
+            {"path", path},
+            {"size_bytes", static_cast<qint64>(sizeBytes)},
+            {"size_label", sizeLabel}
+        };
+    }
+
+    static LocalModelEntry fromJson(const QJsonObject &o) {
+        LocalModelEntry e;
+        e.name = o["name"].toString();
+        e.url = o["url"].toString();
+        e.path = o["path"].toString();
+        e.sizeBytes = static_cast<int64_t>(o["size_bytes"].toDouble());
+        e.sizeLabel = o["size_label"].toString();
+        return e;
+    }
+};
+
+static const QString kDefaultDescriptionSystemPrompt = QStringLiteral(
+    "Write a casual, plain-language description of the changes below. "
+    "Explain what changed and why in a few sentences. Do not include a summary title line.\n"
+    "\n"
+    "Diff:\n"
+    "<diff>\n"
+    "\n"
+    "Description:");
+
+static QStringList stagedFileList(QTreeWidget *tree)
+{
+    QStringList files;
+    for (int i = 0; i < tree->topLevelItemCount(); ++i)
+        files << tree->topLevelItem(i)->data(0, Qt::UserRole).toString();
+    return files;
+}
+
+static QString buildDiffText(const QString &repoPath, const QStringList &files)
+{
+    QStringList diffParts;
+    for (const QString &file : files) {
+        QProcess p;
+        p.setWorkingDirectory(repoPath);
+        p.start("git", {"diff", "HEAD", "--", file});
+        if (p.waitForFinished(3000) && p.exitCode() == 0) {
+            QString d = QString::fromUtf8(p.readAllStandardOutput()).trimmed();
+            if (!d.isEmpty())
+                diffParts << "--- " + file + "\n" + d;
+        }
+    }
+    return diffParts.join("\n\n");
+}
+
+// If rawPrompt contains the "<diff>" placeholder, substitutes the actual diff there and
+// leaves the user message minimal. Otherwise falls back to appending the diff as the
+// user message, preserving behavior for prompts written before the placeholder existed.
+struct AiPrompt {
+    QString systemPrompt;
+    QString userContent;
+};
+
+static AiPrompt buildAiPrompt(const QString &rawPrompt, const QString &diffText)
+{
+    AiPrompt result;
+    if (rawPrompt.contains(QLatin1String("<diff>"))) {
+        result.systemPrompt = QString(rawPrompt).replace(QLatin1String("<diff>"), diffText);
+        result.userContent = QStringLiteral("Generate the response now.");
+    } else {
+        result.systemPrompt = rawPrompt;
+        result.userContent = "Changes:\n" + diffText;
+    }
+    return result;
+}
+
+static QList<LocalModelEntry> availableModels()
+{
+    return {
+        {"Qwen3-1.7B (Q8_0)",
+         "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf",
+         modelsDirPath() + "/Qwen3-1.7B-Q8_0.gguf",
+         1800000000LL,
+         "~1.8 GB"},
+        {"Qwen2.5-0.5B (Q5_0)",
+         "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q5_0.gguf",
+         modelsDirPath() + "/qwen2.5-0.5b-instruct-q5_0.gguf",
+         500000000LL,
+         "~500 MB"},
+        {"TinyLlama-1.1B-Chat (Q4_K_M)",
+         "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+         modelsDirPath() + "/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+         669000000LL,
+         "~669 MB"},
+        {"Llama-3.2-1B-Instruct (Q4_K_M)",
+         "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+         modelsDirPath() + "/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+         808000000LL,
+         "~808 MB"},
+        {"SmolLM2-1.7B-Instruct (Q4_K_M)",
+         "https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF/resolve/main/smollm2-1.7b-instruct-q4_k_m.gguf",
+         modelsDirPath() + "/smollm2-1.7b-instruct-q4_k_m.gguf",
+         1060000000LL,
+         "~1.06 GB"},
+        {"Gemma-2-2B-it (Q4_K_M)",
+         "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf",
+         modelsDirPath() + "/gemma-2-2b-it-Q4_K_M.gguf",
+         1710000000LL,
+         "~1.71 GB"},
+        {"Phi-3.5-mini-instruct (Q4_K_M)",
+         "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf",
+         modelsDirPath() + "/Phi-3.5-mini-instruct-Q4_K_M.gguf",
+         2390000000LL,
+         "~2.39 GB"},
+    };
 }
 
 MainWindow::MainWindow(QWidget *parent)
@@ -601,8 +753,8 @@ void MainWindow::setupUi()
     m_aiCommitButton->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_aiCommitButton, &QPushButton::customContextMenuRequested, this, [this](const QPoint &pos) {
         QMenu menu;
-        QStringList providers{"OpenRouter", "OpenAI", "Anthropic", "Gemini",
-                              "Ollama", "LMStudio", "Google AI Studio"};
+        QStringList providers{"OpenRouter", "OpenAI", "Anthropic",
+                          "Google AI Studio", "Local (internal llama.cpp)"};
         auto settings = lazySettings();
         QString current = settings->value("ai/provider", "OpenRouter").toString();
         for (const QString &p : providers) {
@@ -615,6 +767,30 @@ void MainWindow::setupUi()
         }
         menu.exec(m_aiCommitButton->mapToGlobal(pos));
     });
+
+    m_aiDescriptionButton = new QPushButton();
+    m_aiDescriptionButton->setFixedSize(28, 28);
+    m_aiDescriptionButton->setEnabled(false);
+    m_aiDescriptionButton->setFlat(true);
+    m_aiDescriptionButton->setToolTip("Generate commit description with AI");
+    {
+        QPixmap pm(20, 20);
+        pm.fill(Qt::transparent);
+        QPainter p(&pm);
+        p.setPen(QColor("#d4d4d4"));
+        QFont f = p.font();
+        f.setPixelSize(9);
+        f.setBold(true);
+        p.setFont(f);
+        p.drawText(QRect(0, 0, 20, 10), Qt::AlignCenter, "AI");
+        p.drawLine(2, 13, 18, 13);
+        p.drawLine(2, 16, 18, 16);
+        p.drawLine(2, 19, 13, 19);
+        p.end();
+        m_aiDescriptionButton->setIcon(QIcon(pm));
+        m_aiDescriptionButton->setIconSize(QSize(20, 20));
+    }
+    connect(m_aiDescriptionButton, &QPushButton::clicked, this, &MainWindow::onGenerateCommitDescription);
 
     // Skip hooks toggle
     m_skipHooksButton = new QPushButton();
@@ -650,6 +826,7 @@ void MainWindow::setupUi()
     auto *aiRow = new QHBoxLayout();
     aiRow->setContentsMargins(0, 0, 0, 0);
     aiRow->addWidget(m_aiCommitButton);
+    aiRow->addWidget(m_aiDescriptionButton);
     aiRow->addWidget(m_skipHooksButton);
     aiRow->addWidget(m_coAuthorButton);
     aiRow->addStretch();
@@ -945,30 +1122,15 @@ void MainWindow::setupUi()
     // Check AI availability asynchronously
     QTimer::singleShot(0, this, [this]() {
         auto s = lazySettings();
-        
-        // Check if AI is enabled in settings
         bool aiEnabled = s->value("ai/enabled", false).toBool();
         if (!aiEnabled) {
             m_aiRowContainer->hide();
             return;
         }
-        
-        // Check for API key or local services
-        if (!s->value("openrouter/key").toString().isEmpty()) {
+        bool isLocal = s->value("ai/provider", "OpenRouter").toString() == "Local (internal llama.cpp)";
+        bool hasKey = !s->value("ai/api_key").toString().isEmpty();
+        if (isLocal || hasKey)
             m_aiRowContainer->show();
-            return;
-        }
-        auto tryLocal = [this](const QString &url) {
-            auto *reply = m_networkManager->get(QNetworkRequest(QUrl(url)));
-            connect(reply, &QNetworkReply::finished, this, [this, reply]() {
-                if (reply->error() != QNetworkReply::ConnectionRefusedError
-                    && reply->error() != QNetworkReply::HostNotFoundError)
-                    m_aiRowContainer->show();
-                reply->deleteLater();
-            });
-        };
-        tryLocal("http://localhost:11434/api/tags");   // Ollama
-        tryLocal("http://localhost:1234/v1/models");    // LMStudio
     });
 }
 
@@ -1447,6 +1609,7 @@ bool MainWindow::openRepository(const QString &path)
 
     addRecentProject(path);
     m_aiCommitButton->setEnabled(true);
+    m_aiDescriptionButton->setEnabled(true);
     m_skipHooksButton->setEnabled(true);
     m_coAuthorButton->setEnabled(true);
     loadBranches();
@@ -1491,6 +1654,7 @@ void MainWindow::closeRepository()
     m_deleteBranchButton->setEnabled(false);
     m_openGitHubAction->setEnabled(false);
     m_aiCommitButton->setEnabled(false);
+    m_aiDescriptionButton->setEnabled(false);
     m_skipHooksButton->setEnabled(false);
     m_coAuthorButton->setEnabled(false);
     m_currentBranch.clear();
@@ -1653,69 +1817,112 @@ void MainWindow::applySavedTheme()
 void MainWindow::onGenerateCommitMessage()
 {
     auto settings = lazySettings();
-    const QString provider = settings->value("ai/provider", "OpenRouter").toString();
-    const QString model = settings->value("openrouter/model", "gpt-4o-mini").toString();
+    const QString rawPrompt = settings->value("ai/system_prompt",
+        "Generate a Conventional Commits summary and a casual description of all changes.")
+        .toString();
+    runAiGeneration(AiRequestKind::CommitMessage, rawPrompt);
+}
 
-    // Local providers don't need an API key
-    bool isLocal = provider == "Ollama" || provider == "LMStudio";
+void MainWindow::onGenerateCommitDescription()
+{
+    auto settings = lazySettings();
+    const QString rawPrompt = settings->value("ai/description_system_prompt",
+        kDefaultDescriptionSystemPrompt).toString();
+    runAiGeneration(AiRequestKind::Description, rawPrompt);
+}
+
+void MainWindow::runAiGeneration(AiRequestKind kind, const QString &rawPrompt)
+{
+    auto settings = lazySettings();
+    const QString provider = settings->value("ai/provider", "OpenRouter").toString();
+    const QString model = settings->value("ai/model", "gpt-4o-mini").toString();
+
+    bool isLocal = provider == "Local (internal llama.cpp)";
 
     QString apiKey;
     if (!isLocal) {
-        apiKey = settings->value("openrouter/key").toString();
+        apiKey = settings->value("ai/api_key").toString();
         if (apiKey.isEmpty()) {
             QMessageBox::information(this, "API Key Required",
-                "No OpenRouter API key configured.\n\n"
+                "No API key configured.\n\n"
                 "Go to Settings \u2192 AI to add one.");
             return;
         }
     }
 
-    // Get staged files (not checked files) for commit message
-    QStringList files;
-    for (int i = 0; i < m_stagedTree->topLevelItemCount(); ++i) {
-        auto *item = m_stagedTree->topLevelItem(i);
-        files << item->data(0, Qt::UserRole).toString();
-    }
-
+    QStringList files = stagedFileList(m_stagedTree);
     if (files.isEmpty()) {
         QMessageBox::information(this, "No Files Staged",
             "Stage at least one file to generate a commit message.\n\n"
-            "Select files in the 'Unstaged Changes' section and click 'Stage →' to stage them.");
+            "Select files in the 'Unstaged Changes' section and click 'Stage \u2192' to stage them.");
+        return;
+    }
+
+    QString diffText = buildDiffText(m_repoPath, files);
+    AiPrompt prompt = buildAiPrompt(rawPrompt, diffText);
+    const QString &systemPrompt = prompt.systemPrompt;
+    const QString &userContent = prompt.userContent;
+
+    m_aiRequestKind = kind;
+
+    // Handle local llama.cpp provider
+    if (provider == "Local (internal llama.cpp)") {
+        QString modelPath = settings->value("ai/local_model_path").toString();
+        if (modelPath.isEmpty()) {
+            QMessageBox::information(this, "Model Required",
+                "No local model selected.\n\n"
+                "Go to Settings \u2192 AI to download and select a GGUF model.");
+            return;
+        }
+
+        if (!QFileInfo::exists(modelPath)) {
+            QMessageBox::warning(this, "Model Not Found",
+                "The selected model file was not found:\n" + modelPath + "\n\n"
+                "The file may have been moved or deleted. Go to Settings \u2192 AI to select a different model.");
+            return;
+        }
+
+        if (!m_llamaAI) {
+            m_llamaAI = new LlamaAI(this);
+            connect(m_llamaAI, &LlamaAI::finished, this, &MainWindow::onLocalAiResponse);
+            connect(m_llamaAI, &LlamaAI::errorOccurred, this, &MainWindow::onLocalAiError);
+            connect(m_llamaAI, &LlamaAI::thinking, this, &MainWindow::onLocalAiThinking);
+        }
+        m_llamaAI->setModelPath(modelPath);
+        m_llamaAI->setGpuAcceleration(settings->value("ai/gpu_acceleration", true).toBool());
+
+        m_aiCommitButton->setEnabled(false);
+        m_aiDescriptionButton->setEnabled(false);
+        m_summaryInput->setEnabled(false);
+        m_descriptionInput->setEnabled(false);
+
+        if (m_aiThinkingOverlay && m_commitContainer) {
+            m_aiThinkingOverlay->setGeometry(m_commitContainer->rect());
+            m_aiThinkingOverlay->setVisible(true);
+            m_aiThinkingText->clear();
+            m_aiThinkingText->setVisible(false);
+            m_aiShowMoreButton->setText("Show more \u25bc");
+            m_aiThinkingVisible = false;
+        }
+
+        m_llamaAI->generate(systemPrompt, userContent);
         return;
     }
 
     m_aiCommitButton->setEnabled(false);
+    m_aiDescriptionButton->setEnabled(false);
     m_summaryInput->setEnabled(false);
     m_descriptionInput->setEnabled(false);
-    
+
     // Show thinking indicator
     if (m_aiThinkingOverlay && m_commitContainer) {
         m_aiThinkingOverlay->setGeometry(m_commitContainer->rect());
         m_aiThinkingOverlay->setVisible(true);
         m_aiThinkingText->clear();
         m_aiThinkingText->setVisible(false);
-        m_aiShowMoreButton->setText("Show more ▼");
+        m_aiShowMoreButton->setText("Show more \u25bc");
         m_aiThinkingVisible = false;
     }
-
-    // Collect diffs
-    QStringList diffParts;
-    for (const QString &file : files) {
-        QProcess p;
-        p.setWorkingDirectory(m_repoPath);
-        p.start("git", {"diff", "HEAD", "--", file});
-        if (p.waitForFinished(3000) && p.exitCode() == 0) {
-            QString d = QString::fromUtf8(p.readAllStandardOutput()).trimmed();
-            if (!d.isEmpty())
-                diffParts << "--- " + file + "\n" + d;
-        }
-    }
-
-    QString systemPrompt = settings->value("ai/system_prompt",
-        "Generate a Conventional Commits summary and a casual description of all changes.")
-        .toString();
-
-    QString userContent = "Changes:\n" + diffParts.join("\n\n");
 
     QJsonObject msgSystem, msgUser;
     msgSystem["role"] = "system";
@@ -1743,7 +1950,6 @@ void MainWindow::onGenerateCommitMessage()
         authHeader = "Bearer " + apiKey.toUtf8();
     } else if (provider == "Anthropic") {
         url = "https://api.anthropic.com/v1/messages";
-        authHeader = "Bearer " + apiKey.toUtf8();
         // Anthropic uses a different request format
         body.remove("messages");
         QJsonObject anonMsg;
@@ -1753,12 +1959,9 @@ void MainWindow::onGenerateCommitMessage()
         anonMessages.append(anonMsg);
         body["messages"] = anonMessages;
         body["max_tokens"] = 1024;
-    } else if (provider == "Gemini" || provider == "Google AI Studio") {
-        // Gemini uses key as query param and different format
-        QString geminiKey = apiKey;
+    } else if (provider == "Google AI Studio") {
         url = "https://generativelanguage.googleapis.com/v1beta/models/"
-              + model + ":generateContent?key=" + geminiKey;
-        // Convert messages to Gemini format
+              + model + ":generateContent?key=" + apiKey;
         body.remove("messages");
         QJsonArray contents;
         QJsonObject part;
@@ -1771,24 +1974,16 @@ void MainWindow::onGenerateCommitMessage()
         contents.append(content);
         body["contents"] = contents;
         authHeader.clear();
-    } else if (provider == "Ollama") {
-        url = "http://localhost:11434/api/chat";
-        body.remove("model");
-        body["model"] = model;
-        // Ollama uses stream=false by default in /api/chat
-        body["stream"] = false;
-        authHeader.clear();
-    } else if (provider == "LMStudio") {
-        url = "http://localhost:1234/v1/chat/completions";
-        authHeader.clear();
     }
 
     QNetworkRequest req(url);
     req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-    if (!authHeader.isEmpty())
-        req.setRawHeader("Authorization", authHeader);
-    if (provider == "Anthropic")
+    if (provider == "Anthropic") {
+        req.setRawHeader("x-api-key", apiKey.toUtf8());
         req.setRawHeader("anthropic-version", "2023-06-01");
+    } else if (!authHeader.isEmpty()) {
+        req.setRawHeader("Authorization", authHeader);
+    }
 
     QByteArray payload = QJsonDocument(body).toJson(QJsonDocument::Compact);
     QNetworkReply *reply = m_networkManager->post(req, payload);
@@ -1806,17 +2001,14 @@ static QString extractAiText(const QJsonObject &obj, const QString &provider)
             return c[0].toObject()["text"].toString().trimmed();
         return {};
     }
-    if (provider == "Gemini" || provider == "Google AI Studio") {
+    if (provider == "Google AI Studio") {
         QJsonArray cands = obj["candidates"].toArray();
         if (cands.isEmpty()) return {};
         QJsonArray parts = cands[0].toObject()["content"].toObject()["parts"].toArray();
         if (parts.isEmpty()) return {};
         return parts[0].toObject()["text"].toString().trimmed();
     }
-    if (provider == "Ollama") {
-        return obj["message"].toObject()["content"].toString().trimmed();
-    }
-    // OpenAI-compatible (OpenRouter, OpenAI, LMStudio)
+    // OpenAI-compatible (OpenRouter, OpenAI)
     QJsonArray choices = obj["choices"].toArray();
     if (choices.isEmpty()) return {};
     return choices[0].toObject()["message"].toObject()["content"].toString().trimmed();
@@ -1829,6 +2021,7 @@ void MainWindow::onAiResponse(QNetworkReply *reply)
         m_aiThinkingOverlay->setVisible(false);
 
     m_aiCommitButton->setEnabled(true);
+    m_aiDescriptionButton->setEnabled(true);
     m_summaryInput->setEnabled(true);
     m_descriptionInput->setEnabled(true);
 
@@ -1845,6 +2038,11 @@ void MainWindow::onAiResponse(QNetworkReply *reply)
     QString content = extractAiText(obj, provider);
     if (content.isEmpty()) {
         QMessageBox::warning(this, "AI Error", "No response from AI.");
+        return;
+    }
+
+    if (m_aiRequestKind == AiRequestKind::Description) {
+        m_descriptionInput->setPlainText(content.trimmed());
         return;
     }
 
@@ -2069,31 +2267,22 @@ void MainWindow::onOpenSettings()
     gitInfoLabel->setWordWrap(true);
     gitLayout->addRow(gitInfoLabel);
 
-    // AI page (declared early so the lambda captures it)
+    // AI page
     auto *aiPage = new QWidget();
     auto *aiLayout = new QVBoxLayout(aiPage);
     aiLayout->setContentsMargins(12, 12, 12, 12);
+    aiLayout->setSpacing(8);
 
-    // Experimental AI toggle
+    // 1. Enable AI Features toggle
     auto *aiEnableCheck = new QCheckBox("Enable AI Features");
     aiEnableCheck->setChecked(settings->value("ai/enabled", false).toBool());
-    aiEnableCheck->setToolTip("Enable or disable all AI-powered features (experimental)");
     aiLayout->addWidget(aiEnableCheck);
 
-    auto *aiKeyLabel = new QLabel("OpenRouter API Key:");
-    auto *apiKeyInput = new QLineEdit();
-    apiKeyInput->setPlaceholderText("sk-or-v1-...");
-    apiKeyInput->setEchoMode(QLineEdit::Password);
-    QString storedKey = settings->value("openrouter/key").toString();
-    if (!storedKey.isEmpty())
-        apiKeyInput->setText(storedKey);
-    aiLayout->addWidget(aiKeyLabel);
-    aiLayout->addWidget(apiKeyInput);
-
+    // 2. Provider dropdown
     auto *aiProviderLabel = new QLabel("Provider:");
     auto *aiProviderCombo = new QComboBox();
-    aiProviderCombo->addItems({"OpenRouter", "OpenAI", "Anthropic", "Gemini", "Google AI Studio",
-                               "Ollama", "LMStudio"});
+    aiProviderCombo->addItems({"OpenRouter", "OpenAI", "Anthropic",
+                               "Google AI Studio", "Local (internal llama.cpp)"});
     QString currentProvider = settings->value("ai/provider", "OpenRouter").toString();
     int providerIndex = aiProviderCombo->findText(currentProvider);
     if (providerIndex >= 0)
@@ -2101,66 +2290,426 @@ void MainWindow::onOpenSettings()
     aiLayout->addWidget(aiProviderLabel);
     aiLayout->addWidget(aiProviderCombo);
 
+    // 3. API Key field
+    auto *aiKeyLabel = new QLabel("API Key:");
+    auto *apiKeyInput = new QLineEdit();
+    apiKeyInput->setPlaceholderText("sk-...");
+    apiKeyInput->setEchoMode(QLineEdit::Password);
+    QString storedKey = settings->value("ai/api_key").toString();
+    if (!storedKey.isEmpty())
+        apiKeyInput->setText(storedKey);
+    aiLayout->addWidget(aiKeyLabel);
+    aiLayout->addWidget(apiKeyInput);
+
+    // 4. Model field (editable combo)
     auto *aiModelLabel = new QLabel("Model:");
-    auto *aiModelInput = new QLineEdit();
-    aiModelInput->setPlaceholderText("gpt-4o-mini");
-    aiModelInput->setText(settings->value("openrouter/model", "gpt-4o-mini").toString());
+    auto *aiModelCombo = new QComboBox();
+    aiModelCombo->setEditable(true);
+    aiModelCombo->setInsertPolicy(QComboBox::NoInsert);
+    aiModelCombo->setMinimumWidth(200);
+    QString savedModel = settings->value("ai/model").toString();
+    if (!savedModel.isEmpty())
+        aiModelCombo->setCurrentText(savedModel);
     aiLayout->addWidget(aiModelLabel);
-    aiLayout->addWidget(aiModelInput);
+    aiLayout->addWidget(aiModelCombo);
 
-    // Local provider URL fields
-    auto *aiUrlLabel = new QLabel("Base URL:");
-    auto *aiUrlInput = new QLineEdit();
-    aiUrlInput->setPlaceholderText("http://localhost:11434");
-    
-    // Load saved URL based on provider
-    QString defaultUrl;
-    if (currentProvider == "Ollama")
-        defaultUrl = "http://localhost:11434";
-    else if (currentProvider == "LMStudio")
-        defaultUrl = "http://localhost:1234/v1";
-    
-    QString savedUrl = settings->value("ai/base_url", defaultUrl).toString();
-    aiUrlInput->setText(savedUrl);
-    aiUrlInput->setEnabled(currentProvider == "Ollama" || currentProvider == "LMStudio");
-    aiLayout->addWidget(aiUrlLabel);
-    aiLayout->addWidget(aiUrlInput);
+    // Model fetching logic
+    auto doFetchModels = [this, aiProviderCombo, aiModelCombo, apiKeyInput]() {
+        QString provider = aiProviderCombo->currentText();
+        QString key = apiKeyInput->text().trimmed();
 
-    // Update URL field when provider changes
-    connect(aiProviderCombo, &QComboBox::currentTextChanged, this, [aiUrlInput](const QString &provider) {
-        QString defaultUrl;
-        if (provider == "Ollama")
-            defaultUrl = "http://localhost:11434";
-        else if (provider == "LMStudio")
-            defaultUrl = "http://localhost:1234/v1";
-        else
-            defaultUrl.clear();
-        
-        if (!defaultUrl.isEmpty())
-            aiUrlInput->setText(defaultUrl);
-        aiUrlInput->setEnabled(!defaultUrl.isEmpty());
+        // Nothing to fetch for OpenRouter or Local
+        if (provider == "OpenRouter" || provider == "Local (internal llama.cpp)")
+            return;
+
+        if (key.isEmpty())
+            return;
+
+        aiModelCombo->clear();
+        aiModelCombo->setCurrentText(QString());
+        aiModelCombo->setPlaceholderText("Loading models...");
+
+        QUrl url;
+        QNetworkRequest req;
+        if (provider == "OpenAI") {
+            url = QUrl("https://api.openai.com/v1/models");
+            req.setRawHeader("Authorization", "Bearer " + key.toUtf8());
+        } else if (provider == "Anthropic") {
+            url = QUrl("https://api.anthropic.com/v1/models");
+            req.setRawHeader("x-api-key", key.toUtf8());
+            req.setRawHeader("anthropic-version", "2023-06-01");
+        } else if (provider == "Google AI Studio") {
+            url = QUrl("https://generativelanguage.googleapis.com/v1beta/models?key=" + key);
+        }
+
+        req.setUrl(url);
+        auto *reply = m_networkManager->get(req);
+        connect(reply, &QNetworkReply::finished, this, [reply, aiModelCombo, provider]() {
+            reply->deleteLater();
+            if (reply->error() != QNetworkReply::NoError) {
+                aiModelCombo->setPlaceholderText("Failed to load models");
+                return;
+            }
+            QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+            QStringList modelNames;
+            if (provider == "OpenAI") {
+                QJsonArray data = doc.object()["data"].toArray();
+                for (const auto &entry : data)
+                    modelNames << entry.toObject()["id"].toString();
+            } else if (provider == "Anthropic") {
+                QJsonArray data = doc.object()["data"].toArray();
+                for (const auto &entry : data)
+                    modelNames << entry.toObject()["id"].toString();
+            } else if (provider == "Google AI Studio") {
+                QJsonArray models = doc.object()["models"].toArray();
+                for (const auto &entry : models) {
+                    QString name = entry.toObject()["name"].toString();
+                    name.remove(QRegularExpression("^models/"));
+                    modelNames << name;
+                }
+            }
+            modelNames.sort();
+            aiModelCombo->clear();
+            aiModelCombo->addItems(modelNames);
+            aiModelCombo->setPlaceholderText(QString());
+            if (modelNames.isEmpty())
+                aiModelCombo->setPlaceholderText("No models found");
+        });
+    };
+
+    // Handle provider changes
+    connect(aiProviderCombo, &QComboBox::currentTextChanged, this,
+            [aiKeyLabel, aiKeyInput = apiKeyInput, aiModelCombo, aiProviderCombo, doFetchModels]() {
+        QString provider = aiProviderCombo->currentText();
+        bool isLocal = provider == "Local (internal llama.cpp)";
+
+        aiKeyInput->setEnabled(!isLocal);
+        aiModelCombo->setEnabled(!isLocal);
+
+        if (isLocal) {
+            aiModelCombo->clear();
+            aiModelCombo->setCurrentText(QString());
+            aiModelCombo->setPlaceholderText("Configured separately below");
+        } else if (provider == "OpenRouter") {
+            aiModelCombo->clear();
+            aiModelCombo->setCurrentText("deepseek/deepseek-v4-flash");
+            aiModelCombo->setEnabled(true);
+        } else {
+            aiModelCombo->clear();
+            aiModelCombo->setCurrentText(QString());
+            aiModelCombo->setEnabled(true);
+            doFetchModels();
+        }
     });
 
-    auto *aiPromptLabel = new QLabel("System prompt sent to the AI with the diff:");
+    // Re-fetch models when API key focus is lost
+    connect(apiKeyInput, &QLineEdit::editingFinished, this, [doFetchModels, aiProviderCombo]() {
+        QString provider = aiProviderCombo->currentText();
+        if (provider != "OpenRouter" && provider != "Local (internal llama.cpp)")
+            doFetchModels();
+    });
+
+    // 5. Enable/disable all AI fields when toggle changes
+    connect(aiEnableCheck, &QCheckBox::toggled, this, [aiProviderLabel,
+            aiKeyLabel, apiKeyInput, aiModelLabel, aiModelCombo, aiEnableCheck,
+            aiProviderCombo2 = aiProviderCombo]() {
+        bool enabled = aiEnableCheck->isChecked();
+        bool isLocal = aiProviderCombo2->currentText() == "Local (internal llama.cpp)";
+        aiProviderLabel->setEnabled(enabled);
+        aiProviderCombo2->setEnabled(enabled);
+        aiKeyLabel->setEnabled(enabled);
+        apiKeyInput->setEnabled(enabled && !isLocal);
+        aiModelLabel->setEnabled(enabled);
+        aiModelCombo->setEnabled(enabled && !isLocal);
+    });
+
+    // Apply initial enabled state
+    if (!aiEnableCheck->isChecked()) {
+        aiProviderLabel->setEnabled(false);
+        aiProviderCombo->setEnabled(false);
+        aiKeyLabel->setEnabled(false);
+        apiKeyInput->setEnabled(false);
+        aiModelLabel->setEnabled(false);
+        aiModelCombo->setEnabled(false);
+    } else {
+        // Apply initial provider-based state
+        bool isLocal = aiProviderCombo->currentText() == "Local (internal llama.cpp)";
+        apiKeyInput->setEnabled(!isLocal);
+        if (isLocal) {
+            aiModelCombo->clear();
+            aiModelCombo->setPlaceholderText("Configured separately below");
+            aiModelCombo->setEnabled(false);
+        } else if (aiProviderCombo->currentText() == "OpenRouter") {
+            aiModelCombo->clear();
+            aiModelCombo->setCurrentText(
+                savedModel.isEmpty() ? "deepseek/deepseek-v4-flash" : savedModel);
+        }
+    }
+
+    // 6. System prompt
+    static const QString kDefaultSystemPrompt = QStringLiteral(
+        "You are a CLI tool that outputs exactly ONE single conventional commit message summarizing the entire diff.\n"
+        "Do not write a separate commit for each file. Find the highest-level feature or fix and summarize it in one line. Do not explain.\n"
+        "\n"
+        "Diff:\n"
+        "--- a/package.json\n"
+        "+++ b/package.json\n"
+        "@@ -10 +10,2 @@\n"
+        "+ \"cors\": \"^2.8.5\"\n"
+        "--- a/src/server.js\n"
+        "+++ b/src/server.js\n"
+        "@@ -2 +2,3 @@\n"
+        "+ const cors = require('cors');\n"
+        "+ app.use(cors());\n"
+        "\n"
+        "Commit: feat(api): add cors support to server\n"
+        "\n"
+        "Diff:\n"
+        "<diff>\n"
+        "\n"
+        "Commit:");
+
+    auto *aiPromptLabel = new QLabel("Commit message system prompt:");
+    auto *aiPromptHint = new QLabel("\"<diff>\" will be replaced with the actual git diff");
+    aiPromptHint->setStyleSheet("color: gray; font-size: 11px;");
     auto *aiPromptInput = new QPlainTextEdit();
-    aiPromptInput->setPlainText(settings->value("ai/system_prompt",
-        "Generate a Conventional Commits summary and a casual description of all changes.").toString());
+    aiPromptInput->setPlainText(settings->value("ai/system_prompt", kDefaultSystemPrompt).toString());
     aiPromptInput->setFixedHeight(120);
     aiLayout->addWidget(aiPromptLabel);
     aiLayout->addWidget(aiPromptInput, 1);
+    aiLayout->addWidget(aiPromptHint);
+
+    auto *aiDescriptionPromptLabel = new QLabel("Commit description system prompt:");
+    auto *aiDescriptionPromptHint = new QLabel("\"<diff>\" will be replaced with the actual git diff");
+    aiDescriptionPromptHint->setStyleSheet("color: gray; font-size: 11px;");
+    auto *aiDescriptionPromptInput = new QPlainTextEdit();
+    aiDescriptionPromptInput->setPlainText(
+        settings->value("ai/description_system_prompt", kDefaultDescriptionSystemPrompt).toString());
+    aiDescriptionPromptInput->setFixedHeight(120);
+    aiLayout->addWidget(aiDescriptionPromptLabel);
+    aiLayout->addWidget(aiDescriptionPromptInput, 1);
+    aiLayout->addWidget(aiDescriptionPromptHint);
+    aiLayout->addStretch();
+
+    // 7. Local model configuration
+    auto *localSectionLabel = new QLabel("Local model configuration");
+    localSectionLabel->setStyleSheet("font-weight: bold; font-size: 13px;");
+    aiLayout->addWidget(localSectionLabel);
+
+    auto *localSectionDesc = new QLabel("Download and manage GGUF models for use with the local llama.cpp provider.");
+    localSectionDesc->setWordWrap(true);
+    localSectionDesc->setStyleSheet("color: gray; font-size: 11px;");
+    aiLayout->addWidget(localSectionDesc);
+
+    auto *modelScroll = new QScrollArea();
+    modelScroll->setWidgetResizable(true);
+    modelScroll->setMaximumHeight(180);
+    modelScroll->setFrameStyle(QFrame::StyledPanel);
+    modelScroll->setStyleSheet("QScrollArea { border: 1px solid palette(mid); border-radius: 4px; }");
+    auto *modelListWidget = new QWidget();
+    auto *modelListLayout = new QVBoxLayout(modelListWidget);
+    modelListLayout->setContentsMargins(4, 4, 4, 4);
+    modelListLayout->setSpacing(4);
+
+    QList<QNetworkReply *> activeDownloads;
+
+    std::function<void()> refreshModelList;
+    refreshModelList = [&activeDownloads, dlg = &dialog, modelListWidget,
+                        modelListLayout, settings = settings.get(), this, &refreshModelList]() {
+        QLayoutItem *child;
+        while ((child = modelListLayout->takeAt(0)) != nullptr) {
+            if (child->widget())
+                delete child->widget();
+            delete child;
+        }
+
+        QString activePath = settings->value("ai/local_model_path").toString();
+        QJsonArray savedModels = loadLocalModels();
+        QSet<QString> downloadedUrls;
+        for (const auto &v : savedModels)
+            downloadedUrls.insert(v.toObject()["url"].toString());
+
+        for (const auto &model : availableModels()) {
+            bool downloaded = QFileInfo::exists(model.path) || downloadedUrls.contains(model.url);
+            bool isActive = !activePath.isEmpty() && model.path == activePath;
+
+            auto *row = new QWidget();
+            auto *rowLayout = new QHBoxLayout(row);
+            rowLayout->setContentsMargins(4, 2, 4, 2);
+            rowLayout->setSpacing(6);
+
+            auto *nameLabel = new QLabel(model.name);
+            nameLabel->setMinimumWidth(180);
+            rowLayout->addWidget(nameLabel);
+
+            auto *sizeLabel = new QLabel(model.sizeLabel);
+            sizeLabel->setMinimumWidth(70);
+            sizeLabel->setStyleSheet("color: gray; font-size: 11px;");
+            rowLayout->addWidget(sizeLabel);
+
+            rowLayout->addStretch();
+
+            if (!downloaded) {
+                auto *dlBtn = new QPushButton("Download");
+                dlBtn->setFixedHeight(24);
+                rowLayout->addWidget(dlBtn);
+
+                auto *progBar = new QProgressBar();
+                progBar->setMaximumWidth(140);
+                progBar->setFixedHeight(18);
+                progBar->setMaximum(100);
+                progBar->setValue(0);
+                progBar->setFormat(QString());
+                progBar->setVisible(false);
+                rowLayout->addWidget(progBar);
+
+                auto *cancelBtn = new QPushButton("✕");
+                cancelBtn->setFixedSize(24, 24);
+                cancelBtn->setToolTip("Cancel download");
+                cancelBtn->setVisible(false);
+                cancelBtn->setStyleSheet("color: red;");
+                rowLayout->addWidget(cancelBtn);
+
+                connect(dlBtn, &QPushButton::clicked, this,
+                        [=, this, &activeDownloads]() mutable {
+                    dlBtn->setVisible(false);
+                    progBar->setVisible(true);
+                    cancelBtn->setVisible(true);
+                    progBar->setFormat("0%");
+
+                    QDir().mkpath(modelsDirPath());
+                    auto *file = new QFile(model.path);
+                    if (!file->open(QIODevice::WriteOnly)) {
+                        progBar->setFormat("Error");
+                        file->deleteLater();
+                        return;
+                    }
+
+                    QNetworkRequest req(QUrl(model.url));
+                    auto *reply = m_networkManager->get(req);
+                    activeDownloads.append(reply);
+
+                    connect(reply, &QNetworkReply::downloadProgress, this,
+                            [progBar](qint64 recv, qint64 total) {
+                        if (total > 0) {
+                            int pct = static_cast<int>(100 * recv / total);
+                            progBar->setValue(pct);
+                            progBar->setFormat(QString("%1%").arg(pct));
+                        } else {
+                            progBar->setFormat(QString("%1 MB").arg(recv / 1048576));
+                        }
+                    });
+
+                    connect(reply, &QNetworkReply::readyRead, this, [reply, file]() {
+                        file->write(reply->readAll());
+                    });
+
+                    connect(reply, &QNetworkReply::finished, this,
+                            [=, this, &activeDownloads]() {
+                        activeDownloads.removeAll(reply);
+                        file->close();
+                        reply->deleteLater();
+
+                        if (reply->error() == QNetworkReply::NoError) {
+                            auto arr = loadLocalModels();
+                            arr.append(model.toJson());
+                            saveLocalModels(arr);
+                        } else if (reply->error() != QNetworkReply::OperationCanceledError) {
+                            file->remove();
+                        } else {
+                            file->remove();
+                        }
+                        file->deleteLater();
+                        refreshModelList();
+                    });
+
+                    connect(cancelBtn, &QPushButton::clicked, this, [reply]() {
+                        reply->abort();
+                    });
+                });
+            } else {
+                if (!isActive) {
+                    auto *selBtn = new QPushButton("Select");
+                    selBtn->setFixedHeight(24);
+                    rowLayout->addWidget(selBtn);
+                    connect(selBtn, &QPushButton::clicked, this, [=, this]() {
+                        settings->setValue("ai/local_model_path", model.path);
+                        settings->sync();
+                        refreshModelList();
+                    });
+                } else {
+                    auto *activeLabel = new QLabel("Active");
+                    activeLabel->setStyleSheet("color: green; font-weight: bold; font-size: 11px;");
+                    activeLabel->setMinimumWidth(50);
+                    activeLabel->setAlignment(Qt::AlignCenter);
+                    rowLayout->addWidget(activeLabel);
+                }
+
+                auto *delBtn = new QPushButton("Delete");
+                delBtn->setFixedHeight(24);
+                delBtn->setStyleSheet("color: red;");
+                rowLayout->addWidget(delBtn);
+                connect(delBtn, &QPushButton::clicked, this, [=, this]() {
+                    auto answer = QMessageBox::question(
+                        dlg,
+                        "Delete Model",
+                        QString("Delete \"%1\"?\n\nApproximately %2 of disk space will be freed.")
+                            .arg(model.name, model.sizeLabel),
+                        QMessageBox::Yes | QMessageBox::No,
+                        QMessageBox::No);
+                    if (answer == QMessageBox::Yes) {
+                        QFile::remove(model.path);
+                        QJsonArray arr = loadLocalModels();
+                        QJsonArray filtered;
+                        for (const auto &v : arr) {
+                            if (v.toObject()["url"].toString() != model.url)
+                                filtered.append(v);
+                        }
+                        saveLocalModels(filtered);
+                        if (settings->value("ai/local_model_path").toString() == model.path) {
+                            settings->remove("ai/local_model_path");
+                            settings->sync();
+                        }
+                        refreshModelList();
+                    }
+                });
+            }
+
+            modelListLayout->addWidget(row);
+        }
+
+        modelListLayout->addStretch();
+    };
+
+    refreshModelList();
+
+    modelScroll->setWidget(modelListWidget);
+    aiLayout->addWidget(modelScroll);
+
+    auto *gpuAccelCheck = new QCheckBox("Enable GPU acceleration");
+    gpuAccelCheck->setChecked(settings->value("ai/gpu_acceleration", true).toBool());
+    gpuAccelCheck->setToolTip("Offload model layers to GPU for faster inference. Disable if you encounter crashes or have limited VRAM.");
+    aiLayout->addWidget(gpuAccelCheck);
 
     // Save on accept
-    connect(&dialog, &QDialog::accepted, this, [settings = settings.get(), apiKeyInput, themeCombo, gitNameInput, gitEmailInput, aiModelInput, aiPromptInput, aiEnableCheck, aiProviderCombo, aiUrlInput, projectsPathInput, settingsPathInput, themesPathInput, this]() {
+    connect(&dialog, &QDialog::accepted, this, [settings = settings.get(), apiKeyInput, themeCombo,
+            gitNameInput, gitEmailInput, aiModelCombo, aiPromptInput, aiDescriptionPromptInput, aiEnableCheck,
+            aiProviderCombo, projectsPathInput, settingsPathInput, themesPathInput,
+            gpuAccelCheck, this]() {
         settings->setValue("paths/projects", projectsPathInput->text().trimmed());
         settings->setValue("paths/settings", settingsPathInput->text().trimmed());
         settings->setValue("paths/themes", themesPathInput->text().trimmed());
         settings->sync();
         settings->setValue("ai/enabled", aiEnableCheck->isChecked());
         settings->setValue("ai/provider", aiProviderCombo->currentText());
-        settings->setValue("openrouter/key", apiKeyInput->text());
-        settings->setValue("openrouter/model", aiModelInput->text().trimmed().isEmpty()
-            ? "gpt-4o-mini" : aiModelInput->text().trimmed());
-        settings->setValue("ai/base_url", aiUrlInput->text().trimmed());
+        settings->setValue("ai/api_key", apiKeyInput->text());
+        QString modelText = aiModelCombo->currentText().trimmed();
+        if (modelText.isEmpty()) {
+            QString provider = aiProviderCombo->currentText();
+            if (provider == "OpenRouter")
+                modelText = "deepseek/deepseek-v4-flash";
+        }
+        settings->setValue("ai/model", modelText);
 
         auto *app = qobject_cast<QApplication *>(qApp);
         QString themeText = themeCombo->currentText();
@@ -2176,7 +2725,6 @@ void MainWindow::onOpenSettings()
                                    "QLineEdit, QTextEdit { background-color: #3c3c3c; color: #d4d4d4; }"
                                    "QToolTip { background-color: #3c3c3c; color: #d4d4d4; }");
         } else {
-            // Custom theme
             settings->setValue("appearance/theme", themeText);
             if (app) {
                 Theme t = findTheme(themeText, loadCustomThemes());
@@ -2188,6 +2736,8 @@ void MainWindow::onOpenSettings()
         }
 
         settings->setValue("ai/system_prompt", aiPromptInput->toPlainText().trimmed());
+        settings->setValue("ai/description_system_prompt", aiDescriptionPromptInput->toPlainText().trimmed());
+        settings->setValue("ai/gpu_acceleration", gpuAccelCheck->isChecked());
 
         const QString name = gitNameInput->text().trimmed();
         const QString email = gitEmailInput->text().trimmed();
@@ -2196,13 +2746,16 @@ void MainWindow::onOpenSettings()
         if (!email.isEmpty())
             runGitConfigSet("user.email", email);
 
-        // Show/hide AI row based on enabled state and API key
+        // Show/hide AI row based on enabled state and provider
         bool aiEnabled = aiEnableCheck->isChecked();
+        bool isLocal = aiProviderCombo->currentText() == "Local (internal llama.cpp)";
         bool hasKey = !apiKeyInput->text().trimmed().isEmpty();
-        if (aiEnabled && hasKey && m_aiRowContainer && !m_aiRowContainer->isVisible())
-            m_aiRowContainer->show();
-        else if (!aiEnabled || !hasKey)
+        if (aiEnabled && (hasKey || isLocal)) {
+            if (m_aiRowContainer && !m_aiRowContainer->isVisible())
+                m_aiRowContainer->show();
+        } else {
             m_aiRowContainer->hide();
+        }
     });
 
     stack->addWidget(generalPage);
@@ -2225,6 +2778,13 @@ void MainWindow::onOpenSettings()
     layout->addWidget(rightPanel, 1);
 
     categories->setCurrentRow(0);
+
+    // Cancel any active model downloads when dialog closes
+    connect(&dialog, &QDialog::finished, this, [&activeDownloads]() {
+        for (auto *reply : activeDownloads)
+            reply->abort();
+        activeDownloads.clear();
+    });
 
     dialog.exec();
 }
@@ -3497,6 +4057,58 @@ bool MainWindow::setupAskPass()
 #endif
 
     return true;
+}
+
+void MainWindow::onLocalAiResponse(const QString &text)
+{
+    if (m_aiThinkingOverlay)
+        m_aiThinkingOverlay->setVisible(false);
+
+    m_aiCommitButton->setEnabled(true);
+    m_aiDescriptionButton->setEnabled(true);
+    m_summaryInput->setEnabled(true);
+    m_descriptionInput->setEnabled(true);
+
+    if (text.isEmpty())
+        return;
+
+    if (m_aiRequestKind == AiRequestKind::Description) {
+        m_descriptionInput->setPlainText(text.trimmed());
+        return;
+    }
+
+    QStringList lines = text.split('\n', Qt::SkipEmptyParts);
+    if (lines.isEmpty())
+        return;
+
+    QString summary = lines.first();
+    summary.remove(QRegularExpression("^#+\\s*"));
+    summary.remove(QRegularExpression("^commit:\\s*", QRegularExpression::CaseInsensitiveOption));
+    summary = summary.trimmed();
+    if (!summary.isEmpty())
+        m_summaryInput->setText(summary);
+}
+
+void MainWindow::onLocalAiError(const QString &error)
+{
+    if (m_aiThinkingOverlay)
+        m_aiThinkingOverlay->setVisible(false);
+
+    m_aiCommitButton->setEnabled(true);
+    m_aiDescriptionButton->setEnabled(true);
+    m_summaryInput->setEnabled(true);
+    m_descriptionInput->setEnabled(true);
+
+    QMessageBox::warning(this, "Local AI Error", error);
+}
+
+void MainWindow::onLocalAiThinking(const QString &token)
+{
+    if (m_aiThinkingText) {
+        m_aiThinkingText->moveCursor(QTextCursor::End);
+        m_aiThinkingText->insertPlainText(token);
+        m_aiThinkingText->moveCursor(QTextCursor::End);
+    }
 }
 
 void MainWindow::cleanupAskPass()

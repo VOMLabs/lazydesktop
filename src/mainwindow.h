@@ -28,6 +28,7 @@ class QTreeWidget;
 class QTreeWidgetItem;
 
 class AddonManager;
+class LlamaAI;
 
 struct GitCredentials
 {
@@ -80,7 +81,11 @@ private slots:
     void onOpenGitHub();
     void onOpenSettings();
     void onGenerateCommitMessage();
+    void onGenerateCommitDescription();
     void onEnableAiSystem();
+    void onLocalAiResponse(const QString &text);
+    void onLocalAiError(const QString &error);
+    void onLocalAiThinking(const QString &token);
     void readDiffForFile(const QString &file) const;
     void onAddCoAuthors();
     void onStageAllFiles();
@@ -101,6 +106,9 @@ private slots:
 private:
     enum class GitQuery { None, Status, Unpushed };
     enum class PushState { Push, Fetch, Pull };
+    enum class AiRequestKind { CommitMessage, Description };
+
+    void runAiGeneration(AiRequestKind kind, const QString &rawPrompt);
 
     void setupUi();
     bool openRepository(const QString &path);
@@ -170,6 +178,8 @@ private:
     QTextEdit *m_descriptionInput = nullptr;
     QPushButton *m_commitButton = nullptr;
     QPushButton *m_aiCommitButton = nullptr;
+    QPushButton *m_aiDescriptionButton = nullptr;
+    AiRequestKind m_aiRequestKind = AiRequestKind::CommitMessage;
     QPushButton *m_skipHooksButton = nullptr;
     QPushButton *m_coAuthorButton = nullptr;
     QPushButton *m_aiEnableButton = nullptr;
@@ -224,6 +234,7 @@ private:
     GitQuery m_currentQuery = GitQuery::None;
     QStringList m_recentProjects;
     AddonManager *m_addonManager = nullptr;
+    LlamaAI *m_llamaAI = nullptr;
     bool m_aiEnabled = false;
 };
 
