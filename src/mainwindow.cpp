@@ -134,6 +134,61 @@ public:
     }
 };
 
+class FileTreeDelegate : public QStyledItemDelegate {
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem opt = option;
+        initStyleOption(&opt, index);
+
+        painter->save();
+
+        const bool selected = opt.state & QStyle::State_Selected;
+        const bool hovered = opt.state & QStyle::State_MouseOver;
+
+        if (selected)
+            painter->fillRect(opt.rect, opt.palette.highlight());
+        else if (hovered)
+            painter->fillRect(opt.rect, opt.palette.alternateBase());
+
+        QRect r = opt.rect;
+
+        // 1. Draw colored status square
+        QVariant iconVar = index.data(Qt::DecorationRole);
+        if (iconVar.canConvert<QIcon>()) {
+            QIcon icon = iconVar.value<QIcon>();
+            QPixmap pm = icon.pixmap(8, 8);
+            int iconX = r.left() + 4;
+            int iconY = r.top() + (r.height() - 8) / 2;
+            painter->drawPixmap(iconX, iconY, pm);
+        }
+
+        // 2. Draw checkbox
+        QStyleOptionViewItem opt2 = opt;
+        opt2.rect = QRect(r.left() + 18, r.top(), 20, r.height());
+        QStyle *style = opt.widget ? opt.widget->style() : QApplication::style();
+        style->drawPrimitive(QStyle::PE_IndicatorItemViewItemCheck, &opt2, painter, opt.widget);
+
+        // 3. Draw text
+        QRect textRect = r.adjusted(42, 0, -4, 0);
+        QString text = index.data(Qt::DisplayRole).toString();
+        painter->setPen(selected ? opt.palette.highlightedText().color()
+                                 : opt.palette.windowText().color());
+        painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine, text);
+
+        painter->restore();
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem &option,
+                   const QModelIndex &) const override
+    {
+        return QSize(200, option.fontMetrics.height() + 8);
+    }
+};
+
 static const int kMaxRecentProjects = 100;
 
 static QString defaultSettingsDir()
@@ -555,6 +610,7 @@ void MainWindow::setupUi()
     m_gitStatusTree->setIndentation(0);
     m_gitStatusTree->setAnimated(false);
     m_gitStatusTree->setIconSize(QSize(10, 10));
+    m_gitStatusTree->setItemDelegate(new FileTreeDelegate(m_gitStatusTree));
     m_gitStatusTree->setStyleSheet(
         "QTreeWidget::item:selected {"
         "  background: palette(highlight);"
@@ -2863,10 +2919,16 @@ void MainWindow::onTreeItemClicked(QTreeWidgetItem *item, int column)
 
     m_viewerStack->setCurrentIndex(0);
 
+    // Block watcher signals so git reads don't trigger a status refresh
+    // that would reset checkbox states
+    m_fsWatcher->blockSignals(true);
+
     QString diff = runGitDiff(m_repoPath, {"diff", "HEAD", "--", relPath});
 
     if (diff.isEmpty())
         diff = runGitDiff(m_repoPath, {"diff", "@{u}..HEAD", "--", relPath});
+
+    m_fsWatcher->blockSignals(false);
 
     if (diff.isEmpty()) {
         m_fileContentViewer->clear();
