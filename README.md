@@ -13,8 +13,8 @@ Built with Qt 6 and C++23 — the same frameworks KDE Plasma ships with, requiri
 - **Skip pre-commit hooks** — Toggle button (lightning icon) adds `--no-verify` to the commit command
 - **Co-authors** — Click the people icon to scan checked files' git history for authors, select co-authors from a dialog, and append `Co-authored-by:` trailers to the description
 - **AI commit message generation** — Click the AI button to generate a summary + description from the diffs of checked files. Supports multiple providers:
-  - **OpenRouter**, **OpenAI**, **Anthropic**, **Gemini**, **Google AI Studio** (require an API key in Settings → AI)
-  - **Ollama**, **LMStudio** (local, no key needed — auto-detected on startup)
+  - **OpenRouter**, **OpenAI**, **Anthropic**, **Google AI Studio** (require an API key in Settings → AI)
+  - **Local llama.cpp** — built-in GGUF model support with one-click downloads from HuggingFace, GPU acceleration toggle, and model management
   - Right-click the AI button to switch providers
   - Model name is configurable in Settings → AI; fields are disabled while generating
 - **Push / Fetch / Pull** — Smart button cycles through push → fetch → pull
@@ -28,7 +28,7 @@ Built with Qt 6 and C++23 — the same frameworks KDE Plasma ships with, requiri
 - **Settings dialog** — Categorized settings:
   - **Appearance**: System Default / Dark / custom YAML themes
   - **Git**: Global `user.name` and `user.email` read/written via `git config --global`
-  - **AI**: OpenRouter API key, model name, system prompt
+  - **AI**: Enable toggle, provider selection, API key, model name, system prompt, local model downloads
 - **Custom YAML themes** — Place `.theme.yaml` files in `~/.config/lazydesktop/themes/` to add new theme options in Appearance settings. See example themes at that path after first run
 - **Git bootstrapping** — Detects missing Git at startup and offers to install it via `pkexec`/`sudo` (Linux), `xcode-select` (macOS), or `winget` (Windows)
 - **Credential handling** — GIT_ASKPASS integration with a credential dialog for remote auth
@@ -58,6 +58,25 @@ Your projects and settings persist across rebuilds:
 - Projects: `~/.config/lazydesktop/projects.yaml`
 - Settings (API key, theme, model, system prompt): `~/.config/lazydesktop/lazydesktop.conf`
 - Custom themes: `~/.config/lazydesktop/themes/*.theme.yaml`
+- Local AI models: `~/.config/lazydesktop/models/`
+
+## Installation
+
+### Arch Linux
+
+```bash
+makepkg -si
+```
+
+### Debian / Ubuntu
+
+```bash
+sudo dpkg -i lazydesktop_*.deb
+```
+
+### From source
+
+See [Build & Run](#build--run-without-installing) above.
 
 ## Custom Themes
 
@@ -80,9 +99,16 @@ colors:
 
 The theme appears in Settings → Appearance after the next launch or when the settings dialog is re-opened.
 
+## LazyAddons
+
+LazyDesktop includes a plugin system called **LazyAddons** that supports Lua and Python plugins. Plugins can register commands, respond to application events, and extend the UI.
+
+See [docs/addons/](docs/addons/) for plugin development documentation.
+
 ## Requirements
 
 - Qt 6 (Core, Gui, Widgets, Network)
 - yaml-cpp
 - Git
 - A C++23 compiler (GCC 14+, Clang 18+)
+- llama.cpp (bundled as a Meson subproject for local AI)

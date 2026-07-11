@@ -95,13 +95,7 @@ private slots:
     void onDiscardFile();
     void toggleCommitPanel(bool visible);
     void toggleCommitFilesPanel(bool visible);
-    void onStageSelected();
-    void onUnstageSelected();
-    void onStagedItemClicked(QTreeWidgetItem *item, int column);
-    void onUnstagedItemClicked(QTreeWidgetItem *item, int column);
-    void onStagedContextMenu(const QPoint &pos);
-    void onUnstagedContextMenu(const QPoint &pos);
-    void updateStagedUnstagedTrees(const QString &output);
+
 
 private:
     enum class GitQuery { None, Status, Unpushed };
@@ -120,6 +114,7 @@ private:
     void addGitFileToTree(const QString &path, const QString &prefix, QTreeWidgetItem *parent = nullptr);
     void setAllCheckStates(Qt::CheckState state);
     QStringList checkedFiles() const;
+    void updateStagedUnstagedTrees(const QString &output);
 
     void loadBranches();
     void refreshAll();
@@ -194,18 +189,6 @@ private:
     QPushButton *m_aiShowMoreButton = nullptr;
     QTextEdit *m_aiThinkingText = nullptr;
     bool m_aiThinkingVisible = false;
-
-    // Staging area UI
-    QWidget *m_stagedHeader = nullptr;
-    QTreeWidget *m_stagedTree = nullptr;
-    QLabel *m_stagedCountLabel = nullptr;
-    QWidget *m_unstagedHeader = nullptr;
-    QTreeWidget *m_unstagedTree = nullptr;
-    QLabel *m_unstagedCountLabel = nullptr;
-    QPushButton *m_stageButton = nullptr;
-    QPushButton *m_unstageButton = nullptr;
-    QPushButton *m_stageAllButton = nullptr;
-    QPushButton *m_unstageAllButton = nullptr;
 
     PushState m_pushState = PushState::Push;
     QPushButton *m_pushButton = nullptr;
