@@ -1,22 +1,32 @@
-qt6 = import('qt6')
-
-yaml_cpp_dep = dependency('yaml-cpp', required: true)
-llama_dep = dependency('llama', fallback: ['llama.cpp', 'llama_dep'], required: true)
-
-processed = qt6.preprocess(
-  moc_headers: ['mainwindow.h', 'diffviewer.h', 'llamaai.h'],
-)
-
-sources = files(
+sources += files(
   'main.cpp',
   'mainwindow.cpp',
   'diffviewer.cpp',
   'llamaai.cpp',
+  'addons/addonapi.cpp',
+  'addons/addoninstaller.cpp',
+  'addons/addonmanager.cpp',
+  'addons/addonmanifest.cpp',
+  'addons/addonpermissions.cpp',
+  'addons/addonruntime.cpp',
+  'addons/addonwidget.cpp',
+  'addons/commandpalette.cpp',
+  'addons/luaaddonruntime.cpp',
+  'addons/pythonaddonruntime.cpp',
 )
 
-executable('lazydesktop',
-  sources,
-  processed,
-  dependencies: [qt6_dep, yaml_cpp_dep, llama_dep],
-  install: true,
+headers += files(
+  'mainwindow.h',
+  'diffviewer.h',
+  'llamaai.h',
+  'addons/addonapi.h',
+  'addons/addoninstaller.h',
+  'addons/addonmanager.h',
+  'addons/addonmanifest.h',
+  'addons/addonpermissions.h',
+  'addons/addonruntime.h',
+  'addons/addonwidget.h',
+  'addons/commandpalette.h',
+  'addons/luaaddonruntime.h',
+  'addons/pythonaddonruntime.h',
 )
