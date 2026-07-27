@@ -9,7 +9,50 @@ project('lazydesktop', 'cpp',
 )
 
 qt6 = import('qt6')
+cc = meson.get_compiler('cpp')
 
-qt6_dep = dependency('qt6', modules: ['Core', 'Gui', 'Widgets', 'Network'])
+# Dependencies
+qt6_dep  = dependency('qt6', modules: ['Core', 'Gui', 'Widgets', 'Network'])
+yaml_dep = dependency('yaml-cpp')
 
+# Lua (falls back to lua5.4 or luajit if standard lua pkg-config isn't found)
+lua_dep = dependency('lua', required: false)
+if not lua_dep.found()
+  lua_dep = dependency('lua5.4', required: false)
+endif
+if not lua_dep.found()
+  lua_dep = dependency('luajit')
+endif
+
+# llama.cpp / ggml
+llama_dep = dependency('llama', required: false)
+if not llama_dep.found()
+  llama_dep = declare_dependency(
+    dependencies: [
+      cc.find_library('llama'),
+      cc.find_library('ggml'),
+    ]
+  )
+endif
+
+sources = []
+headers = []
+
+# Populates sources and headers from src/
 subdir('src')
+
+# Process Qt MOC headers
+qt_processed = qt6.preprocess(
+  moc_headers: headers,
+)
+
+executable('lazydesktop',
+  sources,
+  qt_processed,
+  dependencies: [
+    qt6_dep,
+    yaml_dep,
+    lua_dep,
+    llama_dep,
+  ],
+)
