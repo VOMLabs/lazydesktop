@@ -1,0 +1,163 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release-linux:
+    name: Linux (.deb + .AppImage)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            meson ninja-build \
+            qt6-base-dev \
+            libyaml-cpp-dev \
+            libgl-dev \
+            gcc-14 g++-14 \
+            libfuse2
+
+      - name: Configure (release)
+        run: CC=gcc-14 CXX=g++-14 meson setup build --buildtype=release -Dwarning_level=0 -Db_strip=true -Db_lto=true
+
+      - name: Build
+        run: ninja -C build
+
+      - name: Strip debug symbols
+        run: strip build/src/lazydesktop
+
+      - name: Build .deb
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p debian/DEBIAN
+          cat > debian/DEBIAN/control <<EOF
+          Package: lazydesktop
+          Version: $VERSION
+          Section: devel
+          Priority: optional
+          Architecture: amd64
+          Maintainer: LazyDesktop Team <team@lazydesktop.dev>
+          Depends: qt6-base (>= 6.5), libyaml-cpp (>= 0.7), git
+          Description: A KDE-native Git GUI alternative
+           LazyDesktop is a fast, native Git client built with Qt 6 and C++23.
+          EOF
+          install -Dm755 build/src/lazydesktop     debian/DEBIAN/usr/bin/lazydesktop
+          install -Dm644 data/lazydesktop.desktop   debian/DEBIAN/usr/share/applications/lazydesktop.desktop
+          dpkg-deb --build debian/DEBIAN lazydesktop_${VERSION}_amd64.deb
+
+      - name: Build .AppImage
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # linuxdeploy + appimagetool
+          wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+          wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
+
+          mkdir -p AppDir
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --executable build/src/lazydesktop --plugin qt
+
+          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x appimagetool-x86_64.AppImage
+          ./appimagetool-x86_64.AppImage AppDir
+          mv LazyDesktop-*-x86_64.AppImage lazydesktop-${VERSION}-x86_64.AppImage
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lazydesktop-linux
+          path: |
+            lazydesktop_*.deb
+            lazydesktop-*-x86_64.AppImage
+
+  release-arch:
+    name: Linux (.pkg.tar.zst)
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          pacman -Sy --noconfirm \
+            base-devel meson ninja \
+            qt6-base yaml-cpp git
+
+      - name: Build package
+        run: |
+          useradd -m builder
+          chown -R builder:builder .
+          su builder -c "makepkg -s --noconfirm --cleanbuild"
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: lazydesktop-arch
+          path: '*.pkg.tar.zst'
+
+  release-windows:
+    name: Windows (.msi)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          arch: win64_msvc2022_64
+          modules: qt5compat qtnetworkauth
+
+      - name: Install WiX Toolset
+        run: dotnet tool install --global wix --version 5.0.0
+
+      - name: Configure and build
+        run: |
+          meson setup build --buildtype=release -Dwarning_level=0
+          ninja -C build
+
+      - name: Build MSI
+        working-directory: install/windows
+        run: |
+          wix build lazydesktop.wxs -o lazydesktop-${env:GITHUB_REF_NAME#v}.msi
+
+      - name: Upload MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: lazydesktop-windows
+          path: install/windows/*.msi
+
+  create-release:
+    name: Create GitHub Release
+    needs: [release-linux, release-arch, release-windows]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Generate checksums
+        run: |
+          find . -name '*.deb' -o -name '*.AppImage' -o -name '*.pkg.tar.zst' -o -name '*.msi' | \
+            xargs sha256sum > checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: LazyDesktop ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: true
+          prerelease: true
+          files: |
+            **/*.deb
+            **/*.AppImage
+            **/*.pkg.tar.zst
+            **/*.msi
+            checksums.txt
