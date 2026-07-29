@@ -27,7 +27,6 @@ class QTextEdit;
 class QTreeWidget;
 class QTreeWidgetItem;
 
-class AddonManager;
 class LlamaAI;
 
 struct GitCredentials
@@ -216,7 +215,6 @@ private:
     QString m_repoPath;
     GitQuery m_currentQuery = GitQuery::None;
     QStringList m_recentProjects;
-    AddonManager *m_addonManager = nullptr;
     LlamaAI *m_llamaAI = nullptr;
     bool m_aiEnabled = false;
 };

@@ -99,12 +99,6 @@ colors:
 
 The theme appears in Settings → Appearance after the next launch or when the settings dialog is re-opened.
 
-## LazyAddons
-
-LazyDesktop includes a plugin system called **LazyAddons** that supports Lua and Python plugins. Plugins can register commands, respond to application events, and extend the UI.
-
-See [docs/addons/](docs/addons/) for plugin development documentation.
-
 ## Requirements
 
 - Qt 6 (Core, Gui, Widgets, Network)

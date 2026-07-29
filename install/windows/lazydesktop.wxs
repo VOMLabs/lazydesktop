@@ -13,7 +13,7 @@
              InstallScope="perMachine"
              Platform="x64"
              Manufacturer="LazyDesktop Team"
-             Description="A KDE-native Git GUI alternative with LazyAddons plugin system"/>
+              Description="A KDE-native Git GUI alternative"/>
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of LazyDesktop is already installed."/>
 
@@ -82,20 +82,6 @@
         </Component>
       </Directory>
 
-      <!-- File association for .lza and .zip -->
-      <Directory Id="TARGETDIR" Name="SourceDir">
-        <Component Id="FileAssocLZA" Guid="*" Win64="yes">
-          <RegistryValue Root="HKCR" Key=".lza" Value="LazyDesktop.Addon" Type="string"/>
-          <RegistryValue Root="HKCR" Key="LazyDesktop.Addon" Value="LazyDesktop Addon Package" Type="string"/>
-          <RegistryValue Root="HKCR" Key="LazyDesktop.Addon\shell\open\command"
-                         Value='"[INSTALLDIR]lazydesktop.exe" "%1"' Type="string"/>
-          <RegistryValue Root="HKCR" Key="LazyDesktop.Addon\DefaultIcon"
-                         Value='"[INSTALLDIR]lazydesktop.exe",0' Type="string"/>
-        </Component>
-        <Component Id="FileAssocZIP" Guid="*" Win64="yes">
-          <RegistryValue Root="HKCR" Key=".zip\OpenWithList\lazydesktop.exe" Value="" Type="string"/>
-        </Component>
-      </Directory>
     </Directory>
 
     <!-- Features -->
@@ -105,8 +91,7 @@
       <ComponentRef Id="StylePlugin"/>
       <ComponentRef Id="StartMenuShortcut"/>
       <ComponentRef Id="DesktopShortcut"/>
-      <ComponentRef Id="FileAssocLZA"/>
-      <ComponentRef Id="FileAssocZIP"/>
+
     </Feature>
 
     <!-- UI -->

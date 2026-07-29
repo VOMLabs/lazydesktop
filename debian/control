@@ -7,7 +7,6 @@ Build-Depends: debhelper-compat (= 13),
                ninja-build,
                qt6-base-dev (>= 6.5.0),
                libyaml-cpp-dev (>= 0.7.0),
-               liblua5.4-dev | liblua5.3-dev | liblua-dev,
                pkg-kde-tools,
                libgl-dev
 Standards-Version: 4.7.0
@@ -33,8 +32,7 @@ Description: A KDE-native Git GUI alternative
   - Branch management (create, switch, delete)
   - Push / Fetch / Pull with smart cycling button
   - Commit history browser with file-level diff exploration
-  - Custom YAML theme support
-  - LazyAddons plugin system (Lua and Python)
+   - Custom YAML theme support
 
 Package: lazydesktop-dbgsym
 Section: debug

@@ -1,6 +1,0 @@
-# Default configuration for My Lua Plugin
-# These values are loaded when the plugin is first installed.
-# Users can modify them via the plugin API at runtime.
-
-greeting: "Hello from Lua!"
-refresh_interval: 30

@@ -1,9 +1,0 @@
-id: com.example.my-lua-plugin
-name: My Lua Plugin
-version: 1.0.0
-runtime: lua
-entry: src/main.lua
-api: 1
-author: Your Name
-description: A LazyAddons plugin written in Lua
-license: MIT
