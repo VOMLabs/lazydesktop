@@ -803,11 +803,11 @@ void MainWindow::setupUi()
     auto *thinkingLayout = new QVBoxLayout(m_aiThinkingOverlay);
     thinkingLayout->setContentsMargins(8, 8, 8, 8);
     thinkingLayout->setSpacing(4);
-    
+
     m_aiThinkingLabel = new QLabel("AI is thinking...");
     m_aiThinkingLabel->setStyleSheet("color: #d4d4d4; font-weight: bold;");
     thinkingLayout->addWidget(m_aiThinkingLabel);
-    
+
     m_aiShowMoreButton = new QPushButton("Show more ▼");
     m_aiShowMoreButton->setFlat(true);
     m_aiShowMoreButton->setStyleSheet(
@@ -815,7 +815,7 @@ void MainWindow::setupUi()
         "QPushButton:hover { color: #1177bb; }"
     );
     thinkingLayout->addWidget(m_aiShowMoreButton);
-    
+
     m_aiThinkingText = new QTextEdit();
     m_aiThinkingText->setVisible(false);
     m_aiThinkingText->setReadOnly(true);
@@ -828,7 +828,7 @@ void MainWindow::setupUi()
         "font-size: 11px;"
     );
     thinkingLayout->addWidget(m_aiThinkingText);
-    
+
     connect(m_aiShowMoreButton, &QPushButton::clicked, this, [this]() {
         m_aiThinkingVisible = !m_aiThinkingVisible;
         m_aiThinkingText->setVisible(m_aiThinkingVisible);
@@ -1596,7 +1596,7 @@ void MainWindow::closeRepository()
     m_coAuthorButton->setEnabled(false);
     m_currentBranch.clear();
     m_selectedCommitHash.clear();
-    
+
     // Safely remove paths from watcher
     QStringList files = m_fsWatcher->files();
     QStringList dirs = m_fsWatcher->directories();

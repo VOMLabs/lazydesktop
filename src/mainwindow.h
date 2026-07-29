@@ -181,7 +181,7 @@ private:
     QWidget *m_aiRowContainer = nullptr;
     QProcess *m_commitProcess = nullptr;
     QNetworkAccessManager *m_networkManager = nullptr;
-    
+
     // AI thinking indicator
     QWidget *m_aiThinkingOverlay = nullptr;
     QLabel *m_aiThinkingLabel = nullptr;
