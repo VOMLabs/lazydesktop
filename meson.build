@@ -15,15 +15,6 @@ cc = meson.get_compiler('cpp')
 qt6_dep  = dependency('qt6', modules: ['Core', 'Gui', 'Widgets', 'Network'])
 yaml_dep = dependency('yaml-cpp')
 
-# Lua (falls back to lua5.4 or luajit if standard lua pkg-config isn't found)
-lua_dep = dependency('lua', required: false)
-if not lua_dep.found()
-  lua_dep = dependency('lua5.4', required: false)
-endif
-if not lua_dep.found()
-  lua_dep = dependency('luajit')
-endif
-
 # llama.cpp / ggml
 llama_dep = dependency('llama', required: false)
 if not llama_dep.found()
@@ -52,7 +43,6 @@ executable('lazydesktop',
   dependencies: [
     qt6_dep,
     yaml_dep,
-    lua_dep,
     llama_dep,
   ],
 )

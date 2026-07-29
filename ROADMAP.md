@@ -48,7 +48,6 @@
 
 ## v0.5 — Long Term
 
-- [ ] **Plugins / scripting** — Lua or Python scripting for custom actions, hooks, and CI integrations
 - [ ] **Performance mode** — Virtual file system for monorepos; lazy-load commit graph
 - [ ] **Visual commit graph** — DAG render of branches with drag-to-rebase
 - [ ] **Side-by-side diff** — Split-view editor for staged/unstaged comparison

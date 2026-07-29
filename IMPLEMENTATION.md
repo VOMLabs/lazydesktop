@@ -33,11 +33,11 @@ LazyDesktop is a native Git GUI client for KDE Plasma, built as a lightweight al
 │  - branch, checkout, log          │  - Local llama.cpp   │
 │  - clone, init                    │  - LlamaWorker thread│
 ├─────────────────────────────────────────────────────────┤
-│  Addon System (LazyAddons)        │  Persistence Layer  │
-│  - AddonManager                   │  - QSettings (INI)   │
-│  - Lua / Python runtimes          │  - YAML (projects,   │
-│  - AddonAPI, Permissions          │    themes)           │
-└─────────────────────────────────────────────────────────┘
+│  Persistence Layer  │
+│  - QSettings (INI)   │
+│  - YAML (projects,   │
+│    themes)           │
+└──────────────────────┘
 ```
 
 ### Technology Stack
@@ -47,10 +47,8 @@ LazyDesktop is a native Git GUI client for KDE Plasma, built as a lightweight al
 | UI Framework | Qt 6 (Core, Gui, Widgets, Network) | All UI rendering, networking, process management |
 | Language | C++23 | Application logic |
 | Build System | Meson + Ninja | Compilation and linking |
-| Config Storage | yaml-cpp | YAML parsing for projects, themes, addon manifests |
+| Config Storage | yaml-cpp | YAML parsing for projects and themes |
 | Local AI | llama.cpp (subproject) | GGUF model inference for commit message generation |
-| Lua Runtime | sol2 (embedded in llama.cpp subproject) | Lua addon execution |
-| Python Runtime | Process-based via `uv` | Python addon execution |
 
 ### Data Storage
 
@@ -61,7 +59,6 @@ All persistent data lives under `~/.config/lazydesktop/`:
 | `lazydesktop.conf` | QSettings INI | App settings (AI provider, API key, theme, model) |
 | `projects.yaml` | YAML | Recent project paths |
 | `themes/*.theme.yaml` | YAML | Custom theme definitions |
-| `addons/` | Directory tree | Installed plugin archives and extracted runtimes |
 | `models/` | GGUF files | Downloaded local AI models |
 
 ---
@@ -73,20 +70,11 @@ All persistent data lives under `~/.config/lazydesktop/`:
 | File | Lines | Responsibility |
 |------|-------|----------------|
 | `src/mainwindow.h` | 241 | MainWindow class declaration, all UI member variables, process pointers, enums |
-| `src/mainwindow.cpp` | ~4131 | All application logic: UI setup, git operations, AI generation, settings, project management, addon integration |
+| `src/mainwindow.cpp` | ~4131 | All application logic: UI setup, git operations, AI generation, settings, project management |
 | `src/diffviewer.h` / `.cpp` | ~200 | Custom `QPlainTextEdit` subclass with line numbers and diff syntax highlighting |
 | `src/llamaai.h` / `.cpp` | ~460 | llama.cpp integration: model loading, inference on a worker thread, GPU/CPU backend selection |
 | `src/main.cpp` | minimal | Entry point, creates `QApplication` and `MainWindow` |
-| `src/addons/addonmanager.h` / `.cpp` | ~300 | Plugin lifecycle management, command registry, menu contributions |
-| `src/addons/addonapi.h` / `.cpp` | ~200 | Sandboxed API surface exposed to plugins: logging, config, file CRUD, network, commands |
-| `src/addons/addonruntime.h` / `.cpp` | ~150 | Abstract base class for plugin runtimes, status tracking, event dispatch |
-| `src/addons/luaaddonruntime.h` / `.cpp` | ~400 | Lua runtime: sol2-based Lua state, lifecycle hooks, command registration |
-| `src/addons/pythonaddonruntime.h` / `.cpp` | ~350 | Python runtime: subprocess communication via JSON stdin/stdout, venv management |
-| `src/addons/addonmanifest.h` / `.cpp` | ~150 | YAML/JSON manifest parsing and validation |
-| `src/addons/addoninstaller.h` / `.cpp` | ~200 | Archive extraction (.zip, .lza), structure validation, install/uninstall |
-| `src/addons/addonpermissions.h` / `.cpp` | ~100 | Bitmask permission model (filesystem, network, execute, etc.) |
-| `src/addons/addonwidget.h` / `.cpp` | ~300 | Plugin manager dialog UI |
-| `src/addons/commandpalette.h` / `.cpp` | ~100 | Command palette dialog for quick command execution |
+
 
 ### Git Integration
 
@@ -178,88 +166,6 @@ The prompt system uses a `<diff>` placeholder:
 - `buildAiPrompt()` substitutes the diff text into the prompt
 - Two separate prompts exist: one for commit message summary, one for description
 - Fields are disabled and an overlay with "AI is thinking..." is shown during generation
-
-### Addon System (LazyAddons)
-
-#### Architecture
-
-```
-AddonManager (singleton)
-├── AddonManifest (parsed from manifest.yml)
-├── AddonRuntime (abstract)
-│   ├── LuaAddonRuntime (sol2-based)
-│   └── PythonAddonRuntime (process-based via uv)
-├── AddonAPI (sandboxed surface per plugin)
-├── AddonInstaller (archive extraction)
-├── AddonPermissions (bitmask security model)
-└── AddonWidget (manager dialog UI)
-```
-
-#### Plugin Lifecycle
-
-1. **Install** — Archive (.zip or .lza) is extracted to `~/.config/lazydesktop/addons/<id>/`
-2. **Load** — Runtime loads and initializes the entry script (Lua: `dofile()`, Python: start subprocess)
-3. **Enable** — `onEnable()` hook is called, plugin receives events
-4. **Active** — Plugin can register commands, add menu items, respond to events
-5. **Disable** — `onDisable()` is called, plugin is paused
-6. **Unload** — Runtime releases resources (Lua: close state, Python: kill process)
-7. **Uninstall** — Plugin directory is removed
-
-#### Manifest Format
-
-```yaml
-id: com.example.myplugin
-name: My Plugin
-version: 1.0.0
-runtime: lua          # or "python"
-entry: src/main.lua   # entry point script
-api: 1                # API version
-author: Name
-description: What it does
-license: MIT
-permissions:
-  - filesystem
-  - network
-  - ui
-```
-
-#### Permission Model
-
-| Permission | Description | Dangerous |
-|-----------|-------------|-----------|
-| `filesystem` | Read/write files in plugin data directory | No |
-| `network` | Make HTTP requests via QNetworkAccessManager | Yes |
-| `execute` | Run shell commands | Yes |
-| `clipboard` | Access system clipboard | Yes |
-| `notifications` | Show system notifications | No |
-| `projectAccess` | Read current repository state | No |
-| `ui` | Add menu items and UI elements | No |
-
-#### Lua Runtime
-
-Uses sol2 to embed Lua. The API is registered as a global `addon` table:
-- `addon.log(msg, level)` — Log messages
-- `addon.config.read(key)` / `addon.config.write(key, value)` — Per-plugin config
-- `addon.files.read(path)` / `addon.files.write(path, content)` — Sandboxed file access
-- `addon.commands.register(name, callback)` — Register commands for the command palette
-- `addon.menus.create(parent, label, command)` — Add menu items
-
-Lifecycle hooks: `onLoad()`, `onEnable()`, `onDisable()`, `onUnload()`, `onAppStarted()`, `onProjectOpened()`, etc.
-
-#### Python Runtime
-
-Runs Python scripts as subprocesses via `uv`. Communication is via JSON messages on stdin/stdout:
-- Host sends: `{"method": "onEnable", "params": {}}`
-- Plugin sends: `{"method": "log", "params": {"message": "hello", "level": "info"}}`
-
-Each plugin gets its own virtual environment managed by `uv`.
-
-#### Command Palette
-
-`CommandPalette` is a modal dialog (Ctrl+Shift+P) that:
-- Lists all registered commands from core and plugins
-- Filters as you type
-- Executes the selected command
 
 ### UI Architecture
 
@@ -513,26 +419,9 @@ On startup, `checkGitAvailable()` checks if `git` is on PATH. If not:
 - [x] Script cleanup on shutdown
 - [x] Auth environment setup for push/fetch/pull
 
-### LazyAddons Plugin System
-
-- [x] AddonManager (singleton, lifecycle management)
-- [x] AddonManifest (YAML/JSON parsing, validation)
-- [x] AddonInstaller (ZIP/LZA archive extraction)
-- [x] AddonPermissions (bitmask security model, 7 permission types)
-- [x] AddonAPI (logging, config, file CRUD, network, commands, menus)
-- [x] LuaAddonRuntime (sol2-based Lua execution)
-- [x] PythonAddonRuntime (subprocess via uv, JSON IPC)
-- [x] AddonWidget (manager dialog: list, details, install/uninstall/toggle/reload)
-- [x] CommandPalette (Ctrl+Shift+P, fuzzy search, execute commands)
-- [x] Event dispatch (Load, Enable, Disable, Unload, ProjectOpened, etc.)
-- [x] Command registration and execution
-- [x] Menu contributions from plugins
-- [x] Per-plugin isolated config and data directories
-
 ### Packaging
 
 - [x] Meson build system
 - [x] PKGBUILD for Arch Linux
 - [x] Debian packaging (control, rules, changelog)
-- [x] Desktop entry files (app + addon)
-- [x] MIME type registration for .lza files
+- [x] Desktop entry file

@@ -7,6 +7,5 @@ lazydesktop (0.1.0-1) unstable; urgency=medium
   * Branch management, push/fetch/pull.
   * Commit history browser.
   * Custom YAML theme support.
-  * LazyAddons plugin system (Lua/Python).
 
  -- LazyDesktop Team <team@lazydesktop.dev>  Thu, 03 Jul 2026 21:00:00 +0000

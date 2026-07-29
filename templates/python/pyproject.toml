@@ -1,6 +1,0 @@
-[project]
-name = "my-python-plugin"
-version = "1.0.0"
-description = "A LazyAddons plugin written in Python"
-requires-python = ">=3.10"
-dependencies = []

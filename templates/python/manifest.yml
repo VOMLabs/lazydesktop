@@ -1,9 +1,0 @@
-id: com.example.my-python-plugin
-name: My Python Plugin
-version: 1.0.0
-runtime: python
-entry: src/main.py
-api: 1
-author: Your Name
-description: A LazyAddons plugin written in Python
-license: MIT

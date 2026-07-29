@@ -7,5 +7,4 @@ Icon=lazydesktop
 Terminal=false
 Categories=Development;RevisionControl;Qt;
 StartupNotify=true
-MimeType=application/vnd.lazydesktop.addon;
 Keywords=git;github;version-control;
