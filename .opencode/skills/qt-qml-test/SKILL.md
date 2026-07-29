@@ -1,19 +1,6 @@
 ---
 name: qt-qml-test
-description: >-
-  Generates Qt Quick Test cases (TestCase, SignalSpy, tryCompare)
-  for QML components. Use for "write QML tests", "qml test",
-  "qt quick test".
-license: LicenseRef-Qt-Commercial OR BSD-3-Clause
-compatibility: >-
-  Designed for Claude Code, GitHub Copilot, and similar agents.
-disable-model-invocation: false
-argument-hint: "[<path-or-glob>]"
-metadata:
-  author: qt-ai-skills
-  version: "1.0"
-  qt-version: "6.x"
-  category: process
+description: Generates Qt Quick Test cases (TestCase, SignalSpy, tryCompare) for QML components. Trigger when the user asks to write or generate QML tests.
 ---
 
 # Qt Quick Test Skill

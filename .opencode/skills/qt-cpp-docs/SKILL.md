@@ -1,22 +1,6 @@
 ---
 name: qt-cpp-docs
-description: >-
-  Generates standalone Markdown reference documentation for any Qt/C++ source files —
-  Qt Widgets classes, Qt Quick backends, Qt/C++ modules, plain C++ utilities, structs,
-  free-function headers, and entry points like main.cpp. Use this skill to document
-  any .h or .cpp file: Qt classes, plain C++ code, utility helpers, or application
-  startup files. Triggers on: "document this class", "write docs for my C++",
-  "document main.cpp", "C++ API docs", "document my Qt app", or whenever C++ or header
-  files are provided and documentation is needed. Works with single files, pasted
-  code, or entire project folders. DO NOT use if the user asks for QDoc format output.
-license: LicenseRef-Qt-Commercial OR BSD-3-Clause
-compatibility: >-
-  Designed for Claude Code, GitHub Copilot, and similar agents.
-disable-model-invocation: false
-metadata:
-  author: qt-ai-skills
-  version: "1.0"
-  qt-version: "6.x"
+description: Generates standalone Markdown reference documentation for Qt/C++ source files. Trigger when the user asks to document C++ or header files.
 ---
 # Qt C++ Documentation Skill
 

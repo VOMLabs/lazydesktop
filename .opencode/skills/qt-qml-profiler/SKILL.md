@@ -1,23 +1,6 @@
 ---
 name: qt-qml-profiler
-description: >-
-  Use when the user is investigating QML / Qt Quick performance — both
-  vague complaints ("the UI feels laggy", "this is slow", "frames are
-  dropping", "the app stutters") and explicit asks to profile, find
-  hotspots, or optimize bindings, signals, or rendering. Runs
-  qmlprofiler on a 2D QML application, parses the .qtd trace, and
-  analyzes hotspots against the source with frame-time, memory, and
-  pixmap-cache summaries. Does NOT cover Qt Quick 3D.
-license: LicenseRef-Qt-Commercial OR BSD-3-Clause
-compatibility: >-
-  Designed for Claude Code, GitHub Copilot, and similar agents.
-disable-model-invocation: false
-argument-hint: "[--profile <full|rendering|logic|memory>] -- <executable> [app-args...] | <trace.qtd>"
-metadata:
-  author: qt-ai-skills
-  version: "1.0"
-  qt-version: "6.x"
-  category: tool
+description: Profiles and optimizes QML/Qt Quick performance. Trigger when the user reports UI lag, slow rendering, or asks to profile QML applications.
 ---
 
 # Qt QML Profiler Skill

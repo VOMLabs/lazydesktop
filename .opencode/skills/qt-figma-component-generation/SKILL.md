@@ -1,14 +1,6 @@
 ---
 name: qt-figma-component-generation
-description: >
-  Extract component metadata from a Figma design system and generate production-ready QML controls. Use this skill whenever someone wants to turn Figma components into QML files — whether they say "generate components from Figma", "create QML controls based on a design system", "convert Figma components to QML", "build the component library", "extract button/input/checkbox from Figma", or anything similar. Requires design-tokens.json and QML design system singletons to already exist (from the token extraction skill). Uses Figma MCP to inspect components one at a time and maps variants, states, sizing, and token usage to idiomatic Qt Quick Controls 2 patterns. Trigger this skill at the component generation step of any QML design-system workflow.
-license: LicenseRef-Qt-Commercial OR BSD-3-Clause
-compatibility: Works with Claude Code, Codex, and GitHub Copilot. Requires Figma MCP and design-tokens.json from qt-figma-token-extraction.
-metadata:
-  author: qt-ai-skills
-  version: "1.0"
-  qt-version: "6.x"
-  category: process
+description: Extracts Figma design system component metadata and generates production-ready QML controls. Trigger when the user wants to convert Figma components to QML.
 ---
 
 # Figma Component Generation Skill

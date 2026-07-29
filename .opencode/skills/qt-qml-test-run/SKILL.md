@@ -1,21 +1,6 @@
 ---
 name: qt-qml-test-run
-description: >-
-  Builds and runs Qt Quick Test (qmltestrunner / CTest)
-  for a QML project, then writes a Markdown report.
-  Use for "run qml tests", "run qmltestrunner".
-license: LicenseRef-Qt-Commercial OR BSD-3-Clause
-compatibility: >-
-  Designed for Claude Code, Codex CLI, and similar agents
-  with shell access. Not suitable for in-IDE assistants
-  without a build environment.
-disable-model-invocation: false
-argument-hint: "[--wire-up] [--no-build] [--no-report] [<path-or-dir>]"
-metadata:
-  author: qt-ai-skills
-  version: "1.0"
-  qt-version: "6.x"
-  category: tool
+description: Builds, runs, and reports results for Qt Quick Tests. Trigger when the user asks to run or execute QML tests.
 ---
 
 # Qt QML Test Runner Skill

@@ -1,22 +1,6 @@
 ---
 name: qt-qml-review
-description: >-
-  Invoke when the user asks to review, check, audit, or look
-  over Qt6 QML code -- or suggest before committing. Runs
-  deterministic linting (47+ rules) then six parallel deep-
-  analysis agents covering bindings, layout, loaders, delegates,
-  states, and performance. Optionally invokes system qmllint
-  for type-level checks. Reports only high-confidence issues
-  (>80/100) with structured mitigations. Read-only -- never
-  modifies code.
-license: LicenseRef-Qt-Commercial OR BSD-3-Clause
-compatibility: Designed for Claude Code, GitHub Copilot, and similar agents.
-disable-model-invocation: false
-metadata:
-  author: qt-ai-skills
-  version: "1.0"
-  qt-version: "6.x"
-  category: review
+description: Reviews QML code for correctness, performance, and best practices. Trigger when the user asks to review, audit, or check QML code.
 ---
 
 # Qt QML Code Review
