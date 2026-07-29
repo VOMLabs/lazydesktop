@@ -15,16 +15,8 @@ cc = meson.get_compiler('cpp')
 qt6_dep  = dependency('qt6', modules: ['Core', 'Gui', 'Widgets', 'Network'])
 yaml_dep = dependency('yaml-cpp')
 
-# llama.cpp / ggml
-llama_dep = dependency('llama', required: false)
-if not llama_dep.found()
-  llama_dep = declare_dependency(
-    dependencies: [
-      cc.find_library('llama'),
-      cc.find_library('ggml'),
-    ]
-  )
-endif
+# llama.cpp / ggml (bundled as a Meson subproject)
+llama_dep = dependency('llama', fallback: ['llama.cpp', 'llama_dep'])
 
 sources = []
 headers = []

@@ -47,7 +47,7 @@ SpacesInCStyleCastParentheses: false
 SpacesInContainerLiterals: false
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
-Standard: c++23
+Standard: Cpp23
 IndentPPDirectives: AfterHash
 PPIndentWidth: 2
 MaxEmptyLinesToKeep: 2
