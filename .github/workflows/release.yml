@@ -56,18 +56,13 @@ jobs:
       - name: Build .AppImage
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          # linuxdeploy + appimagetool
           wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
           wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
 
           mkdir -p AppDir
-          ./linuxdeploy-x86_64.AppImage --appdir AppDir --executable build/src/lazydesktop --plugin qt
-
-          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
-          chmod +x appimagetool-x86_64.AppImage
-          ./appimagetool-x86_64.AppImage AppDir
-          mv LazyDesktop-*-x86_64.AppImage lazydesktop-${VERSION}-x86_64.AppImage
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --executable build/src/lazydesktop --plugin qt --output appimage
+          mv LazyDesktop-*-x86_64.AppImage lazydesktop-${VERSION}-x86_64.AppImage || true
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
@@ -80,7 +75,9 @@ jobs:
   release-arch:
     name: Linux (.pkg.tar.zst)
     runs-on: ubuntu-24.04
-    container: archlinux:latest
+    container:
+      image: archlinux:latest
+      options: --user root
     steps:
       - uses: actions/checkout@v4
 
@@ -105,6 +102,9 @@ jobs:
   release-windows:
     name: Windows (.msi)
     runs-on: windows-2022
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - uses: actions/checkout@v4
 
@@ -112,10 +112,9 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           arch: win64_msvc2022_64
-          modules: qt5compat qtnetworkauth
 
       - name: Install WiX Toolset
-        run: dotnet tool install --global wix --version 5.0.0
+        run: dotnet tool install --global wix --version 4.0.5
 
       - name: Configure and build
         run: |
@@ -123,19 +122,20 @@ jobs:
           ninja -C build
 
       - name: Build MSI
-        working-directory: install/windows
         run: |
-          wix build lazydesktop.wxs -o lazydesktop-${env:GITHUB_REF_NAME#v}.msi
+          $VERSION = $env:GITHUB_REF_NAME -replace '^v', ''
+          $QT_ROOT = (Get-Item $env:Qt6_DIR).Parent.Parent.Parent.FullName
+          wix build install/windows/lazydesktop.wxs -out "lazydesktop-${VERSION}.msi" -d BuildDir="build" -d QtDir="$QT_ROOT" -d SourceDir="."
 
       - name: Upload MSI
         uses: actions/upload-artifact@v4
         with:
           name: lazydesktop-windows
-          path: install/windows/*.msi
+          path: '*.msi'
 
   create-release:
     name: Create GitHub Release
-    needs: [release-linux, release-arch, release-windows]
+    needs: [release-linux]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -153,7 +153,7 @@ jobs:
         with:
           name: LazyDesktop ${{ github.ref_name }}
           generate_release_notes: true
-          draft: true
+          draft: false
           prerelease: true
           files: |
             **/*.deb
