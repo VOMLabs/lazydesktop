@@ -1,7 +1,0 @@
-[wrap-git]
-url = https://github.com/ggml-org/llama.cpp
-revision = master
-depth = 1
-
-[provide]
-llama = llama_dep

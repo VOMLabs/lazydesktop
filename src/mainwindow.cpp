@@ -1,6 +1,6 @@
 #include "diffviewer.h"
-#include "llamaai.h"
 #include "mainwindow.h"
+#include "model_manager_bridge.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -55,8 +55,6 @@
 #include <QNetworkRequest>
 #include <QUrl>
 #include <QVBoxLayout>
-#include <QStandardPaths>
-
 #include <memory>
 
 #include <yaml-cpp/yaml.h>
@@ -193,12 +191,7 @@ static const int kMaxRecentProjects = 100;
 
 static QString defaultSettingsDir()
 {
-#ifdef Q_OS_WIN
-    return QString("C:/Users/%1/.config/lazydesktop")
-        .arg(qEnvironmentVariable("USERNAME"));
-#else
-    return QDir::homePath() + "/.config/lazydesktop";
-#endif
+    return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
 }
 
 static QString defaultProjectsPath()
@@ -213,12 +206,8 @@ static QString defaultSettingsPath()
 
 static QString defaultThemesDir()
 {
-#ifdef Q_OS_WIN
-    return QString("C:/Users/%1/vomlabs/lazydesktop/themes")
-        .arg(qEnvironmentVariable("USERNAME"));
-#else
-    return QDir::homePath() + "/.config/lazydesktop/themes";
-#endif
+    return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)
+           + "/themes";
 }
 
 static std::unique_ptr<QSettings> lazySettings()
@@ -248,56 +237,14 @@ static QString themesDirPath()
 
 static QString defaultModelsDir()
 {
-    return defaultSettingsDir() + "/models";
+    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+           + "/models";
 }
 
 static QString modelsDirPath()
 {
     return defaultModelsDir();
 }
-
-static QJsonArray loadLocalModels()
-{
-    auto s = lazySettings();
-    QJsonDocument doc = QJsonDocument::fromJson(
-        s->value("ai/local_models").toByteArray());
-    return doc.isArray() ? doc.array() : QJsonArray();
-}
-
-static void saveLocalModels(const QJsonArray &models)
-{
-    auto s = lazySettings();
-    s->setValue("ai/local_models", QJsonDocument(models).toJson(QJsonDocument::Compact));
-    s->sync();
-}
-
-struct LocalModelEntry {
-    QString name;
-    QString url;
-    QString path;
-    int64_t sizeBytes = 0;
-    QString sizeLabel;
-
-    QJsonObject toJson() const {
-        return QJsonObject{
-            {"name", name},
-            {"url", url},
-            {"path", path},
-            {"size_bytes", static_cast<qint64>(sizeBytes)},
-            {"size_label", sizeLabel}
-        };
-    }
-
-    static LocalModelEntry fromJson(const QJsonObject &o) {
-        LocalModelEntry e;
-        e.name = o["name"].toString();
-        e.url = o["url"].toString();
-        e.path = o["path"].toString();
-        e.sizeBytes = static_cast<int64_t>(o["size_bytes"].toDouble());
-        e.sizeLabel = o["size_label"].toString();
-        return e;
-    }
-};
 
 static const QString kDefaultDescriptionSystemPrompt = QStringLiteral(
     "Write a casual, plain-language description of the changes below. "
@@ -345,51 +292,20 @@ static AiPrompt buildAiPrompt(const QString &rawPrompt, const QString &diffText)
     return result;
 }
 
-static QList<LocalModelEntry> availableModels()
-{
-    return {
-        {"Qwen3-1.7B (Q8_0)",
-         "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf",
-         modelsDirPath() + "/Qwen3-1.7B-Q8_0.gguf",
-         1800000000LL,
-         "~1.8 GB"},
-        {"Qwen2.5-0.5B (Q5_0)",
-         "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q5_0.gguf",
-         modelsDirPath() + "/qwen2.5-0.5b-instruct-q5_0.gguf",
-         500000000LL,
-         "~500 MB"},
-        {"TinyLlama-1.1B-Chat (Q4_K_M)",
-         "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-         modelsDirPath() + "/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-         669000000LL,
-         "~669 MB"},
-        {"Llama-3.2-1B-Instruct (Q4_K_M)",
-         "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
-         modelsDirPath() + "/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
-         808000000LL,
-         "~808 MB"},
-        {"SmolLM2-1.7B-Instruct (Q4_K_M)",
-         "https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF/resolve/main/smollm2-1.7b-instruct-q4_k_m.gguf",
-         modelsDirPath() + "/smollm2-1.7b-instruct-q4_k_m.gguf",
-         1060000000LL,
-         "~1.06 GB"},
-        {"Gemma-2-2B-it (Q4_K_M)",
-         "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf",
-         modelsDirPath() + "/gemma-2-2b-it-Q4_K_M.gguf",
-         1710000000LL,
-         "~1.71 GB"},
-        {"Phi-3.5-mini-instruct (Q4_K_M)",
-         "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf",
-         modelsDirPath() + "/Phi-3.5-mini-instruct-Q4_K_M.gguf",
-         2390000000LL,
-         "~2.39 GB"},
-    };
-}
-
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
     setupUi();
+
+    m_modelManager = new ModelManagerBridge(
+        modelsDirPath(), defaultSettingsDir(), this);
+    connect(m_modelManager, &ModelManagerBridge::inferenceFinished,
+            this, &MainWindow::onLocalAiResponse);
+    connect(m_modelManager, &ModelManagerBridge::inferenceError,
+            this, &MainWindow::onLocalAiError);
+    connect(m_modelManager, &ModelManagerBridge::inferenceToken,
+            this, &MainWindow::onLocalAiThinking);
+
     loadRecentProjects();
     checkGitAvailable();
     applySavedTheme();
@@ -397,6 +313,9 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
+    if (m_modelManager) {
+        m_modelManager->cancelInference();
+    }
     if (m_gitProcess && m_gitProcess->state() != QProcess::NotRunning) {
         m_gitProcess->kill();
         m_gitProcess->waitForFinished(3000);
@@ -1488,27 +1407,18 @@ void MainWindow::onProjectButtonClicked()
     if (!btn)
         return;
 
-    // m_projectButton behaviour depends on state
-    if (m_repoPath.isEmpty()) {
-        // No project open → open folder dialog
-        const QString dir = QFileDialog::getExistingDirectory(
-            this, "Open Git Repository");
-        if (!dir.isEmpty())
-            openRepository(dir);
-    } else {
-        // Project open → toggle overlay drawer
-        if (m_recentDrawer->isVisible()) {
-            m_recentDrawer->hide();
-        } else {
-            auto *cw = centralWidget();
-            int toolbarH = m_projectButton->mapTo(cw, QPoint(0, 0)).y()
-                         + m_projectButton->height() + 2;
-            m_recentDrawer->setGeometry(0, toolbarH, 260,
-                cw->height() - toolbarH);
-            m_recentDrawer->raise();
-            m_recentDrawer->show();
-        }
+    if (m_recentDrawer->isVisible()) {
+        m_recentDrawer->hide();
+        return;
     }
+
+    auto *cw = centralWidget();
+    int toolbarH = m_projectButton->mapTo(cw, QPoint(0, 0)).y()
+                 + m_projectButton->height() + 2;
+    m_recentDrawer->setGeometry(0, toolbarH, 260,
+        cw->height() - toolbarH);
+    m_recentDrawer->raise();
+    m_recentDrawer->show();
 }
 
 void MainWindow::onRecentProjectClicked(QListWidgetItem *item)
@@ -1610,7 +1520,36 @@ void MainWindow::onOpenEditor()
 {
     if (m_repoPath.isEmpty())
         return;
-    QProcess::startDetached("kate", {m_repoPath});
+
+    // Open in the platform's default editor/IDE
+#if defined(Q_OS_WIN)
+    static const char *editors[] = {"code", "notepad++", "notepad", nullptr};
+    for (const char **ed = editors; *ed; ++ed) {
+        if (!QStandardPaths::findExecutable(*ed).isEmpty()) {
+            QProcess::startDetached(*ed, {m_repoPath});
+            return;
+        }
+    }
+    QProcess::startDetached("explorer", {m_repoPath});
+#elif defined(Q_OS_MACOS)
+    static const char *editors[] = {"code", "subl", "TextEdit", nullptr};
+    for (const char **ed = editors; *ed; ++ed) {
+        if (!QStandardPaths::findExecutable(*ed).isEmpty()) {
+            QProcess::startDetached("open", {"-a", *ed, m_repoPath});
+            return;
+        }
+    }
+    QProcess::startDetached("open", {m_repoPath});
+#else
+    static const char *editors[] = {"code", "gedit", "kate", "subl", "xed", "mousepad", nullptr};
+    for (const char **ed = editors; *ed; ++ed) {
+        if (!QStandardPaths::findExecutable(*ed).isEmpty()) {
+            QProcess::startDetached(*ed, {m_repoPath});
+            return;
+        }
+    }
+    QDesktopServices::openUrl(QUrl::fromLocalFile(m_repoPath));
+#endif
 }
 
 void MainWindow::onOpenFileManager()
@@ -1624,7 +1563,36 @@ void MainWindow::onOpenTerminal()
 {
     if (m_repoPath.isEmpty())
         return;
-    QProcess::startDetached("konsole", {"--workdir", m_repoPath});
+
+#if defined(Q_OS_WIN)
+    QProcess::startDetached("cmd.exe", {"/C", "start", "cmd", "/K", "cd", "/D", m_repoPath});
+#elif defined(Q_OS_MACOS)
+    QProcess::startDetached("open", {"-a", "Terminal", m_repoPath});
+#else
+    // Linux: try known terminal emulators
+    static const struct { const char *bin; const char *flag; } terms[] = {
+        {"x-terminal-emulator", nullptr},
+        {"konsole", "--workdir"},
+        {"gnome-terminal", "--working-directory"},
+        {"xfce4-terminal", "--working-directory"},
+        {"lxterminal", "--working-directory"},
+        {"alacritty", "--working-directory"},
+        {"kitty", "--working-directory"},
+        {"xterm", nullptr},
+        {nullptr, nullptr},
+    };
+    for (const auto *t = terms; t->bin; ++t) {
+        QString exec = QStandardPaths::findExecutable(QLatin1String(t->bin));
+        if (exec.isEmpty())
+            continue;
+        if (t->flag)
+            QProcess::startDetached(QLatin1String(t->bin),
+                {QLatin1String(t->flag), m_repoPath});
+        else
+            QProcess::startDetached(QLatin1String(t->bin), {m_repoPath});
+        return;
+    }
+#endif
 }
 
 void MainWindow::onOpenGitHub()
@@ -1818,15 +1786,6 @@ void MainWindow::runAiGeneration(AiRequestKind kind, const QString &rawPrompt)
             return;
         }
 
-        if (!m_llamaAI) {
-            m_llamaAI = new LlamaAI(this);
-            connect(m_llamaAI, &LlamaAI::finished, this, &MainWindow::onLocalAiResponse);
-            connect(m_llamaAI, &LlamaAI::errorOccurred, this, &MainWindow::onLocalAiError);
-            connect(m_llamaAI, &LlamaAI::thinking, this, &MainWindow::onLocalAiThinking);
-        }
-        m_llamaAI->setModelPath(modelPath);
-        m_llamaAI->setGpuAcceleration(settings->value("ai/gpu_acceleration", true).toBool());
-
         m_aiCommitButton->setEnabled(false);
         m_aiDescriptionButton->setEnabled(false);
         m_summaryInput->setEnabled(false);
@@ -1841,7 +1800,8 @@ void MainWindow::runAiGeneration(AiRequestKind kind, const QString &rawPrompt)
             m_aiThinkingVisible = false;
         }
 
-        m_llamaAI->generate(systemPrompt, userContent);
+        int nGpuLayers = settings->value("ai/gpu_acceleration", true).toBool() ? 99 : 0;
+        m_modelManager->streamInference(modelPath, systemPrompt + "\n\n" + userContent, nGpuLayers);
         return;
     }
 
@@ -2447,10 +2407,26 @@ void MainWindow::onOpenSettings()
     modelListLayout->setContentsMargins(4, 4, 4, 4);
     modelListLayout->setSpacing(4);
 
-    QList<QNetworkReply *> activeDownloads;
+    QMap<QString, int> downloadIds;
+    QMap<int, QProgressBar *> downloadBars;
+
+    // Single connection for all download progress updates
+    connect(
+        m_modelManager, &ModelManagerBridge::downloadProgress,
+        this, [&downloadBars](int id, qint64 recv, qint64 total) {
+            if (auto *bar = downloadBars.value(id)) {
+                if (total > 0) {
+                    int pct = static_cast<int>(100 * recv / total);
+                    bar->setValue(pct);
+                    bar->setFormat(QString("%1%").arg(pct));
+                } else {
+                    bar->setFormat(QString("%1 MB").arg(recv / 1048576));
+                }
+            }
+        });
 
     std::function<void()> refreshModelList;
-    refreshModelList = [&activeDownloads, dlg = &dialog, modelListWidget,
+    refreshModelList = [&downloadIds, &downloadBars, dlg = &dialog, modelListWidget,
                         modelListLayout, settings = settings.get(), this, &refreshModelList]() {
         QLayoutItem *child;
         while ((child = modelListLayout->takeAt(0)) != nullptr) {
@@ -2460,28 +2436,30 @@ void MainWindow::onOpenSettings()
         }
 
         QString activePath = settings->value("ai/local_model_path").toString();
-        QJsonArray savedModels = loadLocalModels();
-        QSet<QString> downloadedUrls;
-        for (const auto &v : savedModels)
-            downloadedUrls.insert(v.toObject()["url"].toString());
+        QJsonArray models = m_modelManager ? m_modelManager->listLocalModels() : QJsonArray();
 
-        for (const auto &model : availableModels()) {
-            bool downloaded = QFileInfo::exists(model.path) || downloadedUrls.contains(model.url);
-            bool isActive = !activePath.isEmpty() && model.path == activePath;
+        for (const auto &val : models) {
+            QJsonObject obj = val.toObject();
+            QString name = obj["name"].toString();
+            QString url = obj["url"].toString();
+            QString path = obj["path"].toString();
+            QString sizeLabel = obj["size_label"].toString();
+            bool downloaded = obj["downloaded"].toBool();
+            bool isActive = !activePath.isEmpty() && path == activePath;
 
             auto *row = new QWidget();
             auto *rowLayout = new QHBoxLayout(row);
             rowLayout->setContentsMargins(4, 2, 4, 2);
             rowLayout->setSpacing(6);
 
-            auto *nameLabel = new QLabel(model.name);
+            auto *nameLabel = new QLabel(name);
             nameLabel->setMinimumWidth(180);
             rowLayout->addWidget(nameLabel);
 
-            auto *sizeLabel = new QLabel(model.sizeLabel);
-            sizeLabel->setMinimumWidth(70);
-            sizeLabel->setStyleSheet("color: gray; font-size: 11px;");
-            rowLayout->addWidget(sizeLabel);
+            auto *sizeLabelWidget = new QLabel(sizeLabel);
+            sizeLabelWidget->setMinimumWidth(70);
+            sizeLabelWidget->setStyleSheet("color: gray; font-size: 11px;");
+            rowLayout->addWidget(sizeLabelWidget);
 
             rowLayout->addStretch();
 
@@ -2507,60 +2485,34 @@ void MainWindow::onOpenSettings()
                 rowLayout->addWidget(cancelBtn);
 
                 connect(dlBtn, &QPushButton::clicked, this,
-                        [=, this, &activeDownloads]() mutable {
+                        [=, this, &downloadIds, &downloadBars, &refreshModelList]() {
                     dlBtn->setVisible(false);
                     progBar->setVisible(true);
                     cancelBtn->setVisible(true);
                     progBar->setFormat("0%");
 
-                    QDir().mkpath(modelsDirPath());
-                    auto *file = new QFile(model.path);
-                    if (!file->open(QIODevice::WriteOnly)) {
-                        progBar->setFormat("Error");
-                        file->deleteLater();
-                        return;
+                    QDir().mkpath(QFileInfo(path).absolutePath());
+                    int dlId = m_modelManager ? m_modelManager->downloadModel(url, path) : -1;
+                    if (dlId >= 0) {
+                        downloadIds[url] = dlId;
+                        downloadBars[dlId] = progBar;
                     }
 
-                    QNetworkRequest req(QUrl(model.url));
-                    auto *reply = m_networkManager->get(req);
-                    activeDownloads.append(reply);
-
-                    connect(reply, &QNetworkReply::downloadProgress, this,
-                            [progBar](qint64 recv, qint64 total) {
-                        if (total > 0) {
-                            int pct = static_cast<int>(100 * recv / total);
-                            progBar->setValue(pct);
-                            progBar->setFormat(QString("%1%").arg(pct));
-                        } else {
-                            progBar->setFormat(QString("%1 MB").arg(recv / 1048576));
+                    connect(cancelBtn, &QPushButton::clicked, this,
+                            [=, this, &downloadIds, &downloadBars, &refreshModelList]() {
+                        if (downloadIds.contains(url)) {
+                            int id = downloadIds[url];
+                            if (m_modelManager)
+                                m_modelManager->cancelDownload(id);
+                            downloadIds.remove(url);
+                            downloadBars.remove(id);
+                            refreshModelList();
                         }
                     });
 
-                    connect(reply, &QNetworkReply::readyRead, this, [reply, file]() {
-                        file->write(reply->readAll());
-                    });
-
-                    connect(reply, &QNetworkReply::finished, this,
-                            [=, this, &activeDownloads]() {
-                        activeDownloads.removeAll(reply);
-                        file->close();
-                        reply->deleteLater();
-
-                        if (reply->error() == QNetworkReply::NoError) {
-                            auto arr = loadLocalModels();
-                            arr.append(model.toJson());
-                            saveLocalModels(arr);
-                        } else if (reply->error() != QNetworkReply::OperationCanceledError) {
-                            file->remove();
-                        } else {
-                            file->remove();
-                        }
-                        file->deleteLater();
+                    // Periodic refresh to detect download completion
+                    QTimer::singleShot(3000, this, [=, &refreshModelList]() {
                         refreshModelList();
-                    });
-
-                    connect(cancelBtn, &QPushButton::clicked, this, [reply]() {
-                        reply->abort();
                     });
                 });
             } else {
@@ -2569,7 +2521,7 @@ void MainWindow::onOpenSettings()
                     selBtn->setFixedHeight(24);
                     rowLayout->addWidget(selBtn);
                     connect(selBtn, &QPushButton::clicked, this, [=, this]() {
-                        settings->setValue("ai/local_model_path", model.path);
+                        settings->setValue("ai/local_model_path", path);
                         settings->sync();
                         refreshModelList();
                     });
@@ -2590,19 +2542,13 @@ void MainWindow::onOpenSettings()
                         dlg,
                         "Delete Model",
                         QString("Delete \"%1\"?\n\nApproximately %2 of disk space will be freed.")
-                            .arg(model.name, model.sizeLabel),
+                            .arg(name, sizeLabel),
                         QMessageBox::Yes | QMessageBox::No,
                         QMessageBox::No);
                     if (answer == QMessageBox::Yes) {
-                        QFile::remove(model.path);
-                        QJsonArray arr = loadLocalModels();
-                        QJsonArray filtered;
-                        for (const auto &v : arr) {
-                            if (v.toObject()["url"].toString() != model.url)
-                                filtered.append(v);
-                        }
-                        saveLocalModels(filtered);
-                        if (settings->value("ai/local_model_path").toString() == model.path) {
+                        if (m_modelManager)
+                            m_modelManager->deleteModel(path);
+                        if (settings->value("ai/local_model_path").toString() == path) {
                             settings->remove("ai/local_model_path");
                             settings->sync();
                         }
@@ -2716,10 +2662,10 @@ void MainWindow::onOpenSettings()
     categories->setCurrentRow(0);
 
     // Cancel any active model downloads when dialog closes
-    connect(&dialog, &QDialog::finished, this, [&activeDownloads]() {
-        for (auto *reply : activeDownloads)
-            reply->abort();
-        activeDownloads.clear();
+    connect(&dialog, &QDialog::finished, this, [&downloadIds, this]() {
+        for (auto it = downloadIds.constBegin(); it != downloadIds.constEnd(); ++it)
+            m_modelManager->cancelDownload(it.value());
+        downloadIds.clear();
     });
 
     dialog.exec();
@@ -3731,41 +3677,31 @@ void MainWindow::installGit()
     if (m_installProcess->state() == QProcess::Running)
         return;
 
-    QStringList args;
-
 #ifdef Q_OS_WIN
-    args = {"install", "--id", "Git.Git", "-e", "--source", "winget"};
-    m_installProcess->start("winget", args);
-#elif defined(Q_OS_MACOS)
-    args = {"--install"};
-    m_installProcess->start("xcode-select", args);
-#else
-    // Linux — try apt-get, then dnf, then pacman
-    const QString pm = QStandardPaths::findExecutable("apt-get").isEmpty()
-                           ? (QStandardPaths::findExecutable("dnf").isEmpty()
-                                  ? "pacman"
-                                  : "dnf")
-                           : "apt-get";
-
-    if (pm == "apt-get")
-        args = {"install", "-y", "git"};
-    else if (pm == "dnf")
-        args = {"install", "-y", "git"};
-    else
-        args = {"-S", "--noconfirm", "git"};
-
-    QString runner = QStandardPaths::findExecutable("pkexec");
-    if (runner.isEmpty())
-        runner = QStandardPaths::findExecutable("sudo");
-
-    if (runner.isEmpty()) {
-        QMessageBox::critical(this, "Installation Failed",
-            "Could not find a privilege escalation tool (pkexec or sudo).\n"
-            "Please install Git manually.");
-        return;
+    // Try winget first, then chocolatey
+    QStringList args;
+    if (!QStandardPaths::findExecutable("winget").isEmpty()) {
+        args = {"install", "--id", "Git.Git", "-e", "--source", "winget"};
+        m_installProcess->start("winget", args);
+    } else if (!QStandardPaths::findExecutable("choco").isEmpty()) {
+        args = {"install", "git", "-y"};
+        m_installProcess->start("choco", args);
+    } else {
+        QDesktopServices::openUrl(QUrl("https://git-scm.com/downloads/win"));
     }
-
-    m_installProcess->start(runner, QStringList({pm}) + args);
+#elif defined(Q_OS_MACOS)
+    // Try Homebrew first, then MacPorts, then Xcode CLI tools
+    if (!QStandardPaths::findExecutable("brew").isEmpty()) {
+        m_installProcess->start("brew", {"install", "git"});
+    } else if (!QStandardPaths::findExecutable("port").isEmpty()) {
+        m_installProcess->start("port", {"install", "git"});
+    } else {
+        QDesktopServices::openUrl(QUrl("https://git-scm.com/downloads/mac"));
+    }
+#else
+    // Linux — open the downloads page; package managers vary too much
+    // and pkexec/sudo prompts are disruptive in a GUI app.
+    QDesktopServices::openUrl(QUrl("https://git-scm.com/downloads/linux"));
 #endif
 }
 

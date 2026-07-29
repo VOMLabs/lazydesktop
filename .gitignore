@@ -1,1 +1,6 @@
 build/
+target/
+.xmake/
+xmake.lock
+compile_commands.json
+
