@@ -1,20 +1,6 @@
 ---
 name: qt-qml
-description: >-
-  Applies QML best practices when producing or working with QML source code.
-  Use whenever QML code is the primary subject: writing, reviewing, fixing,
-  refactoring, optimizing, or debugging QML files, components, or bindings.
-  Do NOT trigger for purely conversational QML questions where no code is
-  produced or examined (e.g. "explain how anchors work").
-license: LicenseRef-Qt-Commercial OR BSD-3-Clause
-compatibility: >-
-  Designed for Claude Code, GitHub Copilot, and similar agents.
-disable-model-invocation: false
-metadata:
-  author: qt-ai-skills
-  version: "1.0"
-  qt-version: "6.x"
-  category: conceptual
+description: Applies QML best practices when writing, reviewing, fixing, refactoring, optimizing, or debugging QML code. Trigger whenever QML code is the primary subject.
 ---
 
 # QML Coding Skill

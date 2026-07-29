@@ -1,24 +1,6 @@
 ---
 name: qt-qml-docs
-description: >-
-  Generates standalone Markdown reference documentation for QML components and
-  applications. Use this skill whenever you want to document QML files,
-  create API reference docs for a QML component or module, document a Qt Quick
-  application, or produce developer-facing documentation from .qml source code.
-  Triggers on: "document this QML", "write docs for my QML", "create reference
-  docs", "document QML component", "QML API docs", "document my Qt Quick
-  component", "document my Qt app", or any time one or more .qml files are
-  provided and documentation is needed. Works with single files, pasted code,
-  or entire project folders. DO NOT use if the user asks for QDoc format output.
-license: LicenseRef-Qt-Commercial OR BSD-3-Clause
-compatibility: >-
-  Designed for Claude Code, GitHub Copilot, and similar agents.
-disable-model-invocation: false
-metadata:
-  author: qt-ai-skills
-  version: "1.0"
-  qt-version: "6.x"
-  category: process
+description: Generates standalone Markdown reference documentation for QML components and applications. Trigger when the user asks to document QML files.
 ---
 
 # QML Documentation Skill

@@ -1,17 +1,6 @@
 ---
 name: qt-ui-design
-description: >-
-  Design or audit UI for Qt/QML, Qt projects, web, or embedded MPU or MCU targets. Use when creating screens, layouts, navigation, or auditing UX.
-license: LicenseRef-Qt-Commercial OR BSD-3-Clause
-compatibility: >-
-  Designed for Claude Code, GitHub Copilot, and similar agents.
-disable-model-invocation: false
-metadata:
-  author: qt-ai-skills
-  version: "1.0"
-  qt-version: "6.x"
-  category: conceptual
-  changelog: "Initial release"
+description: Designs or audits UI for Qt/QML applications including screens, layouts, navigation, and UX. Trigger when creating or reviewing UI designs.
 ---
 # Qt UI Design
 Before producing UI output, confirm you know: target platform, screen geometry, design system, content priority, viewing distance, locale, and input methods. Run the seven items below as a check against the conversation and the project state; ask only the items that are genuinely missing. When the user cannot answer an item, choose a sensible Qt default and name it in your response so the user can correct it.

@@ -1,17 +1,6 @@
 ---
 name: qt-project
-description: >-
-  Use to generate or update Qt 6 CMake projects or edit CMakeLists.txt, add
-  sources/resources or define targets (executable, QML module, library).
-license: LicenseRef-Qt-Commercial OR BSD-3-Clause
-compatibility: >-
-  Designed for Claude Code, GitHub Copilot, and similar agents.
-disable-model-invocation: false
-metadata:
-  author: qt-ai-skills
-  version: "1.0"
-  qt-version: "6.x"
-  category: conceptual
+description: Generates or updates Qt 6 project files (CMakeLists.txt, Meson), adds sources/resources, and defines targets. Trigger when the user asks to scaffold or modify Qt project configuration.
 ---
 
 ## Overview

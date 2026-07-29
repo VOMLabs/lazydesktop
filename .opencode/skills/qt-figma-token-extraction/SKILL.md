@@ -1,15 +1,6 @@
 ---
 name: qt-figma-token-extraction
-description: >
-  Extract design tokens, text styles, and variables from a Figma design system and produce a design-tokens.json plus ready-to-use QML singletons. Use this skill whenever someone wants to pull their design system out of Figma — whether they say "export tokens from Figma", "get design tokens", "set up my design system", "read our Figma design system", "get Figma variables into QML", "pull our color palette from Figma", "import design tokens", "extract colors/typography/spacing from Figma", or similar. Trigger this skill at the start of any design-system workflow that involves a Figma source.
-license: LicenseRef-Qt-Commercial OR BSD-3-Clause
-compatibility: Works with Claude Code, Codex, and GitHub Copilot.
-disable-model-invocation: false
-metadata:
-  author: qt-ai-skills
-  version: "1.0"
-  qt-version: "6.x"
-  category: process
+description: Extracts design tokens, text styles, and variables from Figma and generates QML design system singletons. Trigger at the start of any design-system workflow involving Figma.
 ---
 
 # Figma Token Extraction Skill
