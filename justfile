@@ -1,6 +1,8 @@
 # ─── Variables ───────────────────────────────────────────
 builddir := "build"
 project := "lazydesktop"
+binary := builddir + "/linux/x86_64/debug/" + project
+binary_release := builddir + "/linux/x86_64/release/" + project
 appdir := "AppDir"
 
 # ─── Default ─────────────────────────────────────────────
@@ -8,28 +10,33 @@ default: build
 
 # ─── Setup ───────────────────────────────────────────────
 setup:
-    meson setup {{builddir}} --buildtype=debugoptimized -Dwarning_level=3
+    xmake f -m debug
 
 setup-release:
-    meson setup {{builddir}} --buildtype=release -Dwarning_level=0 -Db_strip=true -Db_lto=true
+    xmake f -m release
 
 # ─── Build ───────────────────────────────────────────────
-build: setup
-    ninja -C {{builddir}}
+build:
+    xmake
 
-build-release: setup-release
-    ninja -C {{builddir}}
+build-release:
+    xmake -m release
+
+# ─── Generate compile_commands.json for LSP (clangd) ────
+compile-commands:
+    xmake project -k compile_commands --lsp=clangd
 
 # ─── Run ─────────────────────────────────────────────────
 run: build
-    ./{{builddir}}/src/{{project}}
+    {{ binary }}
 
 # ─── Clean ───────────────────────────────────────────────
 clean:
-    rm -rf {{builddir}} {{appdir}}
+    xmake clean --all
+    rm -rf {{ builddir }} {{ appdir }} .xmake
 
 distclean: clean
-    rm -rf subprojects/*
+    rm -rf crates/*/target .xmake
 
 # ─── Format ───────────────────────────────────────────────
 format:
@@ -44,17 +51,17 @@ lint:
     pre-commit run --all-files
 
 # ─── Release (all distribution artifacts) ────────────────
-release: (release-linux-appimage release-linux-deb release-linux-arch release-windows-msi)
+release: release-linux-appimage release-linux-deb release-linux-arch release-windows-msi
 
 # ─── Release: Linux .AppImage ────────────────────────────
 release-linux-appimage: build-release
     # Strip debug symbols
-    strip {{builddir}}/src/{{project}}
+    strip {{ binary_release }}
     # Bundle into AppDir using linuxdeploy
-    linuxdeploy-x86_64.AppImage --appdir {{appdir}} --executable {{builddir}}/src/{{project}} --plugin qt
+    linuxdeploy-x86_64.AppImage --appdir {{ appdir }} --executable {{ binary_release }} --plugin qt
     # Generate AppImage
-    appimagetool-x86_64.AppImage {{appdir}}
-    mv {{project}}*-x86_64.AppImage {{project}}-x86_64.AppImage
+    appimagetool-x86_64.AppImage {{ appdir }}
+    mv {{ project }}*-x86_64.AppImage {{ project }}-x86_64.AppImage
 
 # ─── Release: Linux .deb ─────────────────────────────────
 release-linux-deb: build-release

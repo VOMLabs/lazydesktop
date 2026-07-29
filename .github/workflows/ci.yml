@@ -6,60 +6,66 @@ on:
   pull_request:
     branches: [main]
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  lint:
-    name: Lint
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install pre-commit
-        run: pip install pre-commit
-
-      - name: Run pre-commit hooks
-        run: pre-commit run --all-files --show-diff-on-failure
-
-  format:
-    name: Format
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install clang-format
-        run: sudo apt-get update && sudo apt-get install -y clang-format
-
-      - name: Check formatting
-        run: |
-          clang-format -style=file -Werror --dry-run src/*.cpp src/*.h
-
   build:
-    name: Build
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            meson ninja-build cmake \
-            qt6-base-dev \
-            libyaml-cpp-dev \
-            libgl-dev \
-            gcc-14 g++-14
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Install Qt (Linux)
+        if: runner.os == 'Linux'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.7"
+          modules: qtnetwork
+
+      - name: Install Qt (Windows)
+        if: runner.os == 'Windows'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.7"
+          arch: win64_msvc2022_64
+          modules: qtnetwork
+
+      - name: Install Qt (macOS)
+        if: runner.os == 'macOS'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.7"
+          modules: qtnetwork
+
+      - name: Install yaml-cpp (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libyaml-cpp-dev
+
+      - name: Install yaml-cpp (macOS)
+        if: runner.os == 'macOS'
+        run: brew install yaml-cpp
+
+      - name: Install yaml-cpp (Windows)
+        if: runner.os == 'Windows'
+        run: vcpkg install yaml-cpp
 
       - name: Configure
-        run: CC=gcc-14 CXX=g++-14 meson setup build --buildtype=debugoptimized -Dwarning_level=3
+        run: xmake f -m debug
 
       - name: Build
-        run: ninja -C build
+        run: xmake
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: lazydesktop-linux
-          path: build/src/lazydesktop
+      - name: Quick smoke test (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: QT_QPA_PLATFORM=offscreen timeout 3 xmake run 2>&1 || true

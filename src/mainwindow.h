@@ -27,7 +27,7 @@ class QTextEdit;
 class QTreeWidget;
 class QTreeWidgetItem;
 
-class LlamaAI;
+class ModelManagerBridge;
 
 struct GitCredentials
 {
@@ -215,7 +215,7 @@ private:
     QString m_repoPath;
     GitQuery m_currentQuery = GitQuery::None;
     QStringList m_recentProjects;
-    LlamaAI *m_llamaAI = nullptr;
+    ModelManagerBridge *m_modelManager = nullptr;
     bool m_aiEnabled = false;
 };
 
