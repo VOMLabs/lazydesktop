@@ -1,7 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: "cargo"
-    directory: "/crates/model_manager"
+    directory: "/crates/ai_core"
     schedule:
       interval: "weekly"
     commit-message:

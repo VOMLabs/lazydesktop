@@ -13,11 +13,11 @@ target("lazydesktop")
 
     add_files("src/*.cpp")
     add_files("src/*.h")
-    add_includedirs("crates/model_manager")
+    add_includedirs("crates/ai_core")
 
     add_frameworks("QtNetwork")
     add_packages("yaml-cpp")
-    add_links("model_manager")
+    add_links("ai_core")
 
     if is_mode("release") then
         add_linkdirs(path.join(os.projectdir(), "target/release"))
@@ -27,7 +27,7 @@ target("lazydesktop")
 
     before_build(function()
         local profile = is_mode("release") and "--release" or ""
-        os.exec("cargo build --lib --manifest-path " .. os.projectdir() .. "/crates/model_manager/Cargo.toml " .. profile)
+        os.exec("cargo build --lib --manifest-path " .. os.projectdir() .. "/crates/ai_core/Cargo.toml " .. profile)
     end)
 
     if is_plat("linux") then

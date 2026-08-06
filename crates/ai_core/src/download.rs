@@ -8,63 +8,59 @@ use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 use tracing::info;
 
+use crate::error::AiError;
+
 pub async fn download_file(
     url: &str,
     dest: &Path,
     cancel: Arc<AtomicBool>,
     progress: Option<Box<dyn Fn(i64, i64) + Send>>,
     expected_sha256: Option<&str>,
-) -> Result<String, String> {
+) -> Result<String, AiError> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(3600))
         .build()
-        .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
+        .map_err(|e| AiError::Other(format!("failed to build HTTP client: {e}")))?;
 
     let resp = client
         .get(url)
         .send()
         .await
-        .map_err(|e| format!("Failed to start download: {e}"))?;
+        .map_err(|e| AiError::Other(format!("failed to start download: {e}")))?;
 
     let total = resp.content_length().unwrap_or(0) as i64;
     let mut received: i64 = 0;
 
-    let mut file = tokio::fs::File::create(dest)
-        .await
-        .map_err(|e| format!("Failed to create file: {e}"))?;
+    let mut file = tokio::fs::File::create(dest).await?;
 
     let mut hasher = Sha256::new();
     let mut stream = resp.bytes_stream();
 
     while let Some(chunk) = stream.next().await {
         if cancel.load(Ordering::Relaxed) {
-            return Err("Download cancelled".into());
+            return Err(AiError::Cancelled);
         }
 
-        let chunk = chunk.map_err(|e| format!("Download error: {e}"))?;
+        let chunk = chunk.map_err(|e| AiError::Other(format!("download error: {e}")))?;
         hasher.update(&chunk);
         received += chunk.len() as i64;
 
-        file.write_all(&chunk)
-            .await
-            .map_err(|e| format!("Write error: {e}"))?;
+        file.write_all(&chunk).await?;
 
         if let Some(ref cb) = progress {
             cb(received, total);
         }
     }
 
-    file.flush()
-        .await
-        .map_err(|e| format!("Flush error: {e}"))?;
+    file.flush().await?;
 
     let actual_hash = hex::encode(hasher.finalize());
     if let Some(expected) = expected_sha256 {
         if !actual_hash.eq_ignore_ascii_case(expected) {
             let _ = tokio::fs::remove_file(dest).await;
-            return Err(format!(
+            return Err(AiError::Other(format!(
                 "SHA-256 mismatch: expected {expected}, got {actual_hash}"
-            ));
+            )));
         }
     }
 

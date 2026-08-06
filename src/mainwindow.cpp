@@ -255,20 +255,128 @@ static const QString kDefaultDescriptionSystemPrompt = QStringLiteral(
     "\n"
     "Description:");
 
+static QString detectVcsKind(const QString &repoPath)
+{
+    if (!repoPath.isEmpty() && QFileInfo::exists(repoPath + QLatin1String("/.jj")))
+        return QStringLiteral("jujutsu");
+    return QStringLiteral("git");
+}
+
+static QString runVcsCommand(const QString &repoPath, const QString &program,
+                             const QStringList &args)
+{
+    QProcess p;
+    p.setWorkingDirectory(repoPath);
+    p.start(program, args);
+    if (p.waitForFinished(3000) && p.exitCode() == 0)
+        return QString::fromUtf8(p.readAllStandardOutput());
+    return {};
+}
+
 static QString buildDiffText(const QString &repoPath, const QStringList &files)
 {
+    const QString vcs = detectVcsKind(repoPath);
     QStringList diffParts;
     for (const QString &file : files) {
-        QProcess p;
-        p.setWorkingDirectory(repoPath);
-        p.start("git", {"diff", "HEAD", "--", file});
-        if (p.waitForFinished(3000) && p.exitCode() == 0) {
-            QString d = QString::fromUtf8(p.readAllStandardOutput()).trimmed();
-            if (!d.isEmpty())
-                diffParts << "--- " + file + "\n" + d;
-        }
+        QString d;
+        if (vcs == QLatin1String("jujutsu"))
+            d = runVcsCommand(repoPath, "jj", {"diff", "--color", "never", "--", file}).trimmed();
+        else
+            d = runVcsCommand(repoPath, "git", {"diff", "HEAD", "--", file}).trimmed();
+        if (!d.isEmpty())
+            diffParts << "--- " + file + "\n" + d;
     }
     return diffParts.join("\n\n");
+}
+
+static QJsonArray fileStatusesJson(const QString &repoPath, const QString &vcs,
+                                   const QStringList &files)
+{
+    QJsonArray out;
+    if (files.isEmpty())
+        return out;
+
+    QHash<QString, QString> statusByPath;
+    if (vcs == QLatin1String("jujutsu")) {
+        const QString outTxt = runVcsCommand(repoPath, "jj", {"status"});
+        bool inSection = false;
+        for (const QString &line : outTxt.split(QLatin1Char('\n'))) {
+            if (line.startsWith(QLatin1String("Working copy changes"))) {
+                inSection = true;
+                continue;
+            }
+            if (line.trimmed().isEmpty() || line.endsWith(QLatin1Char(':'))) {
+                inSection = false;
+                continue;
+            }
+            if (inSection && line.startsWith(QLatin1Char(' '))) {
+                const QString trimmed = line.trimmed();
+                if (trimmed.length() >= 2)
+                    statusByPath.insert(trimmed.mid(1).trimmed(), trimmed.left(1));
+            }
+        }
+    } else {
+        const QString outTxt = runVcsCommand(repoPath, "git", {"status", "--porcelain"});
+        for (const QString &line : outTxt.split(QLatin1Char('\n'))) {
+            if (line.length() < 4)
+                continue;
+            const QChar status = line.at(0) != QLatin1Char(' ') ? line.at(0) : line.at(1);
+            QString path = line.mid(3).trimmed();
+            if (path.contains(QLatin1String(" -> ")))
+                path = path.section(QLatin1String(" -> "), -1, -1);
+            statusByPath.insert(path, QString(status));
+        }
+    }
+
+    for (const QString &file : files) {
+        QJsonObject o;
+        o["path"] = file;
+        o["status"] = statusByPath.value(file, QStringLiteral("M"));
+        out.append(o);
+    }
+    return out;
+}
+
+static QStringList stagedFiles(const QString &repoPath, const QString &vcs,
+                               const QStringList &checked)
+{
+    if (vcs == QLatin1String("jujutsu"))
+        return checked;
+    const QString outTxt = runVcsCommand(repoPath, "git", {"diff", "--cached", "--name-only"});
+    if (outTxt.trimmed().isEmpty())
+        return {};
+    return outTxt.trimmed().split(QLatin1Char('\n'));
+}
+
+static QString currentBranchOrChange(const QString &repoPath, const QString &vcs)
+{
+    if (vcs == QLatin1String("jujutsu")) {
+        return runVcsCommand(
+                   repoPath, "jj",
+                   {"log", "--no-graph", "-r", "@", "--limit", "1",
+                    "--config", "ui.pagination=never", "-T", "change_id.short()"})
+            .trimmed();
+    }
+    QString branch = runVcsCommand(repoPath, "git", {"symbolic-ref", "--short", "HEAD"}).trimmed();
+    if (branch.isEmpty())
+        branch = runVcsCommand(repoPath, "git", {"rev-parse", "--short", "HEAD"}).trimmed();
+    return branch;
+}
+
+static QStringList recentCommitMessages(const QString &repoPath, const QString &vcs)
+{
+    QString outTxt;
+    if (vcs == QLatin1String("jujutsu")) {
+        outTxt = runVcsCommand(
+            repoPath, "jj",
+            {"log", "--no-graph", "--limit", "10", "--config", "ui.pagination=never",
+             "-T", "change_id.short() ++ \" \" ++ description.first_line()"});
+    } else {
+        outTxt = runVcsCommand(repoPath, "git", {"log", "--oneline", "-10"});
+    }
+    if (outTxt.trimmed().isEmpty())
+        return {};
+    return outTxt.trimmed().split(QLatin1Char('\n'));
 }
 
 // If rawPrompt contains the "<diff>" placeholder, substitutes the actual diff there and
@@ -1801,7 +1909,28 @@ void MainWindow::runAiGeneration(AiRequestKind kind, const QString &rawPrompt)
         }
 
         int nGpuLayers = settings->value("ai/gpu_acceleration", true).toBool() ? 99 : 0;
-        m_modelManager->streamInference(modelPath, systemPrompt + "\n\n" + userContent, nGpuLayers);
+
+        const QString vcs = detectVcsKind(m_repoPath);
+        const QString mode = kind == AiRequestKind::Description
+                                 ? QStringLiteral("description")
+                                 : QStringLiteral("message");
+
+        QJsonArray recent;
+        for (const QString &msg : recentCommitMessages(m_repoPath, vcs))
+            recent.append(msg);
+
+        QJsonObject context;
+        context["vcs"] = vcs;
+        context["repo_path"] = m_repoPath;
+        context["diff"] = diffText;
+        context["files"] = fileStatusesJson(m_repoPath, vcs, files);
+        context["staged"] = QJsonArray::fromStringList(stagedFiles(m_repoPath, vcs, files));
+        context["branch"] = currentBranchOrChange(m_repoPath, vcs);
+        context["recent_messages"] = recent;
+        context["mode"] = mode;
+        context["system_prompt"] = rawPrompt;
+
+        m_modelManager->generateCommitMessage(modelPath, context, nGpuLayers);
         return;
     }
 

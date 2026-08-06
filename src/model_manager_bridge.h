@@ -27,6 +27,8 @@ public:
 
     void streamInference(const QString &modelPath, const QString &prompt,
                          int nGpuLayers);
+    void generateCommitMessage(const QString &modelPath,
+                               const QJsonObject &context, int nGpuLayers);
     void cancelInference();
     bool isRunning() const;
 
@@ -41,6 +43,7 @@ private:
     static void onDownloadProgress(int id, int64_t received, int64_t total, void *ud);
     static void onInferenceToken(const char *token, void *ud);
     static void onInferenceError(const char *error, void *ud);
+    static void onInferenceFinished(const char *message, void *ud);
     static bool onInferenceCancelled(void *ud);
 
     ModelManager *m_mm = nullptr;

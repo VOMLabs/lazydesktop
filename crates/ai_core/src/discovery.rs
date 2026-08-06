@@ -1,3 +1,4 @@
+use crate::error::AiError;
 use crate::types::DiscoveredModel;
 
 /// Fallback models shipped with the application for offline / first-run use.
@@ -77,90 +78,83 @@ pub fn curated_models(models_dir: &str) -> Vec<DiscoveredModel> {
     ]
 }
 
-/// Query HuggingFace API for GGUF models, merged with curated fallback list.
-/// Returns JSON string of discovered models.
-pub fn discover_models(models_dir: &str) -> Result<String, String> {
+/// Discovered models serialized as JSON. When `live` is set, merges live
+/// HuggingFace search results into the curated fallback list (best-effort).
+pub async fn discover_models_async(models_dir: &str, live: bool) -> Result<String, AiError> {
     let mut all = curated_models(models_dir);
 
-    // Attempt live HF discovery — best-effort; curated list is always the fallback
-    if let Ok(live) = discover_from_hf_api(models_dir) {
-        // Merge: prefer curated entries, add new ones from live
-        let curated_urls: std::collections::HashSet<String> =
-            all.iter().map(|m| m.url.clone()).collect();
-        for m in live {
-            if !curated_urls.contains(&m.url) {
-                all.push(m);
+    if live {
+        if let Ok(live_models) = discover_from_hf_api(models_dir).await {
+            let curated_urls: std::collections::HashSet<String> =
+                all.iter().map(|m| m.url.clone()).collect();
+            for m in live_models {
+                if !curated_urls.contains(&m.url) {
+                    all.push(m);
+                }
             }
         }
     }
 
-    serde_json::to_string(&all).map_err(|e| format!("Serialization error: {e}"))
+    Ok(serde_json::to_string(&all)?)
 }
 
-fn discover_from_hf_api(models_dir: &str) -> Result<Vec<DiscoveredModel>, String> {
-    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("Runtime error: {e}"))?;
-    rt.block_on(async {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-            .map_err(|e| format!("HTTP client error: {e}"))?;
+/// Synchronous convenience wrapper (builds a throwaway runtime). Prefer calling
+/// `discover_models_async` on the shared runtime from the FFI layer.
+pub fn discover_models(models_dir: &str) -> Result<String, AiError> {
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| AiError::Other(format!("runtime error: {e}")))?;
+    rt.block_on(discover_models_async(models_dir, true))
+}
 
-        let resp = client
-            .get("https://huggingface.co/api/models?search=GGUF&sort=downloads&direction=-1&limit=20")
-            .header("User-Agent", "lazydesktop/0.1.0")
-            .send()
-            .await
-            .map_err(|e| format!("HF API error: {e}"))?;
+async fn discover_from_hf_api(models_dir: &str) -> Result<Vec<DiscoveredModel>, AiError> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
 
-        let body = resp.text().await.map_err(|e| format!("Read error: {e}"))?;
-        let entries: Vec<serde_json::Value> =
-            serde_json::from_str(&body).map_err(|e| format!("Parse error: {e}"))?;
+    let resp = client
+        .get("https://huggingface.co/api/models?search=GGUF&sort=downloads&direction=-1&limit=20")
+        .header("User-Agent", "lazydesktop/0.1.0")
+        .send()
+        .await?;
 
-        let mut models = Vec::new();
-        for entry in entries {
-            let model_id = entry["modelId"]
-                .as_str()
-                .or_else(|| {
-                    entry["id"]
-                        .as_str()
-                })
-                .unwrap_or("unknown");
-            let hf_id = model_id.to_string();
+    let body = resp.text().await?;
+    let entries: Vec<serde_json::Value> = serde_json::from_str(&body)?;
 
-            // Find a GGUF file in the siblings
-            if let Some(siblings) = entry["siblings"].as_array() {
-                for sib in siblings {
-                    let rfilename = sib["rfilename"].as_str().unwrap_or("");
-                    if rfilename.ends_with(".gguf") {
-                        let name = rfilename
-                            .trim_end_matches(".gguf")
-                            .replace(|c: char| !c.is_ascii_alphanumeric() && c != '.' && c != '-', "_");
-                        let url = format!(
-                            "https://huggingface.co/{}/resolve/main/{}",
-                            model_id, rfilename
-                        );
-                        let size = sib["size"].as_i64().unwrap_or(0);
-                        let size_label = if size > 1_000_000_000 {
-                            format!("~{:.1} GB", size as f64 / 1_000_000_000.0)
-                        } else {
-                            format!("~{:.0} MB", size as f64 / 1_000_000.0)
-                        };
+    let mut models = Vec::new();
+    for entry in entries {
+        let model_id = entry["modelId"].as_str().or_else(|| entry["id"].as_str()).unwrap_or("unknown");
+        let hf_id = model_id.to_string();
 
-                        models.push(DiscoveredModel {
-                            name,
-                            url,
-                            path: format!("{}/{}", models_dir, rfilename),
-                            size_bytes: size,
-                            size_label,
-                            sha256: None,
-                            hf_id: hf_id.clone(),
-                            downloads: 0,
-                        });
-                    }
+        // Find a GGUF file in the siblings
+        if let Some(siblings) = entry["siblings"].as_array() {
+            for sib in siblings {
+                let rfilename = sib["rfilename"].as_str().unwrap_or("");
+                if rfilename.ends_with(".gguf") {
+                    let name = rfilename
+                        .trim_end_matches(".gguf")
+                        .replace(|c: char| !c.is_ascii_alphanumeric() && c != '.' && c != '-', "_");
+                    let url = format!("https://huggingface.co/{}/resolve/main/{}", model_id, rfilename);
+                    let size = sib["size"].as_i64().unwrap_or(0);
+                    let size_label = if size > 1_000_000_000 {
+                        format!("~{:.1} GB", size as f64 / 1_000_000_000.0)
+                    } else {
+                        format!("~{:.0} MB", size as f64 / 1_000_000.0)
+                    };
+
+                    models.push(DiscoveredModel {
+                        name,
+                        url,
+                        path: format!("{}/{}", models_dir, rfilename),
+                        size_bytes: size,
+                        size_label,
+                        sha256: None,
+                        hf_id: hf_id.clone(),
+                        downloads: 0,
+                    });
                 }
             }
         }
+    }
 
-        Ok(models)
-    })
+    Ok(models)
 }

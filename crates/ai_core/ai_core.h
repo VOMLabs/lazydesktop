@@ -1,5 +1,5 @@
-#ifndef MODEL_MANAGER_H
-#define MODEL_MANAGER_H
+#ifndef AI_CORE_H
+#define AI_CORE_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -23,6 +23,10 @@ typedef void (*MM_TokenCallback)(const char *token, void *user_data);
 
 /* Error callback. message is a null-terminated UTF-8 string. */
 typedef void (*MM_ErrorCallback)(const char *message, void *user_data);
+
+/* Finish callback. message is the final (normalized) generated text, or an
+   empty string when the run was cancelled. */
+typedef void (*MM_FinishCallback)(const char *message, void *user_data);
 
 /* Cancellation poll callback. Returns true if the operation should be cancelled. */
 typedef bool (*MM_CancelCallback)(void *user_data);
@@ -70,11 +74,39 @@ bool mm_delete_model(ModelManager *mm, const char *path);
 /* Run streaming inference on a loaded model.
    Spawns an internal thread and returns immediately. Callbacks are invoked from
    the inference thread. on_cancelled is polled periodically; return true to cancel.
-   Returns true if the inference was started successfully. */
+   on_finish delivers the full generated text when the run terminates.
+   Returns true if the inference was started successfully, false if the manager
+   is null, the arguments are invalid, or another inference is already running. */
 bool mm_stream_inference(ModelManager *mm, const char *model_path, const char *prompt,
                          int32_t n_gpu_layers,
                          MM_TokenCallback on_token, MM_ErrorCallback on_error,
-                         MM_CancelCallback on_cancelled, void *user_data);
+                         MM_CancelCallback on_cancelled, MM_FinishCallback on_finish,
+                         void *user_data);
+
+/* Generate a Conventional Commits message for the changes described in
+   context_json. The context is a UTF-8 JSON object with the following fields
+   (all optional unless noted):
+
+   {
+     "vcs":            "git" | "jujutsu",
+     "repo_path":      string,   // repository root
+     "diff":           string,   // diff text for the changes
+     "files":          [ { "path": string, "status": "M" } ],
+     "staged":         [ string, ... ],   // git staged paths
+     "branch":         string,   // branch name / working-copy change id
+     "recent_messages":[ string, ... ],   // recent commit subjects
+     "mode":           "message" | "description",
+     "system_prompt":  string    // optional override; may contain "<diff>"
+   }
+
+   Raw tokens are streamed through on_token (for live display); the normalized
+   Conventional Commits message is delivered through on_finish. Cancellation and
+   concurrency behavior match mm_stream_inference. */
+bool mm_generate_commit_message(ModelManager *mm, const char *model_path,
+                                const char *context_json, int32_t n_gpu_layers,
+                                MM_TokenCallback on_token, MM_ErrorCallback on_error,
+                                MM_CancelCallback on_cancelled,
+                                MM_FinishCallback on_finish, void *user_data);
 
 /* ─── Memory ─────────────────────────────────────────── */
 
@@ -85,4 +117,4 @@ void mm_free_string(char *s);
 }
 #endif
 
-#endif /* MODEL_MANAGER_H */
+#endif /* AI_CORE_H */
