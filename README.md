@@ -1,62 +1,91 @@
 # LazyDesktop
 
-**The KDE Native GitHub Desktop Alternative.**
+**A fast, native Git GUI for the KDE Plasma desktop.**
 
-LazyDesktop is a fast, native Git GUI client for Linux. It uses Qt 6 and C++23, the same frameworks KDE Plasma is built on, so it fits right into your desktop without needing Electron or any web runtime.
+LazyDesktop is a lightweight alternative to GitHub Desktop built on the same
+technology stack KDE itself uses — Qt 6 and C++23. No Electron, no web runtime,
+no bloat: it fits straight into your desktop, respects your system theme, and
+gives you a clean, keyboard-friendly interface for everyday Git work.
 
-Think GitHub Desktop, but native, fast, and built for the KDE ecosystem.
+> Think GitHub Desktop, but native, fast, and built for the KDE ecosystem.
+
+---
 
 ## Features
 
-### Git
+### Git, the essentials
 
-- **Git status list** Flat file list with colored status indicators. Modified files show yellow, added files show green, deleted files show red, renamed files show purple, and untracked files show gray.
-- **Per-file checkboxes** Pick which files to stage and commit with checkboxes. There is a master "Select All" checkbox in the header bar.
-- **Diff viewer** A clean diff view with line numbers and syntax highlighting. Image files like png, jpg, webp, and gif render inline. Video files show a placeholder message.
-- **Commit** Write a summary and optional description, then commit with one click.
-- **Skip pre-commit hooks** A lightning icon toggle adds `--no-verify` to your commit command.
-- **Co-authors** Click the people icon to scan the checked files' git history for authors. Pick your co-authors from the dialog and `Co-authored-by:` trailers get appended to the description.
-- **Push / Fetch / Pull** A single smart button that cycles through push, fetch, and pull.
-- **Branch management** Switch branches, create new ones, and delete old ones from a dropdown.
-- **Commit history** A tabbed sidebar shows a colored commit list. Click a commit to see what files changed. Click a file to see its diff.
-- **Add project dropdown** A drawer button gives you three options: Clone Repository (enter a URL and destination, it runs `git clone`), Create Repository (pick a directory, it runs `git init`), and Load Existing (folder picker).
-- **Recent projects** A sidebar overlay keeps your project history in `~/.config/lazydesktop/projects.yaml`. Repos with uncommitted changes show a yellow dot.
-- **Projects grouped by remote owner** The recent list groups projects under headers based on the GitHub owner or org from the remote origin URL.
-- **Scan Folder for Projects** Bulk import all Git repos from a folder's subdirectories through the drawer button.
-- **Remove All** Clear the entire recent projects list with a confirmation dialog.
+- **Status list** — Flat file list with colored status indicators
+  (modified = yellow, added = green, deleted = red, renamed = purple,
+  untracked = gray).
+- **Per-file checkboxes** — Pick exactly which files to stage and commit.
+  A master **Select All** checkbox lives in the header bar.
+- **Diff viewer** — Clean diff view with line numbers and syntax
+  highlighting. Images (png, jpg, webp, gif, …) render inline; video files
+  show a placeholder.
+- **Commit** — Summary and optional description, committed in one click.
+- **Skip pre-commit hooks** — A lightning-bolt toggle adds `--no-verify`.
+- **Co-authors** — Scan the checked files' git history for authors and append
+  `Co-authored-by:` trailers to the description.
+- **Push / Fetch / Pull** — One smart button that cycles through push, fetch,
+  and pull based on repository state.
+- **Branch management** — Switch, create, and delete branches from a dropdown.
+- **Commit history** — Tabbed sidebar with a colored commit list. Click a
+  commit to see its files; click a file to see its diff.
 
-### AI Commit Messages
+### Project management
 
-- **Cloud providers** Click the AI button to generate a summary and description from the diffs of your checked files. Supports OpenRouter, OpenAI, Anthropic, and Google AI Studio. You need an API key in Settings > AI.
-- **Local inference** Built-in GGUF model support with one-click downloads from HuggingFace. GPU acceleration toggle and full model management included. Local inference runs inside a bundled Rust crate (`crates/ai_core`, powered by `llama-cpp-2`) exposed to the UI over a C FFI.
-- **Right-click** the AI button to switch providers.
-- **Model name** is configurable in Settings > AI. Fields are disabled while generating.
+- **Add project dropdown** — Clone a repository (`git clone`), create one
+  (`git init`), or load an existing folder.
+- **Recent projects** — Persistent history in `projects.yaml`, grouped by
+  remote owner/org, with a yellow dot on repos that have uncommitted changes.
+- **Scan folder** — Bulk-import every Git repo inside a directory.
+- **Remove / Clear all** — Remove one project or wipe the whole list, with
+  confirmation dialogs.
 
-### AI Editor Skills
+### AI commit messages
 
-The repository ships Conventional Commits and branch-creation skills for AI coding tools, so an agent in the repo can write commit messages and branch names consistently with the project's conventions. The same two skills are installed in four locations:
+- **Cloud providers** — Generate summary and description from the diffs of
+  your checked files. Supports OpenRouter, OpenAI, Anthropic, and Google AI
+  Studio. Requires an API key in Settings → AI.
+- **Local inference** — Built-in GGUF model support with one-click downloads
+  from HuggingFace, GPU acceleration toggle, and full model management. Local
+  inference runs inside the bundled Rust crate (`crates/ai_core`, powered by
+  `llama-cpp-2`) and is exposed to the UI over a C FFI.
+- **Right-click** the AI button to switch providers; the **model name** is
+  configurable in Settings → AI.
 
-| Tool | Location | Skill |
-|------|----------|-------|
+### AI editor skills
+
+The repository ships **Conventional Commits** and **branch-creation** skills
+so AI coding tools produce commit messages and branch names consistent with
+the project's conventions. The same two skills are installed for four tools:
+
+| Tool | Location | Skills |
+|------|----------|--------|
 | OpenCode | `.opencode/skills/` | `commit`, `create-branch` |
 | Claude Code | `.claude/skills/` | `commit`, `create-branch` |
 | Gemini CLI | `.gemini/skills/` | `commit`, `create-branch` |
 | Antigravity (IDE / CLI) | `.agents/skills/` | `commit`, `create-branch` |
 
-- **`commit`** detects whether the repo uses Git or Jujutsu, gathers the diff and recent history, and produces a Conventional Commits message (`type(scope): subject`), committing only after explicit approval.
-- **`create-branch`** creates branches using the `type/scope?/short-description` convention (for example `feat/vcs/jj-support`), for both Git and Jujutsu.
+- **`commit`** detects Git vs Jujutsu, gathers the diff and recent history,
+  and produces a Conventional Commits message (`type(scope): subject`),
+  committing only after explicit approval.
+- **`create-branch`** names branches using the `type/scope?/short-description`
+  convention (for example `feat/vcs/jj-support`), for both Git and Jujutsu.
 
-### Look and Feel
+### Look and feel
 
-- Uses system palette colors throughout. Respects your desktop theme and a dark theme is available.
-- System monospace font for the diff viewer.
-- Standard Qt widget rendering, no custom painting for the file list.
-- Colored status squares match the system icon size.
-- Dark theme and custom YAML themes apply Qt stylesheets at startup.
+- Uses system palette colors throughout and respects your desktop theme.
+- A built-in **Dark theme** and custom **YAML themes** apply Qt stylesheets
+  at startup.
+- System monospace font in the diff viewer; no custom painting for the file
+  list.
 
-### Custom YAML Themes
+#### Custom YAML themes
 
-Drop a `.theme.yaml` file into `~/.config/lazydesktop/themes/` to add a new theme option in your Appearance settings. Here is an example:
+Drop a `.theme.yaml` file into `~/.config/lazydesktop/themes/` to add a new
+theme option in Appearance settings:
 
 ```yaml
 name: "Ocean Night"
@@ -73,26 +102,36 @@ colors:
   selection: "#1f6feb"
 ```
 
-The theme shows up in Settings > Appearance after you restart the app or reopen the settings dialog.
+The theme appears in Settings → Appearance after a restart or reopening the
+settings dialog. See [themes](docs/user-guide/themes.md).
 
 ### Settings
 
 A categorized settings dialog covers:
 
-- **Appearance** System Default, Dark, and any custom YAML themes you added.
-- **Git** Read and write global `user.name` and `user.email` via `git config --global`.
-- **AI** Enable toggle, provider selection, API key, model name, system prompt, and local model downloads.
+- **Appearance** — System Default, Dark, and any custom YAML themes.
+- **Git** — Read and write global `user.name` / `user.email` via
+  `git config --global`.
+- **AI** — Enable toggle, provider, API key, model name, system prompts, and
+  local model downloads.
 
-### Quality of Life
+### Quality of life
 
-- **Git bootstrapping** If Git is missing at startup, LazyDesktop detects it and offers to install it. Uses `pkexec` or `sudo` on Linux, `xcode-select` on macOS, and `winget` on Windows.
-- **Credential handling** GIT_ASKPASS integration with a credential dialog for remote authentication.
-- **Auto-refresh** A `QFileSystemWatcher` watches `.git/index` and `.git/HEAD`. Changes trigger a debounced 2-second status refresh. Your selection and diff state are preserved during refreshes and skipped during active commits.
-- **Files menu** Open in Editor (kate), Open in File Manager, Open in Terminal (konsole), View on GitHub (opens the remote URL in your browser).
-- **View menu** Toggle Commit Panel and Commit Files panel visibility.
-- **Right-click context menu** Discard changes on modified files or delete untracked files.
+- **Git bootstrapping** — If Git is missing, LazyDesktop offers to install it
+  (`pkexec`/`sudo` on Linux, `xcode-select` on macOS, `winget` on Windows).
+- **Credential handling** — `GIT_ASKPASS` integration with a credential
+  dialog for remote authentication.
+- **Auto-refresh** — A `QFileSystemWatcher` watches `.git/index` and
+  `.git/HEAD`; changes trigger a debounced 2-second status refresh that
+  preserves your selection and diff state.
+- **Files menu** — Open in Editor (kate), File Manager, Terminal (konsole),
+  or View on GitHub.
+- **Right-click context menu** — Discard changes on modified files or delete
+  untracked files.
 
-## Build and Run (without installing)
+---
+
+## Quick start (build and run)
 
 ```bash
 xmake f -m debug          # configure (release: xmake f -m release)
@@ -100,14 +139,22 @@ xmake                     # builds C++ and the Rust ai_core crate
 ./build/linux/x86_64/debug/lazydesktop
 ```
 
-The binary runs directly from the build directory. No `make install` needed. The `xmake` build automatically runs `cargo build` for the `ai_core` Rust crate and links it in. Your projects and settings survive rebuilds:
+The binary runs directly from the build directory — no `make install`
+needed. The `xmake` build automatically runs `cargo build` for the `ai_core`
+Rust crate and links it in. Your data survives rebuilds:
 
 - Projects: `~/.config/lazydesktop/projects.yaml`
 - Settings (API key, theme, model, system prompt): `~/.config/lazydesktop/lazydesktop.conf`
 - Custom themes: `~/.config/lazydesktop/themes/*.theme.yaml`
 - Local AI models: `~/.config/lazydesktop/models/`
 
-> **Note on Qt versions:** if both Qt 5 and Qt 6 are installed, xmake may pick Qt 5 from your `PATH`. Point it at Qt 6 before configuring, for example `PATH=/usr/lib/qt6/bin:$PATH xmake f -c -m debug`.
+> **Note on Qt versions:** if both Qt 5 and Qt 6 are installed, xmake may pick
+> Qt 5 from your `PATH`. Point it at Qt 6 before configuring, for example
+> `PATH=/usr/lib/qt6/bin:$PATH xmake f -c -m debug`.
+
+See [build from source](docs/getting-started/build-from-source.md) for the
+full guide, or use the included [`justfile`](justfile) recipes
+(`just setup`, `just build`, `just run`, …).
 
 ## Run in Docker
 
@@ -129,12 +176,13 @@ By default the container mounts:
 
 - `/tmp/.X11-unix` — host X socket for the native window
 - `lazydesktop-config` (named volume) — settings, projects, themes, models
-- `./repos` → `/workspace` — bind-mount your Git repositories here, e.g.
+- `./repos` → `/workspace` — bind-mount your Git repositories, e.g.
   `REPO_DIR=~/code/myrepo docker compose up -d`
 
-Set `PUID`/`PGID` to your host UID/GID if the mounted config is owned by root.
-Or use the shortcuts: `just docker-build`, `just docker-up`, `just docker-shell`,
-`just docker-logs`.
+Set `PUID`/`PGID` to your host UID/GID if the mounted config is owned by
+root. Shortcuts: `just docker-build`, `just docker-up`, `just docker-shell`,
+`just docker-logs`. Full details in
+[docker](docs/getting-started/docker.md).
 
 ## Installation
 
@@ -150,9 +198,25 @@ makepkg -si
 sudo dpkg -i lazydesktop_*.deb
 ```
 
+### AppImage
+
+Grab the latest `lazydesktop-*-x86_64.AppImage` from the
+[Releases](https://github.com/itzzmateo/lazydesktop/releases) page, make it
+executable, and run it.
+
 ### From source
 
-See [Build and Run](#build-and-run-without-installing) above.
+See [build from source](docs/getting-started/build-from-source.md).
+
+## AI setup (one minute)
+
+1. Open **Settings → AI**.
+2. Toggle **Enable AI**.
+3. Choose a provider and paste an API key, **or** pick a local GGUF model and
+   let LazyDesktop download it from HuggingFace.
+4. Click the AI button next to the commit panel to generate a message.
+
+See the [AI documentation](docs/ai/overview.md) for details.
 
 ## Requirements
 
@@ -162,3 +226,21 @@ See [Build and Run](#build-and-run-without-installing) above.
 - yaml-cpp
 - Git
 - A C++23 compiler (GCC 14+ or Clang 18+)
+
+## Documentation
+
+The full documentation lives in [`docs/`](docs/README.md):
+
+| Area | Guide |
+|------|-------|
+| Getting started | [Installation](docs/getting-started/installation.md) · [Build from source](docs/getting-started/build-from-source.md) · [Docker](docs/getting-started/docker.md) · [Configuration](docs/getting-started/configuration.md) |
+| User guide | [Git workflow](docs/user-guide/git-workflow.md) · [Branches & history](docs/user-guide/branches-and-history.md) · [Projects](docs/user-guide/projects.md) · [Themes](docs/user-guide/themes.md) |
+| AI | [Overview](docs/ai/overview.md) · [Cloud providers](docs/ai/cloud-providers.md) · [Local models](docs/ai/local-models.md) · [Editor skills](docs/ai/editor-skills.md) |
+| Development | [Architecture](docs/development/architecture.md) · [Source layout](docs/development/source-layout.md) · [`ai_core`](docs/development/ai-core.md) · [Build & test](docs/development/build-and-test.md) · [Packaging](docs/development/packaging.md) |
+
+Other resources: [Roadmap](ROADMAP.md) · [Implementation details](IMPLEMENTATION.md) ·
+[Contributing](docs/contributing.md) · [FAQ](docs/faq.md) · [Release process](docs/release-process.md)
+
+## License
+
+MIT — see the repository license file for details.

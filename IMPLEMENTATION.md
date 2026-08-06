@@ -1,6 +1,8 @@
 # LazyDesktop — Implementation Details
 
-Comprehensive documentation of what is implemented in LazyDesktop, how it works internally, and what each component does.
+Comprehensive documentation of what is implemented in LazyDesktop, how it
+works internally, and what each component does. This is the technical
+companion to the user-facing guides in [`docs/`](docs/README.md).
 
 ---
 
@@ -8,7 +10,10 @@ Comprehensive documentation of what is implemented in LazyDesktop, how it works 
 
 ### What is LazyDesktop?
 
-LazyDesktop is a native Git GUI client for KDE Plasma, built as a lightweight alternative to GitHub Desktop. It uses the same technology stack as KDE itself (Qt 6, C++23) so it integrates seamlessly with the desktop without requiring additional runtimes like Electron.
+LazyDesktop is a native Git GUI client for KDE Plasma, built as a lightweight
+alternative to GitHub Desktop. It uses the same technology stack as KDE
+itself (Qt 6, C++23) so it integrates seamlessly with the desktop without
+requiring additional runtimes like Electron.
 
 ### Architecture
 
@@ -30,8 +35,9 @@ LazyDesktop is a native Git GUI client for KDE Plasma, built as a lightweight al
 ├─────────────────────────────────────────────────────────┤
 │  Git Process Layer (QProcess)     │  AI Layer           │
 │  - status, diff, commit, push     │  - Cloud APIs       │
-│  - branch, checkout, log          │  - Rust ai_core     │
-│  - clone, init                    │    crate (FFI)      │
+│  - branch, checkout, log          │  - Rust ai_core    │
+│  - clone, init                    │    crate (FFI)     │
+│  - background model downloads     │                     │
 ├─────────────────────────────────────────────────────────┤
 │  Persistence Layer  │
 │  - QSettings (INI)   │
@@ -48,7 +54,8 @@ LazyDesktop is a native Git GUI client for KDE Plasma, built as a lightweight al
 | Language | C++23 | Application logic |
 | Build System | XMake | Compilation and linking of the C++ app and the Rust crate |
 | Config Storage | yaml-cpp | YAML parsing for projects and themes |
-| Local AI | Rust `ai_core` crate (llama-cpp-2) | GGUF model inference for commit message generation, exposed over C FFI |
+| Local AI | Rust `ai_core` crate (`llama-cpp-2`) | GGUF model inference and download, exposed over a C FFI |
+| Background Downloads | Detached worker process (`--background-dl`) | Model downloads that survive UI restarts |
 
 ### Data Storage
 
@@ -73,15 +80,34 @@ All persistent data lives under `~/.config/lazydesktop/`:
 | `src/mainwindow.cpp` | All application logic: UI setup, git operations, AI generation, settings, project management |
 | `src/diffviewer.h` / `.cpp` | Custom `QPlainTextEdit` subclass with line numbers and diff syntax highlighting |
 | `src/model_manager_bridge.h` / `.cpp` | C++ wrapper around the `ai_core` C FFI: loading, streaming inference, commit-message generation |
-| `crates/ai_core/` | Rust crate: local GGUF inference (`inference.rs`), model download/discovery (`download.rs`, `discovery.rs`), Conventional Commits message generation (`commit_message.rs`), and the C ABI (`ffi.rs`, `ai_core.h`) |
+| `src/background_download.h` / `.cpp` | Detached "model installer" mode for background model downloads (sidecar status files, cancellation) |
 | `src/main.cpp` | Entry point, creates `QApplication` and `MainWindow` |
+| `crates/ai_core/` | Rust crate: local GGUF inference (`inference.rs`), model download/discovery (`download.rs`, `discovery.rs`), Conventional Commits message generation (`commit_message.rs`), and the C ABI (`ffi.rs`, `ai_core.h`) |
 
+### Build System
+
+LazyDesktop builds with **XMake** (`xmake.lua`). The build:
+
+1. Runs `cargo build --lib` for `crates/ai_core` in a `before_build` hook
+   (release profile when building in release mode).
+2. Links the resulting static library (`add_links("ai_core")`) from
+   `target/debug` or `target/release`.
+3. Enables `cxx23`, the Qt Widgets rule, and platform-specific system
+   libraries (`pthread`, `dl`, `rt`, `gomp` on Linux; OpenMP on macOS; `/EHsc`
+   on Windows).
+
+A [`justfile`](justfile) wraps common workflows: `just setup`, `just build`,
+`just run`, `just test` (cargo tests), `just format`, `just tidy`,
+`just lint`, plus `docker-*` and `release-*` recipes.
 
 ### Git Integration
 
-All git operations are performed by shelling out to the `git` CLI via `QProcess`. There is no libgit2 dependency. This keeps the binary small and ensures behavioral parity with the command line.
+All git operations are performed by shelling out to the `git` CLI via
+`QProcess`. There is no libgit2 dependency. This keeps the binary small and
+ensures behavioral parity with the command line.
 
 **Process management:**
+
 - `m_gitProcess` — General-purpose git query (status, unpushed files)
 - `m_commitProcess` — Commit execution
 - `m_pushProcess` — Push/Fetch/Pull
@@ -95,12 +121,15 @@ All git operations are performed by shelling out to the `git` CLI via `QProcess`
 - `m_authProcess` — Auth checking
 
 **Status query flow:**
+
 1. `startGitStatusQuery()` runs `git status --porcelain`
 2. `onGitProcessFinished()` parses the two-character XY status codes
 3. Files are added to the tree widget with colored status icons and checkboxes
-4. `startGitUnpushedQuery()` then runs `git diff --name-only @{u}..HEAD` to show unpushed files
+4. `startGitUnpushedQuery()` then runs `git diff --name-only @{u}..HEAD` to
+   show unpushed files
 
 **Commit flow:**
+
 1. User writes summary + optional description
 2. Checked files are collected via `checkedFiles()`
 3. Files are staged with `git add -- <files>`
@@ -108,15 +137,18 @@ All git operations are performed by shelling out to the `git` CLI via `QProcess`
 5. On success, status and log are refreshed
 
 **Push/Fetch/Pull state machine:**
+
 - Starts in `Push` state
 - On push success with "Everything up-to-date" → switches to `Fetch`
-- On fetch, checks `git rev-list --count HEAD..@{u}` → if behind, switches to `Pull`
+- On fetch, checks `git rev-list --count HEAD..@{u}` → if behind, switches to
+  `Pull`
 - On push rejection (non-fast-forward) → switches to `Pull`
 - After pull → back to `Push`
 
 ### AI System
 
-The AI system supports two categories of providers: cloud APIs and local inference.
+The AI system supports two categories of providers: cloud APIs and local
+inference.
 
 #### Cloud Providers
 
@@ -129,7 +161,9 @@ All cloud providers use `QNetworkAccessManager` for HTTP requests.
 | Anthropic | `api.anthropic.com/v1/messages` | `x-api-key` header |
 | Google AI Studio | `generativelanguage.googleapis.com/v1beta/models/...` | Query parameter |
 
-Each provider has a different response format. `extractAiText()` normalizes the response:
+Each provider has a different response format. `extractAiText()` normalizes
+the response:
+
 - OpenAI/OpenRouter: `choices[0].message.content`
 - Anthropic: `content[0].text`
 - Google AI Studio: `candidates[0].content.parts[0].text`
@@ -140,8 +174,8 @@ Local GGUF inference lives in the `crates/ai_core` Rust crate rather than in
 C++. The crate is built as a `staticlib` and linked into the app; the C++ side
 talks to it through a small C ABI declared in `crates/ai_core/ai_core.h`:
 
-1. `ModelManager` (C++) owns the FFI handle; `model_manager_bridge.cpp` wraps
-   the exported functions in Qt-friendly signals (`inferenceToken`,
+1. `ModelManagerBridge` (C++) owns the FFI handle; `model_manager_bridge.cpp`
+   wraps the exported functions in Qt-friendly signals (`inferenceToken`,
    `inferenceFinished`, `inferenceFailed`, `inferenceCancelled`).
 2. The crate loads a GGUF file via `llama_cpp_2` and runs inference on a
    dedicated thread, with an `Arc<AtomicBool>` cancel flag. Worker threads
@@ -159,32 +193,67 @@ the raw output into a clean Conventional Commits message
 everything else in `ai_core` is generic model management.
 
 **FFI entry points:**
-- `mm_init` / `mm_destroy` — manager lifecycle
-- `mm_stream_inference` — generic completion (`prompt` argument)
-- `mm_generate_commit_message` — commit-message generation (`context_json` argument)
-- `mm_download_model` / `mm_cancel_download` — HuggingFace model downloads
+
+| Function | Purpose |
+|----------|---------|
+| `mm_init` / `mm_destroy` | Manager lifecycle |
+| `mm_stream_inference` | Generic completion (`prompt` argument) |
+| `mm_generate_commit_message` | Commit-message generation (`context_json` argument) |
+| `mm_download_model` / `mm_cancel_download` | HuggingFace model downloads |
+| `mm_list_local_models` / `mm_discover_models` | Model listing (JSON) |
+| `mm_delete_model` | Delete a model file |
+| `mm_free_string` | Free strings returned by the crate |
 
 **Backend selection (GPU vs CPU):** `discovery.rs` scans for available
 `ggml` backends; the C++ UI toggles offloading via the `ai/gpu_acceleration`
 setting (mapped to `n_gpu_layers`, `99` when enabled).
 
 **Available models (built-in catalog):**
-- Qwen3-1.7B (Q8_0) — ~1.8 GB
-- Qwen2.5-0.5B (Q5_0) — ~500 MB
-- TinyLlama-1.1B-Chat (Q4_K_M) — ~669 MB
-- Llama-3.2-1B-Instruct (Q4_K_M) — ~808 MB
-- SmolLM2-1.7B-Instruct (Q4_K_M) — ~1.06 GB
-- Gemma-2-2B-it (Q4_K_M) — ~1.71 GB
-- Phi-3.5-mini-instruct (Q4_K_M) — ~2.39 GB
 
-Models are downloaded from HuggingFace with progress tracking and can be selected/deleted in Settings → AI.
+| Model | Quantization | Size |
+|-------|-------------|------|
+| Qwen3-1.7B | Q8_0 | ~1.8 GB |
+| Qwen2.5-0.5B | Q5_0 | ~500 MB |
+| TinyLlama-1.1B-Chat | Q4_K_M | ~669 MB |
+| Llama-3.2-1B-Instruct | Q4_K_M | ~808 MB |
+| SmolLM2-1.7B-Instruct | Q4_K_M | ~1.06 GB |
+| Gemma-2-2B-it | Q4_K_M | ~1.71 GB |
+| Phi-3.5-mini-instruct | Q4_K_M | ~2.39 GB |
+
+Models are downloaded from HuggingFace with progress tracking and can be
+selected/deleted in Settings → AI.
+
+#### Background model downloads
+
+Large model downloads do not block the UI. When the user starts a download:
+
+1. `spawnBackgroundDownload()` relaunches the app binary in a detached
+   "model installer" mode: `lazydesktop --background-dl <url> <dest> <sha256>
+   <modelsDir> <configPath>`.
+2. The worker downloads `<url>` to `<dest>` via a `.part` file, verifies the
+   SHA-256 checksum, and exits.
+3. Progress/completion is tracked through JSON sidecar files written next to
+   the model: a status file (`status` field, `received`/`total` bytes, `pid`),
+   a cancel file (request cancellation), and the `.part` file itself.
+4. The UI polls the sidecar to update progress, detect completion, and offer
+   cancellation; downloads survive closing and reopening the app.
+
+See `src/background_download.h` for the sidecar path helpers
+(`bgStatusPath`, `bgCancelPath`, `bgPartialPath`) and `bgProcessAlive()`.
 
 #### AI Prompt System
 
-- The raw prompt from settings can contain a `<diff>` placeholder where the actual git diff goes; `buildAiPrompt()` substitutes the diff text for cloud providers, and `buildPrompt` in `commit_message.rs` does the same for local inference.
-- Two separate prompts exist: one for commit message summary, one for description (`ai/system_prompt`, `ai/description_system_prompt`).
-- For local inference the UI gathers VCS context (diff, files, staged set, branch, recent messages) into a `CommitContext` JSON object instead of a bare prompt.
-- Fields are disabled and an overlay with "AI is thinking..." is shown during generation.
+- The raw prompt from settings can contain a `<diff>` placeholder where the
+  actual git diff goes; `buildAiPrompt()` substitutes the diff text for cloud
+  providers, and `buildPrompt` in `commit_message.rs` does the same for local
+  inference.
+- Two separate prompts exist: one for commit message summary, one for
+  description (`ai/system_prompt`, `ai/description_system_prompt`).
+- For local inference the UI gathers VCS context (diff, files, staged set,
+  branch, recent messages) into a `CommitContext` JSON object instead of a
+  bare prompt.
+- Fields are disabled and an overlay with "AI is thinking..." is shown during
+  generation, with a "Show more" expandable view of the raw text.
 
 #### AI Editor Skills
 
@@ -200,7 +269,7 @@ Each directory contains `commit` and `create-branch` skills. Both auto-detect
 Git vs Jujutsu (preferring `.jj` in a colocated repo). `commit` produces a
 Conventional Commits message (`type(scope): subject`) and commits only after
 approval; `create-branch` names branches `type/scope?/short-description`
-(e.g. `feat/vcs/jj-support`). See the `README.md` table for the full mapping.
+(e.g. `feat/vcs/jj-support`).
 
 ### UI Architecture
 
@@ -240,7 +309,9 @@ QMainWindow
 
 #### CommitDelegate
 
-A custom `QStyledItemDelegate` that renders commit history items with three lines:
+A custom `QStyledItemDelegate` that renders commit history items with three
+lines:
+
 1. Hash — monospace, small, gray
 2. Subject — bold
 3. Author + date — smaller, gray
@@ -250,15 +321,21 @@ Each item takes `height * 3 + 4` pixels of vertical space.
 #### DiffViewer
 
 A `QPlainTextEdit` subclass with:
+
 - `LineNumberArea` widget painted to the left margin
-- `DiffHighlighter` (QSyntaxHighlighter) that colorizes:
+- `DiffHighlighter` (`QSyntaxHighlighter`) that colorizes:
   - Added lines: green background
   - Deleted lines: red background
   - Hunk headers (`@@`): blue background
 
+Image files (png, jpg, jpeg, gif, bmp, webp, svg, ico, tiff) render inline via
+a `QLabel`, scaled to a maximum of 800×600 while preserving aspect ratio.
+Video files show a placeholder message.
+
 ### Settings System
 
-Uses `QSettings` with INI format. All settings are stored in `~/.config/lazydesktop/lazydesktop.conf`.
+Uses `QSettings` with INI format. All settings are stored in
+`~/.config/lazydesktop/lazydesktop.conf`.
 
 **Settings categories:**
 
@@ -280,9 +357,15 @@ Uses `QSettings` with INI format. All settings are stored in `~/.config/lazydesk
 | `paths/settings` | `~/.config/lazydesktop/lazydesktop.conf` | Settings path |
 | `paths/themes` | `~/.config/lazydesktop/themes` | Themes directory |
 
+The Settings dialog is organized into **Appearance**, **Git**, and **AI**
+pages. The AI page (rebuilt in the v0.2 era) covers provider selection, API
+key, model, system prompts, GPU acceleration, and local model management
+(download, select, delete).
+
 ### Theme System
 
-Themes are YAML files in `~/.config/lazydesktop/themes/` with `.theme.yaml` extension:
+Themes are YAML files in `~/.config/lazydesktop/themes/` with a `.theme.yaml`
+extension:
 
 ```yaml
 name: "Theme Name"
@@ -296,32 +379,56 @@ colors:
   button_foreground: "#hex"
   tooltip_background: "#hex"
   tooltip_foreground: "#hex"
+  selection: "#hex"
 ```
 
-`generateStylesheet()` converts these into a Qt stylesheet string applied to the `QApplication`. The built-in "Dark" theme uses hardcoded VS Code-style colors.
+`generateStylesheet()` converts these into a Qt stylesheet string applied to
+the `QApplication`. The built-in "Dark" theme uses hardcoded VS Code-style
+colors. The theme picker in Settings → Appearance scans the themes directory
+and lets the user switch instantly.
 
 ### Auto-Refresh
 
 When a repository is opened:
+
 1. `QFileSystemWatcher` monitors `.git/`, `.git/index`, and `.git/HEAD`
-2. Any change triggers `onRepoDirChanged()` which starts a 2-second debounce timer
-3. After the debounce, `startGitStatusQuery()` re-queries `git status --porcelain`
+2. Any change triggers `onRepoDirChanged()` which starts a 2-second debounce
+   timer
+3. After the debounce, `startGitStatusQuery()` re-queries
+   `git status --porcelain`
 4. Refreshes are skipped while a commit is in progress
 
 ### Credential Handling
 
 1. `checkGitAuth()` runs `git ls-remote --exit-code` to test authentication
 2. On failure (exit code 128), `showAuthDialog()` presents a credential form
-3. `setupAskPass()` creates a temporary shell script that responds to GIT_ASKPASS prompts
-4. The script is set as `GIT_ASKPASS` environment variable on push/fetch/pull processes
+3. `setupAskPass()` creates a temporary shell script that responds to
+   `GIT_ASKPASS` prompts
+4. The script is set as the `GIT_ASKPASS` environment variable on
+   push/fetch/pull processes
 5. `cleanupAskPass()` removes the temporary script on shutdown
 
 ### Git Bootstrapping
 
 On startup, `checkGitAvailable()` checks if `git` is on PATH. If not:
+
 - **Linux**: Tries `apt-get`, `dnf`, or `pacman` via `pkexec`/`sudo`
 - **macOS**: Runs `xcode-select --install`
 - **Windows**: Runs `winget install Git.Git`
+
+### Docker
+
+The Docker image (`Dockerfile`) builds the C++ UI and the bundled Rust
+`ai_core` crate, then ships only the runtime (no toolchain). The entrypoint
+(`docker/entrypoint.sh`) picks a display backend:
+
+- **Host X11** when an X socket is mounted and `DISPLAY` is set
+- **Xvfb + VNC/noVNC** otherwise, or when `VNC_MODE=1` (browser at
+  `http://localhost:6080`)
+
+`PUID`/`PGID` re-map the app user so mounted config is not root-owned. The
+compose file mounts the host X socket, a named volume for config
+(`lazydesktop-config`), and `./repos` → `/workspace` for your repositories.
 
 ---
 
@@ -390,9 +497,11 @@ On startup, `checkGitAvailable()` checks if `git` is on PATH. If not:
 - [x] CPU/GPU backend discovery
 - [x] Built-in model catalog (7 models from HuggingFace)
 - [x] One-click model download with progress bar
+- [x] Background downloads (detached `--background-dl` worker + sidecar status)
 - [x] Model selection (set as active)
 - [x] Model deletion with disk space info
-- [x] Dedicated commit-message FFI (`mm_generate_commit_message`) that normalizes output to Conventional Commits
+- [x] Dedicated commit-message FFI (`mm_generate_commit_message`) that
+      normalizes output to Conventional Commits
 - [x] Single in-flight inference guard (`inference_running`)
 
 ### Project Management
@@ -410,7 +519,8 @@ On startup, `checkGitAvailable()` checks if `git` is on PATH. If not:
 
 ### UI
 
-- [x] Menu bar: Files menu (Open in Editor, File Manager, Terminal, GitHub, Settings)
+- [x] Menu bar: Files menu (Open in Editor, File Manager, Terminal, GitHub,
+      Settings)
 - [x] Menu bar: View menu (Commit Panel, Commit Files toggles)
 - [x] Commit panel with close button
 - [x] Commit files panel in History tab with close button
@@ -421,8 +531,10 @@ On startup, `checkGitAvailable()` checks if `git` is on PATH. If not:
 ### Settings
 
 - [x] General: Data path configuration (projects, settings, themes)
-- [x] Appearance: Theme selection (System Default, Dark, custom)
-- [x] Git: Global user.name and user.email (read/written via `git config --global`)
+- [x] Appearance: Theme selection (System Default, Dark, custom) with theme
+      picker
+- [x] Git: Global user.name and user.email (read/written via
+      `git config --global`)
 - [x] AI: Enable/disable toggle
 - [x] AI: Provider selection dropdown
 - [x] AI: API key input (password masked)
@@ -455,9 +567,27 @@ On startup, `checkGitAvailable()` checks if `git` is on PATH. If not:
 - [x] Script cleanup on shutdown
 - [x] Auth environment setup for push/fetch/pull
 
-### Packaging
+### Build, Packaging, and CI
 
 - [x] XMake build system (links the Rust `ai_core` crate via its C FFI)
 - [x] PKGBUILD for Arch Linux
 - [x] Debian packaging (control, rules, changelog)
+- [x] AppImage packaging (linuxdeploy + Qt plugin)
+- [x] Windows MSI packaging (WiX toolset)
+- [x] Docker packaging (X11 or VNC/noVNC)
+- [x] GitHub Actions CI (Ubuntu / Windows / macOS matrix)
+- [x] GitHub Actions release workflow (tag-driven, multi-artifact)
 - [x] Desktop entry file
+
+---
+
+## Known Notes / Caveats
+
+- **Packaging build system drift** — The Debian rules (`debian/rules` uses
+  `--buildsystem=meson`), the Arch `PKGBUILD`, and the release workflow still
+  reference the Meson/Ninja build from before the XMake migration, but a
+  `meson.build` is no longer present in the tree. Packaging scripts should be
+  migrated to XMake before they are used to build source packages.
+- **AI quality depends on the model/provider** — small local models (e.g.
+  0.5B) produce usable but terse commit messages; larger models and cloud
+  providers generally produce better summaries.
