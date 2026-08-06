@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,6 +9,16 @@ use tokio::io::AsyncWriteExt;
 use tracing::info;
 
 use crate::error::AiError;
+
+/// Downloads to `<dest>.part` and only renames it to `dest` once the stream is
+/// fully written and (optionally) verified. This keeps partial downloads
+/// invisible to consumers that check `Path::exists()` and prevents a failed
+/// or cancelled download from leaving a corrupt file in place of a good one.
+fn part_path(dest: &Path) -> PathBuf {
+    let mut name = dest.file_name().map(|s| s.to_os_string()).unwrap_or_default();
+    name.push(".part");
+    dest.with_file_name(name)
+}
 
 pub async fn download_file(
     url: &str,
@@ -31,13 +41,15 @@ pub async fn download_file(
     let total = resp.content_length().unwrap_or(0) as i64;
     let mut received: i64 = 0;
 
-    let mut file = tokio::fs::File::create(dest).await?;
+    let part = part_path(dest);
+    let mut file = tokio::fs::File::create(&part).await?;
 
     let mut hasher = Sha256::new();
     let mut stream = resp.bytes_stream();
 
     while let Some(chunk) = stream.next().await {
         if cancel.load(Ordering::Relaxed) {
+            let _ = tokio::fs::remove_file(&part).await;
             return Err(AiError::Cancelled);
         }
 
@@ -57,12 +69,14 @@ pub async fn download_file(
     let actual_hash = hex::encode(hasher.finalize());
     if let Some(expected) = expected_sha256 {
         if !actual_hash.eq_ignore_ascii_case(expected) {
-            let _ = tokio::fs::remove_file(dest).await;
+            let _ = tokio::fs::remove_file(&part).await;
             return Err(AiError::Other(format!(
                 "SHA-256 mismatch: expected {expected}, got {actual_hash}"
             )));
         }
     }
+
+    tokio::fs::rename(&part, dest).await?;
 
     info!("Downloaded {} -> {} (sha256: {})", url, dest.display(), actual_hash);
     Ok(actual_hash)

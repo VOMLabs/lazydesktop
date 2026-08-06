@@ -84,6 +84,7 @@ int ModelManagerBridge::downloadModel(const QString &url, const QString &destPat
         destUtf8.constData(),
         expectedSha256.isEmpty() ? nullptr : shaUtf8.constData(),
         &ModelManagerBridge::onDownloadProgress,
+        nullptr,
         this);
 }
 

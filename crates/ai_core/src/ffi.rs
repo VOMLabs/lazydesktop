@@ -6,10 +6,12 @@ use std::sync::Arc;
 
 use crate::commit_message::CommitContext;
 use crate::download;
+use crate::error::AiStatus;
 use crate::inference::run_inference_blocking;
 use crate::types::{DownloadHandle, ModelManager, ModelManagerInner};
 
 pub type ProgressCb = extern "C" fn(i32, i64, i64, *mut std::ffi::c_void);
+pub type DownloadFinishedCb = extern "C" fn(i32, i32, *const c_char, *mut std::ffi::c_void);
 pub type TokenCb = extern "C" fn(*const c_char, *mut std::ffi::c_void);
 pub type ErrorCb = extern "C" fn(*const c_char, *mut std::ffi::c_void);
 pub type FinishCb = extern "C" fn(*const c_char, *mut std::ffi::c_void);
@@ -67,6 +69,7 @@ pub extern "C" fn mm_download_model(
     dest_path: *const c_char,
     expected_sha256: *const c_char,
     progress_cb: Option<ProgressCb>,
+    finished_cb: Option<DownloadFinishedCb>,
     user_data: *mut std::ffi::c_void,
 ) -> i32 {
     if mm.is_null() {
@@ -109,44 +112,44 @@ pub extern "C" fn mm_download_model(
         ));
     }
 
-    if let Some(cb) = progress_cb {
+    let progress: Option<Box<dyn Fn(i64, i64) + Send>> = progress_cb.map(|cb| -> Box<dyn Fn(i64, i64) + Send> {
         let id = download_id;
         let ud_val = user_data as usize;
-        let progress: Box<dyn Fn(i64, i64) + Send> = Box::new(move |rcv, tot| {
+        Box::new(move |rcv, tot| {
             cb(id, rcv, tot, ud_val as *mut std::ffi::c_void);
-        });
-        mm.runtime.spawn(async move {
-            let result = download::download_file(
-                &url_clone,
-                &dest_path,
-                cancel_clone,
-                Some(progress),
-                expected.as_deref(),
-            )
-            .await;
+        })
+    });
+    let finished: Option<Box<dyn Fn(i32, &str) + Send>> = finished_cb.map(|cb| -> Box<dyn Fn(i32, &str) + Send> {
+        let id = download_id;
+        let ud_val = user_data as usize;
+        Box::new(move |status, message| {
+            let cmsg = CString::new(message).unwrap_or_default();
+            cb(id, status, cmsg.as_ptr(), ud_val as *mut std::ffi::c_void);
+        })
+    });
 
-            if let Err(ref e) = result {
+    mm.runtime.spawn(async move {
+        let result = download::download_file(
+            &url_clone,
+            &dest_path,
+            cancel_clone,
+            progress,
+            expected.as_deref(),
+        )
+        .await;
+
+        let (status, message) = match &result {
+            Ok(_) => (AiStatus::Ok.code(), String::new()),
+            Err(e) => {
                 tracing::error!("Download failed: {e}");
                 let _ = tokio::fs::remove_file(&dest_path).await;
+                (e.status().code(), e.to_string())
             }
-        });
-    } else {
-        mm.runtime.spawn(async move {
-            let result = download::download_file(
-                &url_clone,
-                &dest_path,
-                cancel_clone,
-                None::<Box<dyn Fn(i64, i64) + Send>>,
-                expected.as_deref(),
-            )
-            .await;
-
-            if let Err(ref e) = result {
-                tracing::error!("Download failed: {e}");
-                let _ = tokio::fs::remove_file(&dest_path).await;
-            }
-        });
-    }
+        };
+        if let Some(f) = finished {
+            f(status, &message);
+        }
+    });
 
     download_id
 }
