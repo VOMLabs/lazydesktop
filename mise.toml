@@ -1,7 +1,14 @@
 [tools]
-# Build system
+# Task runner
+just = "latest"
+
+# Build system (primary: xmake; meson/ninja used for packaging)
+xmake = "latest"
 ninja = "1.12"
 meson = "1.6"
+
+# Rust toolchain (builds the bundled ai_core crate)
+rust = "stable"
 
 # Compiler (C++23 support requires GCC 14+ or Clang 18+)
 gcc = "14"

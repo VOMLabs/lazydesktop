@@ -109,6 +109,33 @@ The binary runs directly from the build directory. No `make install` needed. The
 
 > **Note on Qt versions:** if both Qt 5 and Qt 6 are installed, xmake may pick Qt 5 from your `PATH`. Point it at Qt 6 before configuring, for example `PATH=/usr/lib/qt6/bin:$PATH xmake f -c -m debug`.
 
+## Run in Docker
+
+The Docker image builds the C++ UI and the bundled Rust `ai_core` crate, then
+ships only the runtime (no toolchain). The Qt window either connects to your
+host's X server or falls back to a browser-accessible VNC session.
+
+```bash
+docker compose build            # build the image
+
+# Linux host with an X server -> native window
+docker compose up -d
+
+# Any OS (macOS/Windows) or headless -> open http://localhost:6080 in a browser
+VNC_MODE=1 docker compose up -d
+```
+
+By default the container mounts:
+
+- `/tmp/.X11-unix` — host X socket for the native window
+- `lazydesktop-config` (named volume) — settings, projects, themes, models
+- `./repos` → `/workspace` — bind-mount your Git repositories here, e.g.
+  `REPO_DIR=~/code/myrepo docker compose up -d`
+
+Set `PUID`/`PGID` to your host UID/GID if the mounted config is owned by root.
+Or use the shortcuts: `just docker-build`, `just docker-up`, `just docker-shell`,
+`just docker-logs`.
+
 ## Installation
 
 ### Arch Linux
