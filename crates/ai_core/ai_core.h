@@ -18,6 +18,11 @@ typedef struct ModelManager ModelManager;
    received and total are in bytes. user_data is the opaque pointer passed to mm_download_model. */
 typedef void (*MM_ProgressCallback)(int32_t id, int64_t received, int64_t total, void *user_data);
 
+/* Download finished callback. id is the download ID returned by mm_download_model.
+   status is an AiStatus code (0 OK, 5 Cancelled, otherwise an error occurred).
+   error is a null-terminated UTF-8 message, or an empty string on success. */
+typedef void (*MM_DownloadFinishedCallback)(int32_t id, int32_t status, const char *error, void *user_data);
+
 /* Streaming token callback. token is a null-terminated UTF-8 string. */
 typedef void (*MM_TokenCallback)(const char *token, void *user_data);
 
@@ -43,12 +48,14 @@ void mm_destroy(ModelManager *mm);
 /* ─── Download ───────────────────────────────────────── */
 
 /* Start downloading a model. Returns a positive download ID on success,
-   or -1 on failure. progress_cb is optional (may be NULL).
+   or -1 on failure. progress_cb and finished_cb are optional (may be NULL).
+   finished_cb is invoked once with the final status and an error message.
    The caller must ensure user_data remains valid until the download completes
    or is cancelled. */
 int32_t mm_download_model(ModelManager *mm, const char *url, const char *dest_path,
                           const char *expected_sha256,
-                          MM_ProgressCallback progress_cb, void *user_data);
+                          MM_ProgressCallback progress_cb,
+                          MM_DownloadFinishedCallback finished_cb, void *user_data);
 
 /* Cancel an active download. */
 void mm_cancel_download(ModelManager *mm, int32_t download_id);
