@@ -1,0 +1,34 @@
+.git
+.github
+.gitignore
+.gitmodules
+
+# Agent/editor configs (not needed for the image build)
+.opencode
+.claude
+.gemini
+.agents
+.vscode
+.agents
+.mcp.json
+
+# Build artifacts
+build
+target
+.xmake
+compile_commands.json
+
+# Packaging output
+AppDir
+debian
+*.deb
+*.AppImage
+*.pkg.tar.zst
+*.msi
+
+# Node (opencode deps)
+node_modules
+**/node_modules
+
+# Local Docker bind-mount dir
+repos

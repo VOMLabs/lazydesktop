@@ -12,7 +12,7 @@ jobs:
     name: Linux (.deb + .AppImage)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install dependencies
         run: |
@@ -65,7 +65,7 @@ jobs:
           mv LazyDesktop-*-x86_64.AppImage lazydesktop-${VERSION}-x86_64.AppImage || true
 
       - name: Upload release artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lazydesktop-linux
           path: |
@@ -79,7 +79,7 @@ jobs:
       image: archlinux:latest
       options: --user root
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install build dependencies
         run: |
@@ -94,7 +94,7 @@ jobs:
           su builder -c "makepkg -s --noconfirm --cleanbuild"
 
       - name: Upload package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lazydesktop-arch
           path: '*.pkg.tar.zst'
@@ -106,7 +106,7 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Qt 6
         uses: jurplel/install-qt-action@v4
@@ -128,7 +128,7 @@ jobs:
           wix build install/windows/lazydesktop.wxs -out "lazydesktop-${VERSION}.msi" -d BuildDir="build" -d QtDir="$QT_ROOT" -d SourceDir="."
 
       - name: Upload MSI
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lazydesktop-windows
           path: '*.msi'
@@ -138,10 +138,10 @@ jobs:
     needs: [release-linux]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
 
       - name: Generate checksums
         run: |
@@ -149,7 +149,7 @@ jobs:
             xargs sha256sum > checksums.txt
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: LazyDesktop ${{ github.ref_name }}
           generate_release_notes: true

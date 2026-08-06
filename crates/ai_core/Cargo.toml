@@ -10,8 +10,8 @@ crate-type = ["staticlib"]
 llama-cpp-2 = "0.1"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread"] }
-reqwest = { version = "0.12", features = ["rustls-tls", "stream"], default-features = false }
-sha2 = "0.10"
+reqwest = { version = "0.13", features = ["rustls", "stream"], default-features = false }
+sha2 = "0.11"
 hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

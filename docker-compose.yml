@@ -1,0 +1,33 @@
+services:
+  lazydesktop:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lazydesktop:latest
+    container_name: lazydesktop
+    environment:
+      # Host X11 display (used when an X socket is mounted).
+      DISPLAY: ${DISPLAY:-:0}
+      # Re-map the app user to your host UID/GID so config is writable.
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      # Force browser/VNC mode on any OS: VNC_MODE=1
+      VNC_MODE: ${VNC_MODE:-0}
+      RESOLUTION: ${RESOLUTION:-1280x800x24}
+    volumes:
+      # Host X11 socket for native window (Linux).
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # Persistent settings, themes, projects, models.
+      - lazydesktop-config:/home/lazydesktop/.config/lazydesktop
+      # Your Git repositories (bind-mount a folder here).
+      - ${REPO_DIR:-./repos}:/workspace
+    ports:
+      # noVNC (browser UI) fallback.
+      - "6080:6080"
+    shm_size: "512mb"
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+volumes:
+  lazydesktop-config:
