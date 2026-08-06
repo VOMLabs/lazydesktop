@@ -1,6 +1,5 @@
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
@@ -11,33 +10,19 @@ use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::sampling::LlamaSampler;
 use tracing::info;
 
-pub fn run_inference(
-    model_path: String,
-    prompt: String,
-    n_gpu_layers: i32,
-    cancel: Arc<AtomicBool>,
-    on_token: Box<dyn Fn(&str) + Send>,
-    on_error: Box<dyn Fn(&str) + Send>,
-) {
-    std::thread::Builder::new()
-        .name("mm-inference".into())
-        .spawn(move || {
-            if let Err(e) = run_inference_inner(
-                &model_path, &prompt, n_gpu_layers, cancel, on_token,
-            ) {
-                on_error(&e);
-            }
-        })
-        .expect("Failed to spawn inference thread");
-}
-
-fn run_inference_inner(
+/// Runs inference synchronously on the calling thread, streaming generated
+/// tokens through `on_token`. Returns the full generated text.
+///
+/// Thread management is the caller's responsibility (see the FFI layer).
+/// `cancel` is polled between tokens; when set, generation stops early and the
+/// text produced so far is returned.
+pub fn run_inference_blocking(
     model_path: &str,
     prompt: &str,
     n_gpu_layers: i32,
-    cancel: Arc<AtomicBool>,
-    on_token: Box<dyn Fn(&str) + Send>,
-) -> Result<(), String> {
+    cancel: &AtomicBool,
+    on_token: &dyn Fn(&str),
+) -> Result<String, String> {
     info!("Loading model from {}", model_path);
 
     let backend = LlamaBackend::init().map_err(|e| format!("Backend init error: {e}"))?;
@@ -76,7 +61,7 @@ fn run_inference_inner(
     // Evaluate prompt in batches
     for i in (0..n_tokens).step_by(n_batch) {
         if cancel.load(Ordering::Relaxed) {
-            return Ok(());
+            return Ok(String::new());
         }
         let end = std::cmp::min(i + n_batch, n_tokens);
         let batch_tokens = &tokens[i..end];
@@ -86,24 +71,20 @@ fn run_inference_inner(
                 .add(tok, j as i32, &[0], j == batch_tokens.len() - 1)
                 .map_err(|e| format!("Batch add error: {e}"))?;
         }
-        ctx
-            .decode(&mut batch)
-            .map_err(|e| format!("Decode error: {e}"))?;
+        ctx.decode(&mut batch).map_err(|e| format!("Decode error: {e}"))?;
     }
 
     // Sampler chain
-    let mut smpl = LlamaSampler::chain_simple([
-        LlamaSampler::temp(0.1),
-        LlamaSampler::dist(67),
-    ]);
+    let mut smpl = LlamaSampler::chain_simple([LlamaSampler::temp(0.1), LlamaSampler::dist(67)]);
 
     let eos = model.token_eos();
-    let max_tokens = 512;
+    let max_tokens = 1024;
     let mut generated = 0;
+    let mut text = String::new();
 
     while generated < max_tokens {
         if cancel.load(Ordering::Relaxed) {
-            return Ok(());
+            break;
         }
 
         let token = smpl.sample(&ctx, -1);
@@ -116,20 +97,19 @@ fn run_inference_inner(
             .token_to_piece_bytes(token, 8, false, None)
             .map_err(|e| format!("Token decode error: {e}"))?;
 
-        let text = String::from_utf8_lossy(&bytes).to_string();
-        on_token(&text);
+        let piece = String::from_utf8_lossy(&bytes).to_string();
+        text.push_str(&piece);
+        on_token(&piece);
 
         // Feed the new token back
         let mut batch = LlamaBatch::new(1, 1);
         batch
             .add(token, 0, &[0], true)
             .map_err(|e| format!("Batch add error: {e}"))?;
-        ctx
-            .decode(&mut batch)
-            .map_err(|e| format!("Decode error: {e}"))?;
+        ctx.decode(&mut batch).map_err(|e| format!("Decode error: {e}"))?;
 
         generated += 1;
     }
 
-    Ok(())
+    Ok(text)
 }

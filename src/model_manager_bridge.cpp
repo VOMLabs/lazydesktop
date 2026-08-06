@@ -29,6 +29,15 @@ void ModelManagerBridge::onInferenceError(const char *error, void *ud)
     emit self->inferenceError(msg);
 }
 
+void ModelManagerBridge::onInferenceFinished(const char *message, void *ud)
+{
+    auto *self = static_cast<ModelManagerBridge *>(ud);
+    const QString msg = QString::fromUtf8(message);
+    if (!msg.isEmpty())
+        self->m_inferenceBuffer = msg;
+    emit self->inferenceFinished(msg);
+}
+
 bool ModelManagerBridge::onInferenceCancelled(void *ud)
 {
     auto *self = static_cast<ModelManagerBridge *>(ud);
@@ -156,6 +165,32 @@ void ModelManagerBridge::streamInference(const QString &modelPath,
         &ModelManagerBridge::onInferenceToken,
         &ModelManagerBridge::onInferenceError,
         &ModelManagerBridge::onInferenceCancelled,
+        &ModelManagerBridge::onInferenceFinished,
+        this);
+}
+
+void ModelManagerBridge::generateCommitMessage(const QString &modelPath,
+                                               const QJsonObject &context,
+                                               int nGpuLayers)
+{
+    if (!m_mm)
+        return;
+
+    m_inferenceCancelled = false;
+    m_inferenceBuffer.clear();
+
+    const QByteArray pathUtf8 = modelPath.toUtf8();
+    const QByteArray contextUtf8 = QJsonDocument(context).toJson(QJsonDocument::Compact);
+
+    mm_generate_commit_message(
+        m_mm,
+        pathUtf8.constData(),
+        contextUtf8.constData(),
+        nGpuLayers,
+        &ModelManagerBridge::onInferenceToken,
+        &ModelManagerBridge::onInferenceError,
+        &ModelManagerBridge::onInferenceCancelled,
+        &ModelManagerBridge::onInferenceFinished,
         this);
 }
 

@@ -28,9 +28,23 @@ Think GitHub Desktop, but native, fast, and built for the KDE ecosystem.
 ### AI Commit Messages
 
 - **Cloud providers** Click the AI button to generate a summary and description from the diffs of your checked files. Supports OpenRouter, OpenAI, Anthropic, and Google AI Studio. You need an API key in Settings > AI.
-- **Local llama.cpp** Built-in GGUF model support with one-click downloads from HuggingFace. GPU acceleration toggle and full model management included.
+- **Local inference** Built-in GGUF model support with one-click downloads from HuggingFace. GPU acceleration toggle and full model management included. Local inference runs inside a bundled Rust crate (`crates/ai_core`, powered by `llama-cpp-2`) exposed to the UI over a C FFI.
 - **Right-click** the AI button to switch providers.
 - **Model name** is configurable in Settings > AI. Fields are disabled while generating.
+
+### AI Editor Skills
+
+The repository ships Conventional Commits and branch-creation skills for AI coding tools, so an agent in the repo can write commit messages and branch names consistently with the project's conventions. The same two skills are installed in four locations:
+
+| Tool | Location | Skill |
+|------|----------|-------|
+| OpenCode | `.opencode/skills/` | `commit`, `create-branch` |
+| Claude Code | `.claude/skills/` | `commit`, `create-branch` |
+| Gemini CLI | `.gemini/skills/` | `commit`, `create-branch` |
+| Antigravity (IDE / CLI) | `.agents/skills/` | `commit`, `create-branch` |
+
+- **`commit`** detects whether the repo uses Git or Jujutsu, gathers the diff and recent history, and produces a Conventional Commits message (`type(scope): subject`), committing only after explicit approval.
+- **`create-branch`** creates branches using the `type/scope?/short-description` convention (for example `feat/vcs/jj-support`), for both Git and Jujutsu.
 
 ### Look and Feel
 
@@ -81,17 +95,19 @@ A categorized settings dialog covers:
 ## Build and Run (without installing)
 
 ```bash
-meson setup build
-ninja -C build
-./build/src/lazydesktop
+xmake f -m debug          # configure (release: xmake f -m release)
+xmake                     # builds C++ and the Rust ai_core crate
+./build/linux/x86_64/debug/lazydesktop
 ```
 
-The binary runs directly from the build directory. No `make install` needed. Your projects and settings survive rebuilds:
+The binary runs directly from the build directory. No `make install` needed. The `xmake` build automatically runs `cargo build` for the `ai_core` Rust crate and links it in. Your projects and settings survive rebuilds:
 
 - Projects: `~/.config/lazydesktop/projects.yaml`
 - Settings (API key, theme, model, system prompt): `~/.config/lazydesktop/lazydesktop.conf`
 - Custom themes: `~/.config/lazydesktop/themes/*.theme.yaml`
 - Local AI models: `~/.config/lazydesktop/models/`
+
+> **Note on Qt versions:** if both Qt 5 and Qt 6 are installed, xmake may pick Qt 5 from your `PATH`. Point it at Qt 6 before configuring, for example `PATH=/usr/lib/qt6/bin:$PATH xmake f -c -m debug`.
 
 ## Installation
 
@@ -113,8 +129,9 @@ See [Build and Run](#build-and-run-without-installing) above.
 
 ## Requirements
 
-- Qt 6 (Core, Gui, Widgets, Network)
+- Qt 6 (Core, Gui, Widgets, Network) — Qt 6.7+ recommended
+- xmake (build system)
+- Rust stable toolchain (builds the bundled `ai_core` crate automatically)
 - yaml-cpp
 - Git
 - A C++23 compiler (GCC 14+ or Clang 18+)
-- llama.cpp (bundled as a Meson subproject for local AI)

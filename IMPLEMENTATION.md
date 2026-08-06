@@ -30,8 +30,8 @@ LazyDesktop is a native Git GUI client for KDE Plasma, built as a lightweight al
 ├─────────────────────────────────────────────────────────┤
 │  Git Process Layer (QProcess)     │  AI Layer           │
 │  - status, diff, commit, push     │  - Cloud APIs       │
-│  - branch, checkout, log          │  - Local llama.cpp   │
-│  - clone, init                    │  - LlamaWorker thread│
+│  - branch, checkout, log          │  - Rust ai_core     │
+│  - clone, init                    │    crate (FFI)      │
 ├─────────────────────────────────────────────────────────┤
 │  Persistence Layer  │
 │  - QSettings (INI)   │
@@ -46,9 +46,9 @@ LazyDesktop is a native Git GUI client for KDE Plasma, built as a lightweight al
 |-----------|-----------|---------|
 | UI Framework | Qt 6 (Core, Gui, Widgets, Network) | All UI rendering, networking, process management |
 | Language | C++23 | Application logic |
-| Build System | Meson + Ninja | Compilation and linking |
+| Build System | XMake | Compilation and linking of the C++ app and the Rust crate |
 | Config Storage | yaml-cpp | YAML parsing for projects and themes |
-| Local AI | llama.cpp (subproject) | GGUF model inference for commit message generation |
+| Local AI | Rust `ai_core` crate (llama-cpp-2) | GGUF model inference for commit message generation, exposed over C FFI |
 
 ### Data Storage
 
@@ -67,13 +67,14 @@ All persistent data lives under `~/.config/lazydesktop/`:
 
 ### Source Files
 
-| File | Lines | Responsibility |
-|------|-------|----------------|
-| `src/mainwindow.h` | 241 | MainWindow class declaration, all UI member variables, process pointers, enums |
-| `src/mainwindow.cpp` | ~4131 | All application logic: UI setup, git operations, AI generation, settings, project management |
-| `src/diffviewer.h` / `.cpp` | ~200 | Custom `QPlainTextEdit` subclass with line numbers and diff syntax highlighting |
-| `src/llamaai.h` / `.cpp` | ~460 | llama.cpp integration: model loading, inference on a worker thread, GPU/CPU backend selection |
-| `src/main.cpp` | minimal | Entry point, creates `QApplication` and `MainWindow` |
+| File | Responsibility |
+|------|---------------|
+| `src/mainwindow.h` | MainWindow class declaration, all UI member variables, process pointers, enums |
+| `src/mainwindow.cpp` | All application logic: UI setup, git operations, AI generation, settings, project management |
+| `src/diffviewer.h` / `.cpp` | Custom `QPlainTextEdit` subclass with line numbers and diff syntax highlighting |
+| `src/model_manager_bridge.h` / `.cpp` | C++ wrapper around the `ai_core` C FFI: loading, streaming inference, commit-message generation |
+| `crates/ai_core/` | Rust crate: local GGUF inference (`inference.rs`), model download/discovery (`download.rs`, `discovery.rs`), Conventional Commits message generation (`commit_message.rs`), and the C ABI (`ffi.rs`, `ai_core.h`) |
+| `src/main.cpp` | Entry point, creates `QApplication` and `MainWindow` |
 
 
 ### Git Integration
@@ -133,20 +134,39 @@ Each provider has a different response format. `extractAiText()` normalizes the 
 - Anthropic: `content[0].text`
 - Google AI Studio: `candidates[0].content.parts[0].text`
 
-#### Local llama.cpp
+#### Local inference (`ai_core` Rust crate)
 
-The local AI path uses the bundled llama.cpp library:
+Local GGUF inference lives in the `crates/ai_core` Rust crate rather than in
+C++. The crate is built as a `staticlib` and linked into the app; the C++ side
+talks to it through a small C ABI declared in `crates/ai_core/ai_core.h`:
 
-1. `LlamaAI` manages a `LlamaWorker` running on a separate `QThread`
-2. `LlamaWorker::loadModel()` loads a GGUF model file via `llama_model_load_from_file()`
-3. Inference runs with `llama_decode()`, sampling tokens one at a time
-4. Each token is emitted via `thinking()` signal for real-time display
-5. The result is emitted via `finished()` signal
+1. `ModelManager` (C++) owns the FFI handle; `model_manager_bridge.cpp` wraps
+   the exported functions in Qt-friendly signals (`inferenceToken`,
+   `inferenceFinished`, `inferenceFailed`, `inferenceCancelled`).
+2. The crate loads a GGUF file via `llama_cpp_2` and runs inference on a
+   dedicated thread, with an `Arc<AtomicBool>` cancel flag. Worker threads
+   never touch the manager, so the handle can be safely torn down on exit.
+3. Tokens stream back through an `on_token` callback for real-time display;
+   the full text is accumulated and returned on `on_finish`.
+4. A single `inference_running` flag serializes inference requests.
 
-**Backend selection (GPU vs CPU):**
-- When GPU acceleration is disabled, `loadBestCpuBackend()` scans for `libggml-cpu-*.so` files and loads only the best-scoring CPU backend
-- When enabled, `ggml_backend_load_all()` loads all available backends including CUDA/Vulkan
-- The backend registry is a process-wide singleton initialized once via `std::call_once`
+**Commit message generation** (`commit_message.rs`): the UI collects VCS
+context — vcs kind, repo path, diff, changed files, staged files, current
+branch, recent commit messages — into a JSON `CommitContext`. The crate builds
+a prompt (supporting a `<diff>` placeholder), runs inference, and normalizes
+the raw output into a clean Conventional Commits message
+(`type(scope): subject`). This is the crate's only application-level feature;
+everything else in `ai_core` is generic model management.
+
+**FFI entry points:**
+- `mm_init` / `mm_destroy` — manager lifecycle
+- `mm_stream_inference` — generic completion (`prompt` argument)
+- `mm_generate_commit_message` — commit-message generation (`context_json` argument)
+- `mm_download_model` / `mm_cancel_download` — HuggingFace model downloads
+
+**Backend selection (GPU vs CPU):** `discovery.rs` scans for available
+`ggml` backends; the C++ UI toggles offloading via the `ai/gpu_acceleration`
+setting (mapped to `n_gpu_layers`, `99` when enabled).
 
 **Available models (built-in catalog):**
 - Qwen3-1.7B (Q8_0) — ~1.8 GB
@@ -161,11 +181,26 @@ Models are downloaded from HuggingFace with progress tracking and can be selecte
 
 #### AI Prompt System
 
-The prompt system uses a `<diff>` placeholder:
-- The raw prompt from settings contains `<diff>` where the actual git diff should go
-- `buildAiPrompt()` substitutes the diff text into the prompt
-- Two separate prompts exist: one for commit message summary, one for description
-- Fields are disabled and an overlay with "AI is thinking..." is shown during generation
+- The raw prompt from settings can contain a `<diff>` placeholder where the actual git diff goes; `buildAiPrompt()` substitutes the diff text for cloud providers, and `buildPrompt` in `commit_message.rs` does the same for local inference.
+- Two separate prompts exist: one for commit message summary, one for description (`ai/system_prompt`, `ai/description_system_prompt`).
+- For local inference the UI gathers VCS context (diff, files, staged set, branch, recent messages) into a `CommitContext` JSON object instead of a bare prompt.
+- Fields are disabled and an overlay with "AI is thinking..." is shown during generation.
+
+#### AI Editor Skills
+
+The repo ships skills that teach AI coding tools the project's commit and
+branch conventions, duplicated across four tool locations:
+
+- `.opencode/skills/` (OpenCode)
+- `.claude/skills/` (Claude Code)
+- `.gemini/skills/` (Gemini CLI)
+- `.agents/skills/` (Antigravity IDE/CLI)
+
+Each directory contains `commit` and `create-branch` skills. Both auto-detect
+Git vs Jujutsu (preferring `.jj` in a colocated repo). `commit` produces a
+Conventional Commits message (`type(scope): subject`) and commits only after
+approval; `create-branch` names branches `type/scope?/short-description`
+(e.g. `feat/vcs/jj-support`). See the `README.md` table for the full mapping.
 
 ### UI Architecture
 
@@ -235,7 +270,7 @@ Uses `QSettings` with INI format. All settings are stored in `~/.config/lazydesk
 | `ai/enabled` | `false` | AI features toggle |
 | `ai/provider` | `"OpenRouter"` | Selected AI provider |
 | `ai/api_key` | — | API key for cloud providers |
-| `ai/model` | `"deepseek/deepseek-v4-flash"` | Model name |
+| `ai/model` | `"gpt-4o-mini"` | Model name |
 | `ai/system_prompt` | (built-in) | Commit message generation prompt |
 | `ai/description_system_prompt` | (built-in) | Description generation prompt |
 | `ai/local_model_path` | — | Path to active GGUF model |
@@ -338,7 +373,7 @@ On startup, `checkGitAvailable()` checks if `git` is on PATH. If not:
 - [x] OpenAI provider (API key required)
 - [x] Anthropic provider (API key required)
 - [x] Google AI Studio provider (API key required)
-- [x] Local llama.cpp provider (no key needed)
+- [x] Local GGUF inference via the Rust `ai_core` crate (no key needed)
 - [x] Separate summary and description generation
 - [x] Configurable system prompts with `<diff>` placeholder
 - [x] Right-click provider switching on AI button
@@ -346,18 +381,19 @@ On startup, `checkGitAvailable()` checks if `git` is on PATH. If not:
 - [x] Fields disabled during generation
 - [x] Automatic summary/description parsing from AI response
 
-### Local AI (llama.cpp)
+### Local AI (`ai_core` Rust crate)
 
-- [x] GGUF model loading via llama.cpp C API
-- [x] Worker thread for non-blocking inference
-- [x] Token-by-token streaming (thinking signal)
-- [x] GPU acceleration toggle (CUDA/Vulkan backend loading)
-- [x] CPU-only backend selection (avoids loading GPU backends)
+- [x] GGUF model loading via `llama-cpp-2` (Rust crate)
+- [x] Dedicated inference thread (blocking core, non-blocking UI)
+- [x] Token-by-token streaming (inferenceToken signal)
+- [x] GPU acceleration toggle (n_gpu_layers offload)
+- [x] CPU/GPU backend discovery
 - [x] Built-in model catalog (7 models from HuggingFace)
 - [x] One-click model download with progress bar
 - [x] Model selection (set as active)
 - [x] Model deletion with disk space info
-- [x] Process-wide backend singleton initialization
+- [x] Dedicated commit-message FFI (`mm_generate_commit_message`) that normalizes output to Conventional Commits
+- [x] Single in-flight inference guard (`inference_running`)
 
 ### Project Management
 
@@ -421,7 +457,7 @@ On startup, `checkGitAvailable()` checks if `git` is on PATH. If not:
 
 ### Packaging
 
-- [x] Meson build system
+- [x] XMake build system (links the Rust `ai_core` crate via its C FFI)
 - [x] PKGBUILD for Arch Linux
 - [x] Debian packaging (control, rules, changelog)
 - [x] Desktop entry file

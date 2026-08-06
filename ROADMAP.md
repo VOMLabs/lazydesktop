@@ -1,5 +1,13 @@
 # Roadmap
 
+> **Current status (v0.1/0.2 era):** the build system has moved from Meson to
+> XMake, and local AI inference moved from a bundled llama.cpp subproject into
+> the Rust `ai_core` crate (`crates/ai_core`), exposed to the UI over a C FFI
+> with a dedicated Conventional Commits message API. The repo also ships
+> `commit` and `create-branch` skills for OpenCode, Claude Code, Gemini CLI,
+> and Antigravity in `.opencode/skills/`, `.claude/skills/`, `.gemini/skills/`,
+> and `.agents/skills/`.
+
 ## v0.2 — Current (GitHub Desktop Lite)
 
 - [x] Git status tree with per-file checkboxes
@@ -7,7 +15,7 @@
 - [x] Commit with summary + description
 - [x] Skip pre-commit hooks toggle (`--no-verify`)
 - [x] Co-author selection from git history
-- [x] AI commit message generation (OpenRouter, OpenAI, Anthropic, Gemini, Ollama, LMStudio, Google AI Studio)
+- [x] AI commit message generation (OpenRouter, OpenAI, Anthropic, Google AI Studio, and local GGUF via the Rust `ai_core` crate)
 - [x] Push / Fetch / Pull
 - [x] Branch management (switch, create, delete)
 - [x] Commit history with file-level drill-down
