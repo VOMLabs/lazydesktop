@@ -1,3 +1,4 @@
+#include "background_download.h"
 #include "diffviewer.h"
 #include "mainwindow.h"
 #include "model_manager_bridge.h"
@@ -10,13 +11,13 @@
 #include <QDirIterator>
 #include <QDir>
 #include <QFile>
-#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFont>
 #include <QFontDatabase>
 #include <QFormLayout>
 #include <QGraphicsDropShadowEffect>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QLabel>
@@ -54,6 +55,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QUrl>
+#include <QUrlQuery>
 #include <QVBoxLayout>
 #include <memory>
 
@@ -1734,13 +1736,128 @@ void MainWindow::onOpenGitHub()
     });
 }
 
-// --- Custom YAML themes ---
+// --- Theme system ---
 
 struct Theme {
     QString name;
     QMap<QString, QString> colors;
 };
 
+static Theme makeTheme(QString name,
+                       std::initializer_list<std::pair<const char *, const char *>> colors)
+{
+    Theme t;
+    t.name = std::move(name);
+    for (const auto &[k, v] : colors)
+        t.colors[QString::fromLatin1(k)] = QString::fromLatin1(v);
+    return t;
+}
+
+static QList<Theme> builtInThemes()
+{
+    return {
+        makeTheme("Dark", {
+            {"background", "#1e1e1e"}, {"foreground", "#d4d4d4"},
+            {"surface", "#252526"}, {"surface_alt", "#2d2d30"},
+            {"input_background", "#3c3c3c"}, {"input_foreground", "#d4d4d4"},
+            {"button_background", "#0e639c"}, {"button_hover", "#1177bb"},
+            {"button_foreground", "#ffffff"}, {"accent", "#0e639c"},
+            {"selection", "#0e639c"}, {"selection_foreground", "#ffffff"},
+            {"border", "#3e3e42"},
+            {"tooltip_background", "#3c3c3c"}, {"tooltip_foreground", "#d4d4d4"},
+        }),
+        makeTheme("Breeze", {
+            {"background", "#eff0f1"}, {"foreground", "#232629"},
+            {"surface", "#ffffff"}, {"surface_alt", "#e8ebec"},
+            {"input_background", "#ffffff"}, {"input_foreground", "#232629"},
+            {"button_background", "#eff0f1"}, {"button_hover", "#dde4e8"},
+            {"button_foreground", "#232629"}, {"accent", "#1d99f3"},
+            {"selection", "#1d99f3"}, {"selection_foreground", "#ffffff"},
+            {"border", "#b8bfc6"},
+            {"tooltip_background", "#f5f5f5"}, {"tooltip_foreground", "#232629"},
+        }),
+        makeTheme("Breeze Dark", {
+            {"background", "#232629"}, {"foreground", "#fcfcfc"},
+            {"surface", "#31363b"}, {"surface_alt", "#41464b"},
+            {"input_background", "#31363b"}, {"input_foreground", "#fcfcfc"},
+            {"button_background", "#3daee9"}, {"button_hover", "#63c0ef"},
+            {"button_foreground", "#232629"}, {"accent", "#3daee9"},
+            {"selection", "#3daee9"}, {"selection_foreground", "#232629"},
+            {"border", "#454a4f"},
+            {"tooltip_background", "#31363b"}, {"tooltip_foreground", "#fcfcfc"},
+        }),
+        makeTheme("Caelestia", {
+            {"background", "#151319"}, {"foreground", "#ece8f1"},
+            {"surface", "#201d26"}, {"surface_alt", "#2c2835"},
+            {"input_background", "#26222e"}, {"input_foreground", "#ece8f1"},
+            {"button_background", "#a78bfa"}, {"button_hover", "#b7a0fb"},
+            {"button_foreground", "#14121a"}, {"accent", "#a78bfa"},
+            {"selection", "#a78bfa"}, {"selection_foreground", "#14121a"},
+            {"border", "#332e3e"},
+            {"tooltip_background", "#2c2835"}, {"tooltip_foreground", "#ece8f1"},
+        }),
+        makeTheme("Catppuccin Mocha", {
+            {"background", "#1e1e2e"}, {"foreground", "#cdd6f4"},
+            {"surface", "#313244"}, {"surface_alt", "#45475a"},
+            {"input_background", "#313244"}, {"input_foreground", "#cdd6f4"},
+            {"button_background", "#89b4fa"}, {"button_hover", "#a5c4fb"},
+            {"button_foreground", "#11111b"}, {"accent", "#89b4fa"},
+            {"selection", "#89b4fa"}, {"selection_foreground", "#11111b"},
+            {"border", "#45475a"},
+            {"tooltip_background", "#313244"}, {"tooltip_foreground", "#cdd6f4"},
+        }),
+        makeTheme("Catppuccin Macchiato", {
+            {"background", "#24273a"}, {"foreground", "#cad3f5"},
+            {"surface", "#363a4f"}, {"surface_alt", "#494d64"},
+            {"input_background", "#363a4f"}, {"input_foreground", "#cad3f5"},
+            {"button_background", "#8aadf4"}, {"button_hover", "#a6c1f6"},
+            {"button_foreground", "#181926"}, {"accent", "#8aadf4"},
+            {"selection", "#8aadf4"}, {"selection_foreground", "#181926"},
+            {"border", "#494d64"},
+            {"tooltip_background", "#363a4f"}, {"tooltip_foreground", "#cad3f5"},
+        }),
+        makeTheme("Catppuccin Frappé", {
+            {"background", "#303446"}, {"foreground", "#c6d0f5"},
+            {"surface", "#414559"}, {"surface_alt", "#51576d"},
+            {"input_background", "#414559"}, {"input_foreground", "#c6d0f5"},
+            {"button_background", "#8caaee"}, {"button_hover", "#a7c0f2"},
+            {"button_foreground", "#292c3c"}, {"accent", "#8caaee"},
+            {"selection", "#8caaee"}, {"selection_foreground", "#292c3c"},
+            {"border", "#51576d"},
+            {"tooltip_background", "#414559"}, {"tooltip_foreground", "#c6d0f5"},
+        }),
+        makeTheme("Catppuccin Latte", {
+            {"background", "#eff1f5"}, {"foreground", "#4c4f69"},
+            {"surface", "#e6e9ef"}, {"surface_alt", "#ccd0da"},
+            {"input_background", "#e6e9ef"}, {"input_foreground", "#4c4f69"},
+            {"button_background", "#1e66f5"}, {"button_hover", "#4884f7"},
+            {"button_foreground", "#ffffff"}, {"accent", "#1e66f5"},
+            {"selection", "#1e66f5"}, {"selection_foreground", "#ffffff"},
+            {"border", "#ccd0da"},
+            {"tooltip_background", "#e6e9ef"}, {"tooltip_foreground", "#4c4f69"},
+        }),
+        makeTheme("Material Design", {
+            {"background", "#1c1b1f"}, {"foreground", "#e6e1e5"},
+            {"surface", "#2b2930"}, {"surface_alt", "#3b3940"},
+            {"input_background", "#36343b"}, {"input_foreground", "#e6e1e5"},
+            {"button_background", "#d0bcff"}, {"button_hover", "#dbcaf9"},
+            {"button_foreground", "#1a161f"}, {"accent", "#d0bcff"},
+            {"selection", "#d0bcff"}, {"selection_foreground", "#1a161f"},
+            {"border", "#3b3940"},
+            {"tooltip_background", "#3b3940"}, {"tooltip_foreground", "#e6e1e5"},
+        }),
+        makeTheme("Nord", {
+            {"background", "#2e3440"}, {"foreground", "#eceff4"},
+            {"surface", "#3b4252"}, {"surface_alt", "#434c5e"},
+            {"input_background", "#3b4252"}, {"input_foreground", "#eceff4"},
+            {"button_background", "#88c0d0"}, {"button_hover", "#9fd2df"},
+            {"button_foreground", "#2e3440"}, {"accent", "#88c0d0"},
+            {"selection", "#88c0d0"}, {"selection_foreground", "#2e3440"},
+            {"border", "#434c5e"},
+            {"tooltip_background", "#3b4252"}, {"tooltip_foreground", "#eceff4"},
+        }),
+    };
+}
 
 static QList<Theme> loadCustomThemes()
 {
@@ -1770,61 +1887,137 @@ static QList<Theme> loadCustomThemes()
     return list;
 }
 
-static QString generateStylesheet(const Theme &t)
+static QString buildThemeStylesheet(const Theme &t)
 {
     auto c = [&](const QString &k, const QString &fallback) -> QString {
         return t.colors.value(k, fallback);
     };
-    return QString(
-        "QWidget { background-color: %1; color: %2; }"
-        "QTreeWidget, QListWidget { background-color: %3; }"
-        "QPushButton { background-color: %4; color: %5; }"
-        "QLineEdit, QTextEdit { background-color: %6; color: %7; }"
-        "QToolTip { background-color: %8; color: %9; }")
-        .arg(c("background", "#1e1e1e"))
-        .arg(c("foreground", "#d4d4d4"))
-        .arg(c("widget_background", "#252526"))
-        .arg(c("button_background", "#0e639c"))
-        .arg(c("button_foreground", "white"))
-        .arg(c("input_background", "#3c3c3c"))
-        .arg(c("input_foreground", "#d4d4d4"))
-        .arg(c("tooltip_background", "#3c3c3c"))
-        .arg(c("tooltip_foreground", "#d4d4d4"));
+
+    QMap<QString, QString> v;
+    const QString bg = c("background", "#1e1e1e");
+    v["bg"]         = bg;
+    v["fg"]         = c("foreground", "#d4d4d4");
+    v["surface"]    = c("surface", c("widget_background", bg));
+    v["alt"]        = c("surface_alt", v["surface"]);
+    v["inputBg"]    = c("input_background", v["alt"]);
+    v["inputFg"]    = c("input_foreground", v["fg"]);
+    v["btnBg"]      = c("button_background", c("accent", "#0e639c"));
+    v["btnHover"]   = c("button_hover", v["btnBg"]);
+    v["btnFg"]      = c("button_foreground", "#ffffff");
+    v["accent"]     = c("accent", v["btnBg"]);
+    v["sel"]        = c("selection", v["accent"]);
+    v["selFg"]      = c("selection_foreground", v["fg"]);
+    v["border"]     = c("border", v["alt"]);
+    v["ttBg"]       = c("tooltip_background", v["inputBg"]);
+    v["ttFg"]       = c("tooltip_foreground", v["inputFg"]);
+
+    const QString tpl = QStringLiteral(
+        "QWidget { background-color: {{bg}}; color: {{fg}}; }"
+        "QMenuBar { background-color: {{bg}}; color: {{fg}}; }"
+        "QMenuBar::item { padding: 5px 10px; border-radius: 4px; }"
+        "QMenuBar::item:selected { background-color: {{alt}}; }"
+        "QMenu { background-color: {{surface}}; color: {{fg}};"
+        "  border: 1px solid {{border}}; border-radius: 8px; padding: 4px; }"
+        "QMenu::item { padding: 6px 24px; border-radius: 4px; }"
+        "QMenu::item:selected { background-color: {{sel}}; color: {{selFg}}; }"
+        "QMenu::separator { height: 1px; background-color: {{border}}; margin: 4px 8px; }"
+        "QToolBar { background-color: {{bg}}; border: none; spacing: 4px; padding: 4px; }"
+        "QToolButton { background-color: transparent; border: none; border-radius: 6px; padding: 5px; }"
+        "QToolButton:hover { background-color: {{alt}}; }"
+        "QToolButton:pressed { background-color: {{accent}}; }"
+        "QPushButton { background-color: {{btnBg}}; color: {{btnFg}};"
+        "  border: 1px solid transparent; border-radius: 6px; padding: 6px 14px; }"
+        "QPushButton:hover { background-color: {{btnHover}}; }"
+        "QPushButton:pressed { background-color: {{accent}}; }"
+        "QPushButton:disabled { background-color: {{alt}}; color: {{inputFg}}; }"
+        "QPushButton:focus { border-color: {{accent}}; }"
+        "QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox {"
+        "  background-color: {{inputBg}}; color: {{inputFg}};"
+        "  border: 1px solid {{border}}; border-radius: 6px; padding: 4px 8px;"
+        "  selection-background-color: {{sel}}; selection-color: {{selFg}}; }"
+        "QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus,"
+        "QSpinBox:focus, QDoubleSpinBox:focus { border-color: {{accent}}; }"
+        "QComboBox { background-color: {{inputBg}}; color: {{inputFg}};"
+        "  border: 1px solid {{border}}; border-radius: 6px; padding: 4px 10px; }"
+        "QComboBox:hover { border-color: {{accent}}; }"
+        "QComboBox QAbstractItemView { background-color: {{surface}}; color: {{fg}};"
+        "  border: 1px solid {{border}}; selection-background-color: {{sel}};"
+        "  selection-color: {{selFg}}; outline: none; }"
+        "QTreeWidget, QListWidget, QTableView, QListView { background-color: {{surface}};"
+        "  color: {{fg}}; border: 1px solid {{border}}; border-radius: 6px;"
+        "  outline: none; padding: 2px; }"
+        "QTreeWidget::item, QListWidget::item { border-radius: 4px; padding: 2px 4px; }"
+        "QTreeWidget::item:hover, QListWidget::item:hover { background-color: {{alt}}; }"
+        "QTreeWidget::item:selected, QListWidget::item:selected,"
+        "QTableView::item:selected, QListView::item:selected {"
+        "  background-color: {{sel}}; color: {{selFg}}; }"
+        "QTreeWidget::indicator, QListWidget::indicator { width: 16px; height: 16px;"
+        "  border: 1px solid {{border}}; border-radius: 4px; background-color: {{inputBg}}; }"
+        "QTreeWidget::indicator:checked, QListWidget::indicator:checked {"
+        "  background-color: {{accent}}; border-color: {{accent}}; }"
+        "QHeaderView::section { background-color: {{alt}}; color: {{fg}};"
+        "  border: none; border-right: 1px solid {{border}}; padding: 4px 8px; }"
+        "QTabWidget::pane { border: 1px solid {{border}}; border-radius: 6px; }"
+        "QTabBar::tab { background-color: transparent; color: {{fg}};"
+        "  border-radius: 6px 6px 0 0; padding: 8px 14px; margin-right: 2px; }"
+        "QTabBar::tab:hover { background-color: {{alt}}; }"
+        "QTabBar::tab:selected { background-color: {{surface}}; color: {{accent}}; }"
+        "QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }"
+        "QScrollBar::handle:vertical { background-color: {{alt}}; border-radius: 5px; min-height: 24px; }"
+        "QScrollBar::handle:vertical:hover { background-color: {{accent}}; }"
+        "QScrollBar:horizontal { background: transparent; height: 10px; margin: 0; }"
+        "QScrollBar::handle:horizontal { background-color: {{alt}}; border-radius: 5px; min-width: 24px; }"
+        "QScrollBar::handle:horizontal:hover { background-color: {{accent}}; }"
+        "QScrollBar::add-line, QScrollBar::sub-line,"
+        "QScrollBar::add-page, QScrollBar::sub-page { background: transparent; width: 0; height: 0; }"
+        "QSplitter::handle { background-color: {{border}}; }"
+        "QProgressBar { background-color: {{alt}}; border: 1px solid {{border}};"
+        "  border-radius: 5px; text-align: center; color: {{fg}}; }"
+        "QProgressBar::chunk { background-color: {{accent}}; border-radius: 4px; }"
+        "QGroupBox { border: 1px solid {{border}}; border-radius: 6px;"
+        "  margin-top: 12px; padding-top: 8px; }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; color: {{accent}}; }"
+        "QToolTip { background-color: {{ttBg}}; color: {{ttFg}};"
+        "  border: 1px solid {{border}}; border-radius: 4px; padding: 4px 8px; }"
+        "QDialog, QMessageBox { background-color: {{bg}}; }"
+        "QStatusBar { background-color: {{bg}}; color: {{fg}}; }");
+
+    QString out = tpl;
+    for (auto it = v.cbegin(); it != v.cend(); ++it)
+        out.replace("{{" + it.key() + "}}", it.value());
+    return out;
 }
 
-static Theme findTheme(const QString &name, const QList<Theme> &customs)
+static Theme findTheme(const QString &name, const QList<Theme> &themes)
 {
-    for (const auto &t : customs)
+    for (const auto &t : themes)
         if (t.name == name) return t;
     return {};
+}
+
+static void applyThemeByName(const QString &name)
+{
+    auto *app = qobject_cast<QApplication *>(qApp);
+    if (!app)
+        return;
+
+    if (name == "system") {
+        app->setStyleSheet({});
+        return;
+    }
+
+    const QString builtInName = (name == "dark") ? QStringLiteral("Dark") : name;
+    Theme t = findTheme(builtInName, builtInThemes());
+    if (t.name.isEmpty())
+        t = findTheme(name, loadCustomThemes());
+
+    app->setStyleSheet(t.name.isEmpty() ? QString() : buildThemeStylesheet(t));
 }
 
 void MainWindow::applySavedTheme()
 {
     auto settings = lazySettings();
-    auto *app = qobject_cast<QApplication *>(qApp);
-    if (!app)
-        return;
-
-    QString theme = settings->value("appearance/theme", "system").toString();
-
-    if (theme == "system") {
-        app->setStyleSheet({});
-    } else if (theme == "dark") {
-        app->setStyleSheet(
-            "QWidget { background-color: #1e1e1e; color: #d4d4d4; }"
-            "QTreeWidget, QListWidget { background-color: #252526; }"
-            "QPushButton { background-color: #0e639c; color: white; }"
-            "QLineEdit, QTextEdit { background-color: #3c3c3c; color: #d4d4d4; }"
-            "QToolTip { background-color: #3c3c3c; color: #d4d4d4; }");
-    } else {
-        // Custom theme by name
-        Theme t = findTheme(theme, loadCustomThemes());
-        if (t.name.isEmpty())
-            app->setStyleSheet({});
-        else
-            app->setStyleSheet(generateStylesheet(t));
-    }
+    applyThemeByName(settings->value("appearance/theme", "system").toString());
 }
 
 void MainWindow::onGenerateCommitMessage()
@@ -2187,6 +2380,19 @@ void MainWindow::onAddCoAuthors()
     m_descriptionInput->setPlainText(desc);
 }
 
+static QString providerKeyUrl(const QString &provider)
+{
+    if (provider == "OpenAI")
+        return QStringLiteral("https://platform.openai.com/api-keys");
+    if (provider == "Anthropic")
+        return QStringLiteral("https://console.anthropic.com/settings/keys");
+    if (provider == "Google AI Studio")
+        return QStringLiteral("https://aistudio.google.com/app/apikey");
+    if (provider == "OpenRouter")
+        return QStringLiteral("https://openrouter.ai/keys");
+    return {};
+}
+
 void MainWindow::onOpenSettings()
 {
     QDialog dialog(this);
@@ -2246,7 +2452,8 @@ void MainWindow::onOpenSettings()
 
     auto *themeCombo = new QComboBox();
     themeCombo->addItem("System Default");
-    themeCombo->addItem("Dark");
+    for (const auto &t : builtInThemes())
+        themeCombo->addItem(t.name);
 
     QList<Theme> customThemes = loadCustomThemes();
     if (!customThemes.isEmpty()) {
@@ -2256,12 +2463,10 @@ void MainWindow::onOpenSettings()
     }
 
     QString storedTheme = settings->value("appearance/theme", "system").toString();
-    if (storedTheme == "dark")
-        themeCombo->setCurrentIndex(1);
-    else if (storedTheme == "system")
+    if (storedTheme == "system") {
         themeCombo->setCurrentIndex(0);
-    else {
-        int ci = themeCombo->findText(storedTheme);
+    } else {
+        int ci = themeCombo->findText(storedTheme == "dark" ? QStringLiteral("Dark") : storedTheme);
         if (ci >= 0) themeCombo->setCurrentIndex(ci);
     }
     appearanceLayout->addRow("Theme:", themeCombo);
@@ -2298,180 +2503,6 @@ void MainWindow::onOpenSettings()
     aiLayout->setContentsMargins(12, 12, 12, 12);
     aiLayout->setSpacing(8);
 
-    // 1. Enable AI Features toggle
-    auto *aiEnableCheck = new QCheckBox("Enable AI Features");
-    aiEnableCheck->setChecked(settings->value("ai/enabled", false).toBool());
-    aiLayout->addWidget(aiEnableCheck);
-
-    // 2. Provider dropdown
-    auto *aiProviderLabel = new QLabel("Provider:");
-    auto *aiProviderCombo = new QComboBox();
-    aiProviderCombo->addItems({"OpenRouter", "OpenAI", "Anthropic",
-                               "Google AI Studio", "Local (internal llama.cpp)"});
-    QString currentProvider = settings->value("ai/provider", "OpenRouter").toString();
-    int providerIndex = aiProviderCombo->findText(currentProvider);
-    if (providerIndex >= 0)
-        aiProviderCombo->setCurrentIndex(providerIndex);
-    aiLayout->addWidget(aiProviderLabel);
-    aiLayout->addWidget(aiProviderCombo);
-
-    // 3. API Key field
-    auto *aiKeyLabel = new QLabel("API Key:");
-    auto *apiKeyInput = new QLineEdit();
-    apiKeyInput->setPlaceholderText("sk-...");
-    apiKeyInput->setEchoMode(QLineEdit::Password);
-    QString storedKey = settings->value("ai/api_key").toString();
-    if (!storedKey.isEmpty())
-        apiKeyInput->setText(storedKey);
-    aiLayout->addWidget(aiKeyLabel);
-    aiLayout->addWidget(apiKeyInput);
-
-    // 4. Model field (editable combo)
-    auto *aiModelLabel = new QLabel("Model:");
-    auto *aiModelCombo = new QComboBox();
-    aiModelCombo->setEditable(true);
-    aiModelCombo->setInsertPolicy(QComboBox::NoInsert);
-    aiModelCombo->setMinimumWidth(200);
-    QString savedModel = settings->value("ai/model").toString();
-    if (!savedModel.isEmpty())
-        aiModelCombo->setCurrentText(savedModel);
-    aiLayout->addWidget(aiModelLabel);
-    aiLayout->addWidget(aiModelCombo);
-
-    // Model fetching logic
-    auto doFetchModels = [this, aiProviderCombo, aiModelCombo, apiKeyInput]() {
-        QString provider = aiProviderCombo->currentText();
-        QString key = apiKeyInput->text().trimmed();
-
-        // Nothing to fetch for OpenRouter or Local
-        if (provider == "OpenRouter" || provider == "Local (internal llama.cpp)")
-            return;
-
-        if (key.isEmpty())
-            return;
-
-        aiModelCombo->clear();
-        aiModelCombo->setCurrentText(QString());
-        aiModelCombo->setPlaceholderText("Loading models...");
-
-        QUrl url;
-        QNetworkRequest req;
-        if (provider == "OpenAI") {
-            url = QUrl("https://api.openai.com/v1/models");
-            req.setRawHeader("Authorization", "Bearer " + key.toUtf8());
-        } else if (provider == "Anthropic") {
-            url = QUrl("https://api.anthropic.com/v1/models");
-            req.setRawHeader("x-api-key", key.toUtf8());
-            req.setRawHeader("anthropic-version", "2023-06-01");
-        } else if (provider == "Google AI Studio") {
-            url = QUrl("https://generativelanguage.googleapis.com/v1beta/models?key=" + key);
-        }
-
-        req.setUrl(url);
-        auto *reply = m_networkManager->get(req);
-        connect(reply, &QNetworkReply::finished, this, [reply, aiModelCombo, provider]() {
-            reply->deleteLater();
-            if (reply->error() != QNetworkReply::NoError) {
-                aiModelCombo->setPlaceholderText("Failed to load models");
-                return;
-            }
-            QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
-            QStringList modelNames;
-            if (provider == "OpenAI") {
-                QJsonArray data = doc.object()["data"].toArray();
-                for (const auto &entry : data)
-                    modelNames << entry.toObject()["id"].toString();
-            } else if (provider == "Anthropic") {
-                QJsonArray data = doc.object()["data"].toArray();
-                for (const auto &entry : data)
-                    modelNames << entry.toObject()["id"].toString();
-            } else if (provider == "Google AI Studio") {
-                QJsonArray models = doc.object()["models"].toArray();
-                for (const auto &entry : models) {
-                    QString name = entry.toObject()["name"].toString();
-                    name.remove(QRegularExpression("^models/"));
-                    modelNames << name;
-                }
-            }
-            modelNames.sort();
-            aiModelCombo->clear();
-            aiModelCombo->addItems(modelNames);
-            aiModelCombo->setPlaceholderText(QString());
-            if (modelNames.isEmpty())
-                aiModelCombo->setPlaceholderText("No models found");
-        });
-    };
-
-    // Handle provider changes
-    connect(aiProviderCombo, &QComboBox::currentTextChanged, this,
-            [aiKeyLabel, aiKeyInput = apiKeyInput, aiModelCombo, aiProviderCombo, doFetchModels]() {
-        QString provider = aiProviderCombo->currentText();
-        bool isLocal = provider == "Local (internal llama.cpp)";
-
-        aiKeyInput->setEnabled(!isLocal);
-        aiModelCombo->setEnabled(!isLocal);
-
-        if (isLocal) {
-            aiModelCombo->clear();
-            aiModelCombo->setCurrentText(QString());
-            aiModelCombo->setPlaceholderText("Configured separately below");
-        } else if (provider == "OpenRouter") {
-            aiModelCombo->clear();
-            aiModelCombo->setCurrentText("deepseek/deepseek-v4-flash");
-            aiModelCombo->setEnabled(true);
-        } else {
-            aiModelCombo->clear();
-            aiModelCombo->setCurrentText(QString());
-            aiModelCombo->setEnabled(true);
-            doFetchModels();
-        }
-    });
-
-    // Re-fetch models when API key focus is lost
-    connect(apiKeyInput, &QLineEdit::editingFinished, this, [doFetchModels, aiProviderCombo]() {
-        QString provider = aiProviderCombo->currentText();
-        if (provider != "OpenRouter" && provider != "Local (internal llama.cpp)")
-            doFetchModels();
-    });
-
-    // 5. Enable/disable all AI fields when toggle changes
-    connect(aiEnableCheck, &QCheckBox::toggled, this, [aiProviderLabel,
-            aiKeyLabel, apiKeyInput, aiModelLabel, aiModelCombo, aiEnableCheck,
-            aiProviderCombo2 = aiProviderCombo]() {
-        bool enabled = aiEnableCheck->isChecked();
-        bool isLocal = aiProviderCombo2->currentText() == "Local (internal llama.cpp)";
-        aiProviderLabel->setEnabled(enabled);
-        aiProviderCombo2->setEnabled(enabled);
-        aiKeyLabel->setEnabled(enabled);
-        apiKeyInput->setEnabled(enabled && !isLocal);
-        aiModelLabel->setEnabled(enabled);
-        aiModelCombo->setEnabled(enabled && !isLocal);
-    });
-
-    // Apply initial enabled state
-    if (!aiEnableCheck->isChecked()) {
-        aiProviderLabel->setEnabled(false);
-        aiProviderCombo->setEnabled(false);
-        aiKeyLabel->setEnabled(false);
-        apiKeyInput->setEnabled(false);
-        aiModelLabel->setEnabled(false);
-        aiModelCombo->setEnabled(false);
-    } else {
-        // Apply initial provider-based state
-        bool isLocal = aiProviderCombo->currentText() == "Local (internal llama.cpp)";
-        apiKeyInput->setEnabled(!isLocal);
-        if (isLocal) {
-            aiModelCombo->clear();
-            aiModelCombo->setPlaceholderText("Configured separately below");
-            aiModelCombo->setEnabled(false);
-        } else if (aiProviderCombo->currentText() == "OpenRouter") {
-            aiModelCombo->clear();
-            aiModelCombo->setCurrentText(
-                savedModel.isEmpty() ? "deepseek/deepseek-v4-flash" : savedModel);
-        }
-    }
-
-    // 6. System prompt
     static const QString kDefaultSystemPrompt = QStringLiteral(
         "You are a CLI tool that outputs exactly ONE single conventional commit message summarizing the entire diff.\n"
         "Do not write a separate commit for each file. Find the highest-level feature or fix and summarize it in one line. Do not explain.\n"
@@ -2494,41 +2525,301 @@ void MainWindow::onOpenSettings()
         "\n"
         "Commit:");
 
-    auto *aiPromptLabel = new QLabel("Commit message system prompt:");
-    auto *aiPromptHint = new QLabel("\"<diff>\" will be replaced with the actual git diff");
+    // 1. Master toggle
+    auto *aiEnableCheck = new QCheckBox("Enable AI Features");
+    aiEnableCheck->setChecked(settings->value("ai/enabled", false).toBool());
+    aiLayout->addWidget(aiEnableCheck);
+
+    auto *aiBody = new QWidget();
+    auto *aiBodyLayout = new QVBoxLayout(aiBody);
+    aiBodyLayout->setContentsMargins(0, 0, 0, 0);
+    aiBodyLayout->setSpacing(10);
+
+    // 2. Connection group
+    auto *connGroup = new QGroupBox("Connection");
+    auto *connLayout = new QFormLayout(connGroup);
+    connLayout->setContentsMargins(12, 16, 12, 12);
+    connLayout->setSpacing(8);
+
+    auto *aiProviderCombo = new QComboBox();
+    aiProviderCombo->addItems({"OpenRouter", "OpenAI", "Anthropic",
+                               "Google AI Studio", "Local (internal llama.cpp)"});
+    QString currentProvider = settings->value("ai/provider", "OpenRouter").toString();
+    int providerIndex = aiProviderCombo->findText(currentProvider);
+    if (providerIndex >= 0)
+        aiProviderCombo->setCurrentIndex(providerIndex);
+    connLayout->addRow("Provider:", aiProviderCombo);
+
+    auto *apiKeyInput = new QLineEdit();
+    apiKeyInput->setPlaceholderText("Paste your API key");
+    apiKeyInput->setEchoMode(QLineEdit::Password);
+    QString storedKey = settings->value("ai/api_key").toString();
+    if (!storedKey.isEmpty())
+        apiKeyInput->setText(storedKey);
+    auto *toggleKeyBtn = new QPushButton("Show");
+    toggleKeyBtn->setCheckable(true);
+    toggleKeyBtn->setFixedHeight(24);
+    auto *keyWidget = new QWidget();
+    auto *keyRow = new QHBoxLayout(keyWidget);
+    keyRow->setContentsMargins(0, 0, 0, 0);
+    keyRow->setSpacing(6);
+    keyRow->addWidget(apiKeyInput, 1);
+    keyRow->addWidget(toggleKeyBtn);
+    connLayout->addRow("API Key:", keyWidget);
+    connect(toggleKeyBtn, &QPushButton::toggled, apiKeyInput,
+            [apiKeyInput, toggleKeyBtn](bool checked) {
+        apiKeyInput->setEchoMode(checked ? QLineEdit::Normal : QLineEdit::Password);
+        toggleKeyBtn->setText(checked ? "Hide" : "Show");
+    });
+
+    auto *aiKeyLink = new QLabel();
+    aiKeyLink->setTextFormat(Qt::RichText);
+    aiKeyLink->setOpenExternalLinks(true);
+    connLayout->addRow(QString(), aiKeyLink);
+
+    auto *aiLocalHint = new QLabel("Runs fully offline — no API key or model field needed.");
+    aiLocalHint->setStyleSheet("color: gray; font-size: 11px;");
+    aiLocalHint->setWordWrap(true);
+    connLayout->addRow(QString(), aiLocalHint);
+    aiBodyLayout->addWidget(connGroup);
+
+    // 3. Model group
+    auto *modelGroup = new QGroupBox("Model");
+    auto *modelGroupLayout = new QVBoxLayout(modelGroup);
+    modelGroupLayout->setContentsMargins(12, 16, 12, 12);
+    modelGroupLayout->setSpacing(6);
+
+    auto *modelWidget = new QWidget();
+    auto *modelRow = new QHBoxLayout(modelWidget);
+    modelRow->setContentsMargins(0, 0, 0, 0);
+    modelRow->setSpacing(6);
+    auto *aiModelCombo = new QComboBox();
+    aiModelCombo->setEditable(true);
+    aiModelCombo->setInsertPolicy(QComboBox::NoInsert);
+    modelRow->addWidget(aiModelCombo, 1);
+    auto *aiRefreshBtn = new QPushButton("Refresh");
+    aiRefreshBtn->setFixedHeight(24);
+    modelRow->addWidget(aiRefreshBtn);
+    modelGroupLayout->addWidget(modelWidget);
+
+    auto *aiStatusLabel = new QLabel();
+    aiStatusLabel->setStyleSheet("color: gray; font-size: 11px;");
+    aiStatusLabel->setWordWrap(true);
+    modelGroupLayout->addWidget(aiStatusLabel);
+    aiBodyLayout->addWidget(modelGroup);
+
+    // 4. Prompts group
+    auto *promptGroup = new QGroupBox("Prompts");
+    auto *promptGroupLayout = new QVBoxLayout(promptGroup);
+    promptGroupLayout->setContentsMargins(12, 16, 12, 12);
+    promptGroupLayout->setSpacing(6);
+
+    auto *aiPromptHint = new QLabel("\"<diff>\" is replaced with the actual git diff.");
     aiPromptHint->setStyleSheet("color: gray; font-size: 11px;");
+    aiPromptHint->setWordWrap(true);
+    promptGroupLayout->addWidget(aiPromptHint);
+
+    auto *promptRow1 = new QHBoxLayout();
+    auto *aiPromptLabel = new QLabel("Commit message system prompt:");
+    promptRow1->addWidget(aiPromptLabel);
+    promptRow1->addStretch();
+    auto *aiPromptReset = new QPushButton("Reset");
+    aiPromptReset->setFixedHeight(22);
+    promptRow1->addWidget(aiPromptReset);
+    promptGroupLayout->addLayout(promptRow1);
+
     auto *aiPromptInput = new QPlainTextEdit();
     aiPromptInput->setPlainText(settings->value("ai/system_prompt", kDefaultSystemPrompt).toString());
-    aiPromptInput->setFixedHeight(120);
-    aiLayout->addWidget(aiPromptLabel);
-    aiLayout->addWidget(aiPromptInput, 1);
-    aiLayout->addWidget(aiPromptHint);
+    aiPromptInput->setFixedHeight(100);
+    promptGroupLayout->addWidget(aiPromptInput);
+    connect(aiPromptReset, &QPushButton::clicked, aiPromptInput,
+            [aiPromptInput]() { aiPromptInput->setPlainText(kDefaultSystemPrompt); });
 
+    auto *promptRow2 = new QHBoxLayout();
     auto *aiDescriptionPromptLabel = new QLabel("Commit description system prompt:");
-    auto *aiDescriptionPromptHint = new QLabel("\"<diff>\" will be replaced with the actual git diff");
-    aiDescriptionPromptHint->setStyleSheet("color: gray; font-size: 11px;");
+    promptRow2->addWidget(aiDescriptionPromptLabel);
+    promptRow2->addStretch();
+    auto *aiDescriptionPromptReset = new QPushButton("Reset");
+    aiDescriptionPromptReset->setFixedHeight(22);
+    promptRow2->addWidget(aiDescriptionPromptReset);
+    promptGroupLayout->addLayout(promptRow2);
+
     auto *aiDescriptionPromptInput = new QPlainTextEdit();
     aiDescriptionPromptInput->setPlainText(
         settings->value("ai/description_system_prompt", kDefaultDescriptionSystemPrompt).toString());
-    aiDescriptionPromptInput->setFixedHeight(120);
-    aiLayout->addWidget(aiDescriptionPromptLabel);
-    aiLayout->addWidget(aiDescriptionPromptInput, 1);
-    aiLayout->addWidget(aiDescriptionPromptHint);
-    aiLayout->addStretch();
+    aiDescriptionPromptInput->setFixedHeight(100);
+    promptGroupLayout->addWidget(aiDescriptionPromptInput);
+    connect(aiDescriptionPromptReset, &QPushButton::clicked, aiDescriptionPromptInput,
+            [aiDescriptionPromptInput]() { aiDescriptionPromptInput->setPlainText(kDefaultDescriptionSystemPrompt); });
+    aiBodyLayout->addWidget(promptGroup);
 
-    // 7. Local model configuration
-    auto *localSectionLabel = new QLabel("Local model configuration");
-    localSectionLabel->setStyleSheet("font-weight: bold; font-size: 13px;");
-    aiLayout->addWidget(localSectionLabel);
+    // 5. Model fetching (OpenAI / Anthropic / Google only)
+    auto fetchModels = [this, aiEnableCheck, aiProviderCombo, apiKeyInput, aiModelCombo,
+                        aiStatusLabel, aiRefreshBtn]() {
+        QString provider = aiProviderCombo->currentText();
+        if (!aiEnableCheck->isChecked() || provider == "OpenRouter"
+            || provider == "Local (internal llama.cpp)")
+            return;
 
-    auto *localSectionDesc = new QLabel("Download and manage GGUF models for use with the local llama.cpp provider.");
+        QString key = apiKeyInput->text().trimmed();
+        if (key.isEmpty()) {
+            aiStatusLabel->setText("Enter an API key to load available models.");
+            return;
+        }
+
+        aiStatusLabel->setText("Loading models…");
+        aiRefreshBtn->setEnabled(false);
+
+        QUrl url;
+        QNetworkRequest req;
+        if (provider == "OpenAI") {
+            url = QUrl("https://api.openai.com/v1/models");
+            req.setRawHeader("Authorization", "Bearer " + key.toUtf8());
+        } else if (provider == "Anthropic") {
+            url = QUrl("https://api.anthropic.com/v1/models");
+            req.setRawHeader("x-api-key", key.toUtf8());
+            req.setRawHeader("anthropic-version", "2023-06-01");
+        } else if (provider == "Google AI Studio") {
+            QUrl base("https://generativelanguage.googleapis.com/v1beta/models");
+            QUrlQuery query(base);
+            query.addQueryItem("key", key);
+            base.setQuery(query);
+            url = base;
+        }
+        req.setUrl(url);
+        req.setHeader(QNetworkRequest::UserAgentHeader, "LazyDesktop");
+
+        auto *reply = m_networkManager->get(req);
+        connect(reply, &QNetworkReply::finished, this,
+                [reply, aiModelCombo, aiStatusLabel, aiRefreshBtn, aiProviderCombo, provider]() {
+            reply->deleteLater();
+            aiRefreshBtn->setEnabled(true);
+            if (aiProviderCombo->currentText() != provider) {
+                aiStatusLabel->setText(QString());
+                return;
+            }
+            if (reply->error() != QNetworkReply::NoError) {
+                aiStatusLabel->setText(
+                    QStringLiteral("Failed to load models: %1").arg(reply->errorString()));
+                return;
+            }
+            QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+            QStringList modelNames;
+            if (provider == "OpenAI") {
+                QJsonArray data = doc.object()["data"].toArray();
+                for (const auto &entry : data)
+                    modelNames << entry.toObject()["id"].toString();
+            } else if (provider == "Anthropic") {
+                QJsonArray data = doc.object()["data"].toArray();
+                for (const auto &entry : data)
+                    modelNames << entry.toObject()["id"].toString();
+            } else if (provider == "Google AI Studio") {
+                QJsonArray models = doc.object()["models"].toArray();
+                for (const auto &entry : models) {
+                    QString name = entry.toObject()["name"].toString();
+                    name.remove(QRegularExpression("^models/"));
+                    modelNames << name;
+                }
+            }
+            modelNames.sort();
+            QString prev = aiModelCombo->currentText().trimmed();
+            aiModelCombo->clear();
+            aiModelCombo->addItems(modelNames);
+            if (!prev.isEmpty())
+                aiModelCombo->setCurrentText(prev);
+            aiStatusLabel->setText(modelNames.isEmpty()
+                                       ? "No models found."
+                                       : QStringLiteral("%1 models loaded.").arg(modelNames.size()));
+        });
+    };
+
+    // 6. Recompute enabled/hidden state from toggle + provider
+    auto applyState = [aiEnableCheck, aiBody, apiKeyInput, aiModelCombo, aiRefreshBtn,
+                       aiStatusLabel, aiKeyLink, aiLocalHint, keyWidget, modelWidget,
+                       aiProviderCombo]() {
+        bool enabled = aiEnableCheck->isChecked();
+        aiBody->setEnabled(enabled);
+
+        QString provider = aiProviderCombo->currentText();
+        bool isLocal = provider == "Local (internal llama.cpp)";
+
+        keyWidget->setVisible(enabled && !isLocal);
+        aiKeyLink->setVisible(enabled && !isLocal);
+        modelWidget->setVisible(enabled && !isLocal);
+        aiLocalHint->setVisible(enabled && isLocal);
+
+        QString url = providerKeyUrl(provider);
+        if (!url.isEmpty())
+            aiKeyLink->setText(QStringLiteral("<a href=\"%1\">Get an API key</a>").arg(url));
+
+        aiRefreshBtn->setVisible(enabled && !isLocal && provider != "OpenRouter");
+
+        if (isLocal) {
+            aiStatusLabel->setText("Select a downloaded model from the list below.");
+        } else if (provider == "OpenRouter") {
+            aiStatusLabel->setText("Type any model ID — no API key required.");
+        } else if (apiKeyInput->text().trimmed().isEmpty()) {
+            aiStatusLabel->setText("Enter an API key to load available models.");
+        } else {
+            aiStatusLabel->setText("Click Refresh to load available models.");
+        }
+    };
+
+    // 7. Provider change: apply state, set model defaults, fetch on demand
+    connect(aiProviderCombo, &QComboBox::currentTextChanged, this,
+            [this, aiProviderCombo, aiModelCombo, applyState, fetchModels]() {
+        QString provider = aiProviderCombo->currentText();
+        applyState();
+        if (provider == "Local (internal llama.cpp)") {
+            aiModelCombo->setCurrentText(QString());
+        } else if (provider == "OpenRouter") {
+            if (aiModelCombo->currentText().trimmed().isEmpty())
+                aiModelCombo->setCurrentText("deepseek/deepseek-v4-flash");
+        } else {
+            fetchModels();
+        }
+    });
+
+    // Re-fetch models when the API key is committed
+    connect(apiKeyInput, &QLineEdit::editingFinished, this,
+            [this, aiProviderCombo, apiKeyInput, applyState, fetchModels]() {
+        applyState();
+        QString provider = aiProviderCombo->currentText();
+        if (provider != "OpenRouter" && provider != "Local (internal llama.cpp)")
+            fetchModels();
+    });
+
+    connect(aiEnableCheck, &QCheckBox::toggled, this, [applyState]() { applyState(); });
+
+    // 8. Restore the saved model and apply the initial provider state
+    QString savedModel = settings->value("ai/model").toString();
+    if (!savedModel.isEmpty())
+        aiModelCombo->setCurrentText(savedModel);
+
+    if (aiProviderCombo->currentText() == "Local (internal llama.cpp)") {
+        aiModelCombo->setCurrentText(QString());
+    } else if (aiProviderCombo->currentText() == "OpenRouter") {
+        if (aiModelCombo->currentText().trimmed().isEmpty())
+            aiModelCombo->setCurrentText("deepseek/deepseek-v4-flash");
+    } else {
+        fetchModels();
+    }
+    applyState();
+
+    // 9. Local model configuration
+    auto *localGroup = new QGroupBox("Local Models");
+    auto *localGroupLayout = new QVBoxLayout(localGroup);
+    localGroupLayout->setContentsMargins(12, 16, 12, 12);
+    localGroupLayout->setSpacing(6);
+
+    auto *localSectionDesc = new QLabel("Download and manage GGUF models for use with the local llama.cpp provider. Downloads run in the background and keep going even after the app closes.");
     localSectionDesc->setWordWrap(true);
     localSectionDesc->setStyleSheet("color: gray; font-size: 11px;");
-    aiLayout->addWidget(localSectionDesc);
+    localGroupLayout->addWidget(localSectionDesc);
 
     auto *modelScroll = new QScrollArea();
     modelScroll->setWidgetResizable(true);
-    modelScroll->setMaximumHeight(180);
+    modelScroll->setMaximumHeight(170);
     modelScroll->setFrameStyle(QFrame::StyledPanel);
     modelScroll->setStyleSheet("QScrollArea { border: 1px solid palette(mid); border-radius: 4px; }");
     auto *modelListWidget = new QWidget();
@@ -2536,27 +2827,19 @@ void MainWindow::onOpenSettings()
     modelListLayout->setContentsMargins(4, 4, 4, 4);
     modelListLayout->setSpacing(4);
 
-    QMap<QString, int> downloadIds;
-    QMap<int, QProgressBar *> downloadBars;
-
-    // Single connection for all download progress updates
-    connect(
-        m_modelManager, &ModelManagerBridge::downloadProgress,
-        this, [&downloadBars](int id, qint64 recv, qint64 total) {
-            if (auto *bar = downloadBars.value(id)) {
-                if (total > 0) {
-                    int pct = static_cast<int>(100 * recv / total);
-                    bar->setValue(pct);
-                    bar->setFormat(QString("%1%").arg(pct));
-                } else {
-                    bar->setFormat(QString("%1 MB").arg(recv / 1048576));
-                }
-            }
-        });
-
+    QSet<QString> backgroundDownloads;
     std::function<void()> refreshModelList;
-    refreshModelList = [&downloadIds, &downloadBars, dlg = &dialog, modelListWidget,
+
+    // Poll while any background download is in flight so progress bars update
+    // and finished models switch to "Select".
+    QTimer pollTimer;
+    pollTimer.setInterval(1500);
+    connect(&pollTimer, &QTimer::timeout, &dialog, [&refreshModelList]() { refreshModelList(); });
+
+    refreshModelList = [&backgroundDownloads, &pollTimer, dlg = &dialog, modelListWidget,
                         modelListLayout, settings = settings.get(), this, &refreshModelList]() {
+        backgroundDownloads.clear();
+
         QLayoutItem *child;
         while ((child = modelListLayout->takeAt(0)) != nullptr) {
             if (child->widget())
@@ -2576,6 +2859,48 @@ void MainWindow::onOpenSettings()
             bool downloaded = obj["downloaded"].toBool();
             bool isActive = !activePath.isEmpty() && path == activePath;
 
+            // Reconcile the background-download sidecar, if any.
+            bool isDownloading = false;
+            bool showError = false;
+            QString errorMsg;
+            int percent = 0;
+            qint64 received = 0;
+            qint64 total = 0;
+
+            const QString statusPath = bgStatusPath(path);
+            if (QFile::exists(statusPath)) {
+                QFile statusFile(statusPath);
+                QJsonObject st;
+                if (statusFile.open(QIODevice::ReadOnly)) {
+                    st = QJsonDocument::fromJson(statusFile.readAll()).object();
+                    statusFile.close();
+                }
+                const QString status = st["status"].toString();
+                const qint64 pid = st["pid"].toVariant().toLongLong();
+                if (status == "downloading" && bgProcessAlive(pid)) {
+                    isDownloading = true;
+                    backgroundDownloads.insert(url);
+                    received = st["received"].toVariant().toLongLong();
+                    total = st["total"].toVariant().toLongLong();
+                    percent = st["percent"].toInt();
+                } else if (status == "downloading") {
+                    // Worker died: clean up partial artifacts and reoffer Download.
+                    QFile::remove(statusPath);
+                    QFile::remove(bgCancelPath(path));
+                    QFile::remove(bgPartialPath(path));
+                } else if (status == "done") {
+                    QFile::remove(statusPath);
+                } else if (status == "cancelled") {
+                    QFile::remove(statusPath);
+                } else if (status == "error") {
+                    showError = true;
+                    errorMsg = st["error"].toString();
+                    QFile::remove(statusPath);
+                    QFile::remove(bgCancelPath(path));
+                    QFile::remove(bgPartialPath(path));
+                }
+            }
+
             auto *row = new QWidget();
             auto *rowLayout = new QHBoxLayout(row);
             rowLayout->setContentsMargins(4, 2, 4, 2);
@@ -2592,64 +2917,30 @@ void MainWindow::onOpenSettings()
 
             rowLayout->addStretch();
 
-            if (!downloaded) {
-                auto *dlBtn = new QPushButton("Download");
-                dlBtn->setFixedHeight(24);
-                rowLayout->addWidget(dlBtn);
-
+            if (isDownloading) {
                 auto *progBar = new QProgressBar();
                 progBar->setMaximumWidth(140);
                 progBar->setFixedHeight(18);
                 progBar->setMaximum(100);
-                progBar->setValue(0);
-                progBar->setFormat(QString());
-                progBar->setVisible(false);
+                progBar->setValue(percent);
+                progBar->setFormat(total > 0 ? QString("%1%").arg(percent)
+                                             : QString("%1 MB").arg(received / 1048576));
                 rowLayout->addWidget(progBar);
 
-                auto *cancelBtn = new QPushButton("✕");
-                cancelBtn->setFixedSize(24, 24);
-                cancelBtn->setToolTip("Cancel download");
-                cancelBtn->setVisible(false);
-                cancelBtn->setStyleSheet("color: red;");
-                rowLayout->addWidget(cancelBtn);
-
-                connect(dlBtn, &QPushButton::clicked, this,
-                        [=, this, &downloadIds, &downloadBars, &refreshModelList]() {
-                    dlBtn->setVisible(false);
-                    progBar->setVisible(true);
-                    cancelBtn->setVisible(true);
-                    progBar->setFormat("0%");
-
-                    QDir().mkpath(QFileInfo(path).absolutePath());
-                    int dlId = m_modelManager ? m_modelManager->downloadModel(url, path) : -1;
-                    if (dlId >= 0) {
-                        downloadIds[url] = dlId;
-                        downloadBars[dlId] = progBar;
-                    }
-
-                    connect(cancelBtn, &QPushButton::clicked, this,
-                            [=, this, &downloadIds, &downloadBars, &refreshModelList]() {
-                        if (downloadIds.contains(url)) {
-                            int id = downloadIds[url];
-                            if (m_modelManager)
-                                m_modelManager->cancelDownload(id);
-                            downloadIds.remove(url);
-                            downloadBars.remove(id);
-                            refreshModelList();
-                        }
-                    });
-
-                    // Periodic refresh to detect download completion
-                    QTimer::singleShot(3000, this, [=, &refreshModelList]() {
-                        refreshModelList();
-                    });
+                auto *stopBtn = new QPushButton("Stop");
+                stopBtn->setFixedHeight(24);
+                rowLayout->addWidget(stopBtn);
+                connect(stopBtn, &QPushButton::clicked, this, [path]() {
+                    QFile cancelFile(bgCancelPath(path));
+                    if (cancelFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
+                        cancelFile.write("1");
                 });
-            } else {
+            } else if (downloaded) {
                 if (!isActive) {
                     auto *selBtn = new QPushButton("Select");
                     selBtn->setFixedHeight(24);
                     rowLayout->addWidget(selBtn);
-                    connect(selBtn, &QPushButton::clicked, this, [=, this]() {
+                    connect(selBtn, &QPushButton::clicked, this, [=, this, &refreshModelList]() {
                         settings->setValue("ai/local_model_path", path);
                         settings->sync();
                         refreshModelList();
@@ -2666,7 +2957,7 @@ void MainWindow::onOpenSettings()
                 delBtn->setFixedHeight(24);
                 delBtn->setStyleSheet("color: red;");
                 rowLayout->addWidget(delBtn);
-                connect(delBtn, &QPushButton::clicked, this, [=, this]() {
+                connect(delBtn, &QPushButton::clicked, this, [=, this, &refreshModelList]() {
                     auto answer = QMessageBox::question(
                         dlg,
                         "Delete Model",
@@ -2684,23 +2975,58 @@ void MainWindow::onOpenSettings()
                         refreshModelList();
                     }
                 });
+            } else {
+                auto *dlBtn = new QPushButton("Download");
+                dlBtn->setFixedHeight(24);
+                rowLayout->addWidget(dlBtn);
+                connect(dlBtn, &QPushButton::clicked, this, [=, this, &refreshModelList]() {
+                    QDir().mkpath(QFileInfo(path).absolutePath());
+                    if (!spawnBackgroundDownload(url, path, modelsDirPath(), settingsFilePath())) {
+                        QMessageBox::warning(dlg, "Download",
+                                             QString("Failed to start the background download for \"%1\".")
+                                                 .arg(name));
+                        return;
+                    }
+                    refreshModelList();
+                });
             }
 
             modelListLayout->addWidget(row);
+
+            if (showError) {
+                QMessageBox::warning(dlg, "Download Failed",
+                                     QString("Could not download \"%1\".\n\n%2")
+                                         .arg(name, errorMsg));
+            }
         }
 
         modelListLayout->addStretch();
+
+        if (backgroundDownloads.isEmpty())
+            pollTimer.stop();
+        else if (!pollTimer.isActive())
+            pollTimer.start();
     };
 
     refreshModelList();
 
     modelScroll->setWidget(modelListWidget);
-    aiLayout->addWidget(modelScroll);
+    localGroupLayout->addWidget(modelScroll);
 
     auto *gpuAccelCheck = new QCheckBox("Enable GPU acceleration");
     gpuAccelCheck->setChecked(settings->value("ai/gpu_acceleration", true).toBool());
     gpuAccelCheck->setToolTip("Offload model layers to GPU for faster inference. Disable if you encounter crashes or have limited VRAM.");
-    aiLayout->addWidget(gpuAccelCheck);
+    localGroupLayout->addWidget(gpuAccelCheck);
+    aiBodyLayout->addWidget(localGroup);
+
+    // Keep the dialog compact: AI page scrolls internally
+    auto *aiScroll = new QScrollArea();
+    aiScroll->setWidgetResizable(true);
+    aiScroll->setFrameShape(QFrame::NoFrame);
+    aiScroll->setMinimumHeight(420);
+    aiScroll->setMaximumHeight(560);
+    aiScroll->setWidget(aiBody);
+    aiLayout->addWidget(aiScroll);
 
     // Save on accept
     connect(&dialog, &QDialog::accepted, this, [settings = settings.get(), apiKeyInput, themeCombo,
@@ -2724,27 +3050,14 @@ void MainWindow::onOpenSettings()
 
         auto *app = qobject_cast<QApplication *>(qApp);
         QString themeText = themeCombo->currentText();
-        if (themeText == "System Default") {
+        if (themeText == "System Default")
             settings->setValue("appearance/theme", "system");
-            if (app) app->setStyleSheet({});
-        } else if (themeText == "Dark") {
+        else if (themeText == "Dark")
             settings->setValue("appearance/theme", "dark");
-            if (app)
-                app->setStyleSheet("QWidget { background-color: #1e1e1e; color: #d4d4d4; }"
-                                   "QTreeWidget, QListWidget { background-color: #252526; }"
-                                   "QPushButton { background-color: #0e639c; color: white; }"
-                                   "QLineEdit, QTextEdit { background-color: #3c3c3c; color: #d4d4d4; }"
-                                   "QToolTip { background-color: #3c3c3c; color: #d4d4d4; }");
-        } else {
+        else
             settings->setValue("appearance/theme", themeText);
-            if (app) {
-                Theme t = findTheme(themeText, loadCustomThemes());
-                if (!t.name.isEmpty())
-                    app->setStyleSheet(generateStylesheet(t));
-                else
-                    app->setStyleSheet({});
-            }
-        }
+        if (app)
+            applyThemeByName(settings->value("appearance/theme").toString());
 
         settings->setValue("ai/system_prompt", aiPromptInput->toPlainText().trimmed());
         settings->setValue("ai/description_system_prompt", aiDescriptionPromptInput->toPlainText().trimmed());
@@ -2789,13 +3102,6 @@ void MainWindow::onOpenSettings()
     layout->addWidget(rightPanel, 1);
 
     categories->setCurrentRow(0);
-
-    // Cancel any active model downloads when dialog closes
-    connect(&dialog, &QDialog::finished, this, [&downloadIds, this]() {
-        for (auto it = downloadIds.constBegin(); it != downloadIds.constEnd(); ++it)
-            m_modelManager->cancelDownload(it.value());
-        downloadIds.clear();
-    });
 
     dialog.exec();
 }
