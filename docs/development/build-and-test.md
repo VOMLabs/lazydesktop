@@ -50,7 +50,7 @@ GitHub Actions runs on push/PR to `main` (`.github/workflows/ci.yml`):
 - **Matrix**: `ubuntu-24.04`, `windows-2022`, `macos-14`
 - **Steps**: checkout → Rust toolchain → xmake → Qt 6.7 (per OS) → yaml-cpp →
   `xmake f -m debug` → `xmake` → `cargo test --workspace` → pre-commit hooks
-  (Linux) → offscreen smoke test (Linux/macOS)
+  on the changed files (Linux) → offscreen smoke test (Linux/macOS)
 - Debug binaries are uploaded as artifacts on pushes to `main` (7-day
   retention).
 

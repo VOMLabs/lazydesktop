@@ -7,7 +7,11 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
-llama-cpp-2 = "0.1"
+# OpenMP is a default feature of llama-cpp-2, but there is no OpenMP
+# framework on macOS and it complicates the MSVC/Windows build too; llama.cpp
+# uses its own threading without it. `common` provides the helper APIs used
+# by the FFI bridge.
+llama-cpp-2 = { version = "0.1", default-features = false, features = ["common"] }
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 reqwest = { version = "0.13", features = ["rustls", "stream"], default-features = false }

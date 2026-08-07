@@ -34,7 +34,6 @@ target("lazydesktop")
         add_syslinks("pthread", "dl", "rt", "gomp")
     elseif is_plat("macosx") then
         add_syslinks("pthread")
-        add_frameworks("OpenMP")
     elseif is_plat("windows") then
         add_cxflags("/EHsc")
     end
