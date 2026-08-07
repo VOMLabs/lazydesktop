@@ -75,7 +75,7 @@ jobs:
       # system copy, so no vcpkg step is needed here.
 
       - name: Configure (debug)
-        run: xmake f -m debug
+        run: xmake f -m debug -y
 
       - name: Build
         run: xmake
