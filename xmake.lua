@@ -5,7 +5,11 @@ set_project("lazydesktop")
 set_version("0.1.0")
 set_allowedplats("linux", "windows", "macosx")
 
-add_requires("yaml-cpp", {system = true})
+-- Let xmake use the system yaml-cpp when available (apt/brew/pacman);
+-- otherwise it fetches and builds yaml-cpp from the xmake package repo.
+-- This replaces the previous `{system = true}` which could not discover
+-- yaml-cpp installed via vcpkg on Windows.
+add_requires("yaml-cpp")
 
 target("lazydesktop")
     set_kind("binary")
