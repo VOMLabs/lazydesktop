@@ -71,9 +71,12 @@ jobs:
 
       - name: Install yaml-cpp (Windows)
         if: runner.os == 'Windows'
-        env:
-          VCPKG_ROOT: ${{ env.VCPKG_INSTALLATION_ROOT }}
-        run: vcpkg install yaml-cpp:x64-windows
+        shell: pwsh
+        run: |
+          # Export VCPKG_ROOT for this job: the runner's machine-level
+          # variable is not visible to the workflow env context.
+          echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+          vcpkg install yaml-cpp:x64-windows
 
       - name: Configure (debug)
         run: xmake f -m debug
