@@ -177,7 +177,9 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.7'
-          arch: win64_msvc2022_64
+          # Qt 6.7 ships win64_msvc2019_64 only (MSVC2022 arch starts at Qt 6.8);
+          # it is ABI-compatible with the MSVC 2022 toolchain used by xmake.
+          arch: win64_msvc2019_64
 
       - name: Install yaml-cpp
         env:
@@ -217,6 +219,9 @@ jobs:
   create-release:
     name: Create GitHub Release
     needs: [release-linux, release-arch, release-windows]
+    # Always create a GitHub Release on tag push, even if one or more
+    # platform jobs fail, so a tag never ends up without a release.
+    if: always()
     runs-on: ubuntu-24.04
     permissions:
       contents: write

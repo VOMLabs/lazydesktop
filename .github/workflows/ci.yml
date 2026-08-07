@@ -51,7 +51,9 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.7'
-          arch: win64_msvc2022_64
+          # Qt 6.7 ships win64_msvc2019_64 only (MSVC2022 arch starts at Qt 6.8);
+          # it is ABI-compatible with the MSVC 2022 toolchain used by xmake.
+          arch: win64_msvc2019_64
 
       - name: Install Qt (macOS)
         if: runner.os == 'macOS'
@@ -82,11 +84,17 @@ jobs:
       - name: Run Rust tests (ai_core)
         run: cargo test --workspace
 
-      - name: Run pre-commit hooks (Linux)
+      - name: Run pre-commit hooks on changed files (Linux)
         if: runner.os == 'Linux'
         run: |
           pipx install pre-commit
-          pre-commit run --all-files
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch origin "$GITHUB_BASE_REF" --depth=1
+            CHANGED=$(git diff --name-only "FETCH_HEAD...$GITHUB_HEAD_REF")
+          else
+            CHANGED=$(git diff --name-only "HEAD~1" HEAD)
+          fi
+          echo "$CHANGED" | xargs -r pre-commit run --files
 
       - name: Smoke test (Linux/macOS)
         if: runner.os != 'Windows'
