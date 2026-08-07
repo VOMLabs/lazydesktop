@@ -51,6 +51,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           PKG="debroot"
           rm -rf "${PKG}"
+          mkdir -p "${PKG}/DEBIAN"
           install -Dm755 build/linux/x86_64/release/lazydesktop "${PKG}/usr/bin/lazydesktop"
           install -Dm644 data/lazydesktop.desktop "${PKG}/usr/share/applications/lazydesktop.desktop"
           install -Dm644 data/icons/hicolor/scalable/apps/lazydesktop.svg "${PKG}/usr/share/icons/hicolor/scalable/apps/lazydesktop.svg"
@@ -100,6 +101,9 @@ jobs:
     container:
       image: archlinux:latest
       options: --user root
+    env:
+      # xmake refuses to run as root unless explicitly allowed.
+      XMAKE_ROOT: y
 
     steps:
       - uses: actions/checkout@v7
@@ -182,9 +186,12 @@ jobs:
           arch: win64_msvc2019_64
 
       - name: Install yaml-cpp
-        env:
-          VCPKG_ROOT: ${{ env.VCPKG_INSTALLATION_ROOT }}
-        run: vcpkg install yaml-cpp:x64-windows
+        shell: pwsh
+        run: |
+          # Export VCPKG_ROOT for this job: the runner's machine-level
+          # variable is not visible to the workflow env context.
+          echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+          vcpkg install yaml-cpp:x64-windows
 
       - name: Configure (release)
         run: xmake f -m release
