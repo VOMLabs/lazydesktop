@@ -575,8 +575,12 @@ compose file mounts the host X socket, a named volume for config
 - [x] AppImage packaging (linuxdeploy + Qt plugin)
 - [x] Windows MSI packaging (WiX toolset)
 - [x] Docker packaging (X11 or VNC/noVNC)
-- [x] GitHub Actions CI (Ubuntu / Windows / macOS matrix)
-- [x] GitHub Actions release workflow (tag-driven, multi-artifact)
+- [x] GitHub Actions CI (Ubuntu / Windows / macOS matrix + Rust tests +
+      pre-commit)
+- [x] GitHub Actions release workflow (tag-driven, multi-artifact, XMake
+      builds)
+- [x] CodeQL static analysis workflow
+- [x] Dependabot config (GitHub Actions + Cargo)
 - [x] Desktop entry file
 
 ---
@@ -584,10 +588,11 @@ compose file mounts the host X socket, a named volume for config
 ## Known Notes / Caveats
 
 - **Packaging build system drift** — The Debian rules (`debian/rules` uses
-  `--buildsystem=meson`), the Arch `PKGBUILD`, and the release workflow still
-  reference the Meson/Ninja build from before the XMake migration, but a
-  `meson.build` is no longer present in the tree. Packaging scripts should be
-  migrated to XMake before they are used to build source packages.
+  `--buildsystem=meson`) and the Arch `PKGBUILD` still reference the
+  Meson/Ninja build from before the XMake migration, and no `meson.build` is
+  present in the tree. The CI and release workflows build with XMake and do
+  not use these scripts; migrating them to XMake before they are used to
+  build source packages is tracked on the roadmap.
 - **AI quality depends on the model/provider** — small local models (e.g.
   0.5B) produce usable but terse commit messages; larger models and cloud
   providers generally produce better summaries.

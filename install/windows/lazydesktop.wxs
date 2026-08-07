@@ -29,7 +29,7 @@
         <Directory Id="INSTALLDIR" Name="LazyDesktop">
           <!-- Main application -->
           <Component Id="MainExecutable" Guid="*" Win64="yes">
-            <File Id="LazyDesktopExe" Name="lazydesktop.exe" Source="$(var.BuildDir)/src/lazydesktop.exe"
+            <File Id="LazyDesktopExe" Name="lazydesktop.exe" Source="$(var.BuildDir)/lazydesktop.exe"
                   KeyPath="yes" Vital="yes"/>
             <Environment Id="PATH" Name="PATH" Value="[INSTALLDIR]" Permanent="no" Part="last" Action="set" System="yes"/>
           </Component>
@@ -95,8 +95,6 @@
     </Feature>
 
     <!-- UI -->
-    <WixVariable Id="WixUILicenseRtf" Value="$(var.SourceDir)LICENSE.rtf" Overridable="yes"/>
-
     <UI Id="LazyDesktopUI">
       <UIRef Id="WixUI_InstallDir"/>
       <Publish Dialog="WelcomeDlg"

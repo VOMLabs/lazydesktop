@@ -10,8 +10,9 @@ publishes a GitHub Release.
   `v0.2.0`, …
 - The current application version is defined in `xmake.lua`
   (`set_version`), `PKGBUILD` (`pkgver`), and the crate manifests.
-- Pre-releases are published as **prereleases** on GitHub (the workflow sets
-  `prerelease: true`).
+- Pre-releases (tags containing a pre-release segment, e.g. `v0.2.0-beta.1`)
+  are published as **prereleases** on GitHub. Stable tags such as `v0.2.0`
+  are published as full releases.
 
 ## Creating a release
 
@@ -32,9 +33,9 @@ publishes a GitHub Release.
    | `release-arch` | `.pkg.tar.zst` (Arch container) |
    | `release-windows` | `.msi` (windows-2022, WiX) |
 
-5. When the Linux job finishes, `create-release` downloads all artifacts,
-   generates a `checksums.txt`, and publishes the GitHub Release with
-   auto-generated release notes.
+5. When all three platform jobs finish, `create-release` downloads all
+   artifacts, generates a `checksums.txt`, and publishes the GitHub Release
+   with auto-generated release notes.
 
 ## What gets published
 
@@ -55,9 +56,9 @@ just release          # all artifacts
 
 ## Notes / known issues
 
-- The release workflow still uses the **Meson** build system for packaging,
-  while development builds use XMake. A `meson.build` is not currently in the
-  tree; migrating packaging to XMake is tracked on the
-  [roadmap](../ROADMAP.md).
-- Releases are published as prereleases until the project reaches a stable
-  1.0.
+- The release workflow builds all artifacts with **XMake**. The local
+  packaging scripts (`debian/rules`, `PKGBUILD`) still use the legacy Meson
+  build, and no `meson.build` is currently in the tree; migrating them to
+  XMake is tracked on the [roadmap](../ROADMAP.md).
+- The Windows `.msi` currently packages the executable and base Qt plugins;
+  bundling the full Qt runtime via `windeployqt` is planned.

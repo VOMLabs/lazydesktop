@@ -11,36 +11,53 @@ jobs:
   release-linux:
     name: Linux (.deb + .AppImage)
     runs-on: ubuntu-24.04
+
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install dependencies
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7'
+          modules: qtnetwork
+
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            meson ninja-build \
-            qt6-base-dev \
-            libyaml-cpp-dev \
-            libgl-dev \
-            gcc-14 g++-14 \
-            libfuse2
+          sudo apt-get install -y libyaml-cpp-dev libgl1-mesa-dev file
 
       - name: Configure (release)
-        run: CC=gcc-14 CXX=g++-14 meson setup build --buildtype=release -Dwarning_level=0 -Db_strip=true -Db_lto=true
+        run: xmake f -m release
 
       - name: Build
-        run: ninja -C build
+        run: xmake
 
-      - name: Strip debug symbols
-        run: strip build/src/lazydesktop
+      - name: Strip binary
+        run: strip build/linux/x86_64/release/lazydesktop
 
       - name: Build .deb
         run: |
+          set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
-          mkdir -p debian/DEBIAN
-          cat > debian/DEBIAN/control <<EOF
+          PKG="debroot"
+          rm -rf "${PKG}"
+          install -Dm755 build/linux/x86_64/release/lazydesktop "${PKG}/usr/bin/lazydesktop"
+          install -Dm644 data/lazydesktop.desktop "${PKG}/usr/share/applications/lazydesktop.desktop"
+          install -Dm644 data/icons/hicolor/scalable/apps/lazydesktop.svg "${PKG}/usr/share/icons/hicolor/scalable/apps/lazydesktop.svg"
+          cat > "${PKG}/DEBIAN/control" <<EOF
           Package: lazydesktop
-          Version: $VERSION
+          Version: ${VERSION}
           Section: devel
           Priority: optional
           Architecture: amd64
@@ -49,22 +66,28 @@ jobs:
           Description: A KDE-native Git GUI alternative
            LazyDesktop is a fast, native Git client built with Qt 6 and C++23.
           EOF
-          install -Dm755 build/src/lazydesktop     debian/DEBIAN/usr/bin/lazydesktop
-          install -Dm644 data/lazydesktop.desktop   debian/DEBIAN/usr/share/applications/lazydesktop.desktop
-          dpkg-deb --build debian/DEBIAN lazydesktop_${VERSION}_amd64.deb
+          dpkg-deb --build --root-owner-group "${PKG}" "lazydesktop_${VERSION}_amd64.deb"
 
       - name: Build .AppImage
         run: |
+          set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
-          wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
-          wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
-          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
-
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage appimagetool-x86_64.AppImage
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          export PATH="$PWD:$PATH"
+          rm -rf AppDir
           mkdir -p AppDir
-          ./linuxdeploy-x86_64.AppImage --appdir AppDir --executable build/src/lazydesktop --plugin qt --output appimage
-          mv LazyDesktop-*-x86_64.AppImage lazydesktop-${VERSION}-x86_64.AppImage || true
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir \
+            --executable build/linux/x86_64/release/lazydesktop \
+            --desktop-file data/lazydesktop.desktop \
+            --icon-file data/icons/hicolor/scalable/apps/lazydesktop.svg \
+            --plugin qt --output appimage
+          mv LazyDesktop-*-x86_64.AppImage "lazydesktop-${VERSION}-x86_64.AppImage"
 
-      - name: Upload release artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: lazydesktop-linux
@@ -78,22 +101,53 @@ jobs:
     container:
       image: archlinux:latest
       options: --user root
+
     steps:
       - uses: actions/checkout@v7
 
       - name: Install build dependencies
         run: |
-          pacman -Sy --noconfirm \
-            base-devel meson ninja \
-            qt6-base yaml-cpp git
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm base-devel xmake rust qt6-base yaml-cpp git
 
-      - name: Build package
+      - name: Configure (release)
+        run: xmake f -m release
+
+      - name: Build
+        run: xmake
+
+      - name: Package (.pkg.tar.zst)
         run: |
-          useradd -m builder
-          chown -R builder:builder .
-          su builder -c "makepkg -s --noconfirm --cleanbuild"
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          PKG="pkg"
+          rm -rf "${PKG}"
+          install -Dm755 build/linux/x86_64/release/lazydesktop "${PKG}/usr/bin/lazydesktop"
+          install -Dm644 data/lazydesktop.desktop "${PKG}/usr/share/applications/lazydesktop.desktop"
+          install -Dm644 data/icons/hicolor/scalable/apps/lazydesktop.svg "${PKG}/usr/share/icons/hicolor/scalable/apps/lazydesktop.svg"
+          SIZE="$(du -sb "${PKG}" | cut -f1)"
+          cat > "${PKG}/.PKGINFO" <<EOF
+          pkgname = lazydesktop
+          pkgbase = lazydesktop
+          pkgver = ${VERSION}-1
+          pkgdesc = A KDE-native Git GUI alternative
+          url = https://lazydesktop.dev
+          builddate = $(date -u +%s)
+          packager = LazyDesktop Team <team@lazydesktop.dev>
+          size = ${SIZE}
+          arch = x86_64
+          license = MIT
+          depend = qt6-base
+          depend = yaml-cpp
+          depend = git
+          EOF
+          chown -R root:root "${PKG}"
+          bsdtar -cf "${PKG}/.MTREE" --format=mtree \
+            --options='!all,use-set,type,uid,gid,mode,time,size,md5,sha256,link' \
+            --exclude .MTREE --exclude .PKGINFO -C "${PKG}" .
+          bsdtar -cf "lazydesktop-${VERSION}-1-x86_64.pkg.tar.zst" --zstd -C "${PKG}" .
 
-      - name: Upload package
+      - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: lazydesktop-arch
@@ -105,27 +159,56 @@ jobs:
     defaults:
       run:
         shell: pwsh
+
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install Qt 6
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
+          version: '6.7'
           arch: win64_msvc2022_64
+          modules: qtnetwork
+
+      - name: Install yaml-cpp
+        env:
+          VCPKG_ROOT: ${{ env.VCPKG_INSTALLATION_ROOT }}
+        run: vcpkg install yaml-cpp:x64-windows
+
+      - name: Configure (release)
+        run: xmake f -m release
+
+      - name: Build
+        run: xmake
 
       - name: Install WiX Toolset
         run: dotnet tool install --global wix --version 4.0.5
 
-      - name: Configure and build
-        run: |
-          meson setup build --buildtype=release -Dwarning_level=0
-          ninja -C build
-
       - name: Build MSI
         run: |
           $VERSION = $env:GITHUB_REF_NAME -replace '^v', ''
-          $QT_ROOT = (Get-Item $env:Qt6_DIR).Parent.Parent.Parent.FullName
-          wix build install/windows/lazydesktop.wxs -out "lazydesktop-${VERSION}.msi" -d BuildDir="build" -d QtDir="$QT_ROOT" -d SourceDir="."
+          $QT_ROOT = $env:Qt6_DIR
+          if (-not $QT_ROOT) {
+            $qmake = Get-Command qmake6.exe, qmake.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+            $QT_ROOT = Split-Path (Split-Path $qmake.Source)
+          }
+          $BIN_DIR = "$env:GITHUB_WORKSPACE\build\windows\x64\release"
+          wix build install/windows/lazydesktop.wxs `
+            -out "lazydesktop-${VERSION}.msi" `
+            -d BuildDir="$BIN_DIR" `
+            -d QtDir="$QT_ROOT" `
+            -d SourceDir="$env:GITHUB_WORKSPACE"
 
       - name: Upload MSI
         uses: actions/upload-artifact@v7
@@ -135,18 +218,24 @@ jobs:
 
   create-release:
     name: Create GitHub Release
-    needs: [release-linux]
+    needs: [release-linux, release-arch, release-windows]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
     steps:
       - uses: actions/checkout@v7
 
       - name: Download all artifacts
         uses: actions/download-artifact@v8
+        with:
+          merge-multiple: true
 
       - name: Generate checksums
         run: |
-          find . -name '*.deb' -o -name '*.AppImage' -o -name '*.pkg.tar.zst' -o -name '*.msi' | \
-            xargs sha256sum > checksums.txt
+          find . -maxdepth 3 \( -name '*.deb' -o -name '*.AppImage' -o -name '*.pkg.tar.zst' -o -name '*.msi' \) -type f -print0 \
+            | xargs -0 sha256sum > checksums.txt
+          cat checksums.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v3
@@ -154,7 +243,7 @@ jobs:
           name: LazyDesktop ${{ github.ref_name }}
           generate_release_notes: true
           draft: false
-          prerelease: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             **/*.deb
             **/*.AppImage

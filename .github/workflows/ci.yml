@@ -5,21 +5,35 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-
-    runs-on: ${{ matrix.os }}
+        os:
+          - ubuntu-24.04
+          - windows-2022
+          - macos-14
 
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
 
       - name: Install xmake
         uses: xmake-io/github-action-setup-xmake@v1
@@ -30,14 +44,14 @@ jobs:
         if: runner.os == 'Linux'
         uses: jurplel/install-qt-action@v4
         with:
-          version: "6.7"
+          version: '6.7'
           modules: qtnetwork
 
       - name: Install Qt (Windows)
         if: runner.os == 'Windows'
         uses: jurplel/install-qt-action@v4
         with:
-          version: "6.7"
+          version: '6.7'
           arch: win64_msvc2022_64
           modules: qtnetwork
 
@@ -45,12 +59,12 @@ jobs:
         if: runner.os == 'macOS'
         uses: jurplel/install-qt-action@v4
         with:
-          version: "6.7"
+          version: '6.7'
           modules: qtnetwork
 
       - name: Install yaml-cpp (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libyaml-cpp-dev
+        run: sudo apt-get update && sudo apt-get install -y libyaml-cpp-dev libgl1-mesa-dev
 
       - name: Install yaml-cpp (macOS)
         if: runner.os == 'macOS'
@@ -58,14 +72,39 @@ jobs:
 
       - name: Install yaml-cpp (Windows)
         if: runner.os == 'Windows'
-        run: vcpkg install yaml-cpp
+        env:
+          VCPKG_ROOT: ${{ env.VCPKG_INSTALLATION_ROOT }}
+        run: vcpkg install yaml-cpp:x64-windows
 
-      - name: Configure
+      - name: Configure (debug)
         run: xmake f -m debug
 
       - name: Build
         run: xmake
 
-      - name: Quick smoke test (Linux/macOS)
+      - name: Run Rust tests (ai_core)
+        run: cargo test --workspace
+
+      - name: Run pre-commit hooks (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          pipx install pre-commit
+          pre-commit run --all-files
+
+      - name: Smoke test (Linux/macOS)
         if: runner.os != 'Windows'
-        run: QT_QPA_PLATFORM=offscreen timeout 3 xmake run 2>&1 || true
+        run: |
+          QT_QPA_PLATFORM=offscreen xmake run &
+          APP_PID=$!
+          sleep 5
+          kill "$APP_PID" 2>/dev/null || true
+          wait "$APP_PID" 2>/dev/null || true
+
+      - name: Upload binary artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: lazydesktop-${{ matrix.os }}
+          path: build/*/*/debug/lazydesktop*
+          if-no-files-found: error
+          retention-days: 7
