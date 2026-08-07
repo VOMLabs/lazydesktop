@@ -47,13 +47,16 @@ cargo test --manifest-path crates/ai_core/Cargo.toml
 
 GitHub Actions runs on push/PR to `main` (`.github/workflows/ci.yml`):
 
-- **Matrix**: `ubuntu-latest`, `windows-latest`, `macos-latest`
+- **Matrix**: `ubuntu-24.04`, `windows-2022`, `macos-14`
 - **Steps**: checkout → Rust toolchain → xmake → Qt 6.7 (per OS) → yaml-cpp →
-  `xmake f -m debug` → `xmake` → offscreen smoke test (Linux/macOS)
+  `xmake f -m debug` → `xmake` → `cargo test --workspace` → pre-commit hooks
+  (Linux) → offscreen smoke test (Linux/macOS)
+- Debug binaries are uploaded as artifacts on pushes to `main` (7-day
+  retention).
 
-> **Note:** the CI build exercises the XMake path. The release workflow
-> (`.github/workflows/release.yml`) still uses Meson for packaging; see
-> [packaging](packaging.md).
+A separate workflow (`.github/workflows/codeql.yml`) runs GitHub CodeQL
+static analysis on the C++ sources, and Dependabot
+(`.github/dependabot.yml`) keeps Actions and Rust dependencies up to date.
 
 ## Toolchain
 

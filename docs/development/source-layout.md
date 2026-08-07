@@ -41,9 +41,12 @@ A quick tour of where everything lives in the repository.
 ├── justfile                    # Task runner recipes
 ├── mise.toml                   # Toolchain versions (mise)
 ├── Cargo.toml                  # Rust workspace
-├── .github/workflows/
-│   ├── ci.yml                  # 3-OS CI matrix
-│   └── release.yml             # Tag-driven release artifacts
+├── .github/
+│   ├── dependabot.yml             # Dependabot config (Actions + Cargo)
+│   └── workflows/
+│       ├── ci.yml                 # 3-OS CI matrix
+│       ├── release.yml            # Tag-driven release artifacts
+│       └── codeql.yml             # CodeQL static analysis
 ├── .opencode/                  # OpenCode agents, skills, context, tools
 ├── .claude/  .gemini/  .agents/  # AI tool skills (commit, create-branch)
 └── docs/                       # This documentation
@@ -51,9 +54,10 @@ A quick tour of where everything lives in the repository.
 
 ## Notes
 
-- The **build system is XMake** (`xmake.lua`). Packaging files (`debian/`,
-  `PKGBUILD`, and the release workflow) still reference the legacy Meson
-  build; see [packaging](packaging.md).
+- The **build system is XMake** (`xmake.lua`). The CI and release workflows
+  build with XMake. The legacy packaging files used by local scripts
+  (`debian/rules`, `PKGBUILD`) still reference the removed Meson build; see
+  [packaging](packaging.md).
 - The `ai_core` crate is built automatically by an xmake `before_build` hook
   (`cargo build --lib`) and linked as a static library.
 - The data layout at runtime is documented in

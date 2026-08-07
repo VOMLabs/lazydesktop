@@ -1,15 +1,31 @@
 version: 2
 updates:
-  - package-ecosystem: "cargo"
-    directory: "/crates/ai_core"
+  # Keep the Rust ai_core crate up to date
+  - package-ecosystem: cargo
+    directory: /crates/ai_core
     schedule:
-      interval: "weekly"
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 10
     commit-message:
-      prefix: "chore(deps)"
+      prefix: chore(deps)
+    labels:
+      - rust
+      - dependencies
 
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  # Keep GitHub Actions up to date
+  - package-ecosystem: github-actions
+    directory: /
     schedule:
-      interval: "weekly"
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 10
     commit-message:
-      prefix: "chore(ci)"
+      prefix: chore(ci)
+    labels:
+      - github_actions
+      - dependencies
