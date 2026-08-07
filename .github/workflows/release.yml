@@ -203,6 +203,21 @@ jobs:
         # ships in a separate NuGet package that must be cached first.
         run: wix extension add WixToolset.UI.wixext/4.0.5 --global
 
+      - name: Deploy Qt runtime
+        # windeployqt copies Qt DLLs/plugins next to the exe, then
+        # deploy-msi.ps1 emits AppFiles.g.wxs listing every deployed file.
+        run: |
+          $VERSION = $env:GITHUB_REF_NAME -replace '^v', ''
+          $QT_ROOT = $env:Qt6_DIR
+          if (-not $QT_ROOT) {
+            $qmake = Get-Command qmake6.exe, qmake.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+            $QT_ROOT = Split-Path (Split-Path $qmake.Source)
+          }
+          $BIN_DIR = "$env:GITHUB_WORKSPACE\build\windows\x64\release"
+          & .\install\windows\deploy-msi.ps1 -BuildDir "$BIN_DIR" -QtRoot "$QT_ROOT" -OutputFile "$env:GITHUB_WORKSPACE\install\windows\AppFiles.g.wxs"
+          Write-Host "Generated fragment:"
+          Get-Content .\install\windows\AppFiles.g.wxs | Select-Object -First 40
+
       - name: Build MSI
         run: |
           $VERSION = $env:GITHUB_REF_NAME -replace '^v', ''
@@ -212,7 +227,7 @@ jobs:
             $QT_ROOT = Split-Path (Split-Path $qmake.Source)
           }
           $BIN_DIR = "$env:GITHUB_WORKSPACE\build\windows\x64\release"
-          wix build install/windows/lazydesktop.wxs `
+          wix build install/windows/lazydesktop.wxs install/windows/AppFiles.g.wxs `
             -out "lazydesktop-${VERSION}.msi" `
             -arch x64 `
             -ext WixToolset.UI.wixext `
