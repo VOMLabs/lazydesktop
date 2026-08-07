@@ -1,19 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
-  <Product Id="*"
-           Name="LazyDesktop"
+  <Package Name="LazyDesktop"
            Language="1033"
-           Version="0.1.0"
+           Version="$(var.ProductVersion)"
            Manufacturer="LazyDesktop Team"
-           UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
-
-    <Package InstallerVersion="200"
-             Compressed="yes"
-             InstallScope="perMachine"
-             Platform="x64"
-             Manufacturer="LazyDesktop Team"
-              Description="A KDE-native Git GUI alternative"/>
+           UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+           InstallerVersion="200">
+    <SummaryInformation Manufacturer="LazyDesktop Team"
+                        Description="A KDE-native Git GUI alternative"/>
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of LazyDesktop is already installed."/>
 
@@ -23,67 +18,6 @@
     <Icon Id="AppIcon" SourceFile="../../data/icons/hicolor/scalable/apps/lazydesktop.svg"/>
     <Property Id="ARPPRODUCTICON" Value="AppIcon"/>
 
-    <!-- Directory structure -->
-    <Directory Id="TARGETDIR" Name="SourceDir">
-      <Directory Id="ProgramFiles64Folder">
-        <Directory Id="INSTALLDIR" Name="LazyDesktop">
-          <!-- Main application -->
-          <Component Id="MainExecutable" Guid="*" Win64="yes">
-            <File Id="LazyDesktopExe" Name="lazydesktop.exe" Source="$(var.BuildDir)/lazydesktop.exe"
-                  KeyPath="yes" Vital="yes"/>
-            <Environment Id="PATH" Name="PATH" Value="[INSTALLDIR]" Permanent="no" Part="last" Action="set" System="yes"/>
-          </Component>
-
-          <!-- Qt DLLs and platform plugins -->
-          <Directory Id="PlatformsDir" Name="platforms">
-            <Component Id="PlatformPlugin" Guid="*" Win64="yes">
-              <File Id="QWindowsPlugin" Name="qwindows.dll"
-                    Source="$(var.QtDir)/plugins/platforms/qwindows.dll" Vital="yes"/>
-            </Component>
-          </Directory>
-
-          <Directory Id="StylesDir" Name="styles">
-            <Component Id="StylePlugin" Guid="*" Win64="yes">
-              <File Id="QWindowsStyle" Name="qwindowsstyle.dll"
-                    Source="$(var.QtDir)/plugins/styles/qwindowsvistastyle.dll" Vital="yes"/>
-            </Component>
-          </Directory>
-        </Directory>
-      </Directory>
-
-      <!-- Start Menu -->
-      <Directory Id="ProgramMenuFolder">
-        <Directory Id="StartMenuDir" Name="LazyDesktop">
-          <Component Id="StartMenuShortcut" Guid="*">
-            <Shortcut Id="AppShortcut"
-                      Name="LazyDesktop"
-                      Description="A KDE-native Git GUI alternative"
-                      Target="[INSTALLDIR]lazydesktop.exe"
-                      WorkingDirectory="INSTALLDIR"/>
-            <Shortcut Id="UninstallShortcut"
-                      Name="Uninstall LazyDesktop"
-                      Target="[System64Folder]msiexec.exe"
-                      Arguments="/x [ProductCode]"/>
-            <RemoveFolder Id="StartMenuDir" On="uninstall"/>
-            <RegistryValue Root="HKCU" Key="Software\LazyDesktop" Name="Installed" Type="integer" Value="1"/>
-          </Component>
-        </Directory>
-      </Directory>
-
-      <!-- Desktop shortcut -->
-      <Directory Id="DesktopFolder">
-        <Component Id="DesktopShortcut" Guid="*">
-          <Shortcut Id="DesktopAppShortcut"
-                    Name="LazyDesktop"
-                    Description="A KDE-native Git GUI alternative"
-                    Target="[INSTALLDIR]lazydesktop.exe"
-                    WorkingDirectory="INSTALLDIR"/>
-          <RegistryValue Root="HKCU" Key="Software\LazyDesktop" Name="DesktopShortcut" Type="integer" Value="1"/>
-        </Component>
-      </Directory>
-
-    </Directory>
-
     <!-- Features -->
     <Feature Id="MainFeature" Title="LazyDesktop" Level="1" ConfigurableDirectory="INSTALLDIR">
       <ComponentRef Id="MainExecutable"/>
@@ -91,40 +25,77 @@
       <ComponentRef Id="StylePlugin"/>
       <ComponentRef Id="StartMenuShortcut"/>
       <ComponentRef Id="DesktopShortcut"/>
-
     </Feature>
 
     <!-- UI -->
     <UI Id="LazyDesktopUI">
-      <UIRef Id="WixUI_InstallDir"/>
-      <Publish Dialog="WelcomeDlg"
-               Control="Next"
-               Event="NewDialog"
-               Value="InstallDirDlg"
-               Order="1">1</Publish>
-      <Publish Dialog="InstallDirDlg"
-               Control="Back"
-               Event="NewDialog"
-               Value="WelcomeDlg"
-               Order="1">1</Publish>
-      <Publish Dialog="InstallDirDlg"
-               Control="Next"
-               Event="NewDialog"
-               Value="VerifyReadyDlg"
-               Order="1">WIXUI_INSTALLDIR_VALID&lt;&gt;""</Publish>
-      <Publish Dialog="InstallDirDlg"
-               Control="Next"
-               Event="SetTargetPath"
-               Value="WIXUI_INSTALLDIR"
-               Order="2">1</Publish>
-      <Publish Dialog="VerifyReadyDlg"
-               Control="Back"
-               Event="NewDialog"
-               Value="InstallDirDlg"
-               Order="1">1</Publish>
+      <ui:WixUI Id="WixUI_InstallDir"/>
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="1"/>
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="1"/>
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Order="1" Condition="WIXUI_INSTALLDIR_VALID&lt;&gt;&quot;&quot;"/>
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="SetTargetPath" Value="WIXUI_INSTALLDIR" Order="2"/>
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" Order="1"/>
     </UI>
 
     <UIRef Id="WixUI_Common"/>
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR"/>
-  </Product>
+
+    <!-- Directory structure -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLDIR" Name="LazyDesktop">
+        <!-- Main application -->
+        <Component Id="MainExecutable" Bitness="always64">
+          <File Id="LazyDesktopExe" Name="lazydesktop.exe" Source="$(var.BuildDir)/lazydesktop.exe"
+                KeyPath="yes" Vital="yes"/>
+          <Environment Id="PATH" Name="PATH" Value="[INSTALLDIR]" Permanent="no" Part="last" Action="set" System="yes"/>
+        </Component>
+
+        <!-- Qt DLLs and platform plugins -->
+        <Directory Id="PlatformsDir" Name="platforms">
+          <Component Id="PlatformPlugin" Bitness="always64">
+            <File Id="QWindowsPlugin" Name="qwindows.dll"
+                  Source="$(var.QtDir)/plugins/platforms/qwindows.dll" Vital="yes"/>
+          </Component>
+        </Directory>
+
+        <Directory Id="StylesDir" Name="styles">
+          <Component Id="StylePlugin" Bitness="always64">
+            <File Id="QWindowsStyle" Name="qwindowsstyle.dll"
+                  Source="$(var.QtDir)/plugins/styles/qwindowsvistastyle.dll" Vital="yes"/>
+          </Component>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Start Menu -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="StartMenuDir" Name="LazyDesktop">
+        <Component Id="StartMenuShortcut">
+          <Shortcut Id="AppShortcut"
+                    Name="LazyDesktop"
+                    Description="A KDE-native Git GUI alternative"
+                    Target="[INSTALLDIR]lazydesktop.exe"
+                    WorkingDirectory="INSTALLDIR"/>
+          <Shortcut Id="UninstallShortcut"
+                    Name="Uninstall LazyDesktop"
+                    Target="[System64Folder]msiexec.exe"
+                    Arguments="/x [ProductCode]"/>
+          <RemoveFolder Id="StartMenuDir" On="uninstall"/>
+          <RegistryValue Root="HKCU" Key="Software\LazyDesktop" Name="Installed" Type="integer" Value="1"/>
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Desktop shortcut -->
+    <StandardDirectory Id="DesktopFolder">
+      <Component Id="DesktopShortcut">
+        <Shortcut Id="DesktopAppShortcut"
+                  Name="LazyDesktop"
+                  Description="A KDE-native Git GUI alternative"
+                  Target="[INSTALLDIR]lazydesktop.exe"
+                  WorkingDirectory="INSTALLDIR"/>
+        <RegistryValue Root="HKCU" Key="Software\LazyDesktop" Name="DesktopShortcut" Type="integer" Value="1"/>
+      </Component>
+    </StandardDirectory>
+  </Package>
 </Wix>

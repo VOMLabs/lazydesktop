@@ -198,6 +198,11 @@ jobs:
       - name: Install WiX Toolset
         run: dotnet tool install --global wix --version 4.0.5
 
+      - name: Install WiX UI Extension
+        # wix build does not auto-download extensions; the WixUI dialog set
+        # ships in a separate NuGet package that must be cached first.
+        run: wix extension add WixToolset.UI.wixext/4.0.5 --global
+
       - name: Build MSI
         run: |
           $VERSION = $env:GITHUB_REF_NAME -replace '^v', ''
@@ -209,6 +214,9 @@ jobs:
           $BIN_DIR = "$env:GITHUB_WORKSPACE\build\windows\x64\release"
           wix build install/windows/lazydesktop.wxs `
             -out "lazydesktop-${VERSION}.msi" `
+            -arch x64 `
+            -ext WixToolset.UI.wixext `
+            -d ProductVersion="$VERSION" `
             -d BuildDir="$BIN_DIR" `
             -d QtDir="$QT_ROOT" `
             -d SourceDir="$env:GITHUB_WORKSPACE"
