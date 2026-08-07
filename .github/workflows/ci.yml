@@ -69,14 +69,10 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install yaml-cpp
 
-      - name: Install yaml-cpp (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          # Export VCPKG_ROOT for this job: the runner's machine-level
-          # variable is not visible to the workflow env context.
-          echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-          vcpkg install yaml-cpp:x64-windows
+      # yaml-cpp on Windows is provided by xmake itself: with
+      # add_requires("yaml-cpp") (no {system = true}) xmake falls back to
+      # fetching yaml-cpp from the xmake package repo when it cannot find a
+      # system copy, so no vcpkg step is needed here.
 
       - name: Configure (debug)
         run: xmake f -m debug

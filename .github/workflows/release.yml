@@ -85,7 +85,7 @@ jobs:
             --desktop-file data/lazydesktop.desktop \
             --icon-file data/icons/hicolor/scalable/apps/lazydesktop.svg \
             --plugin qt --output appimage
-          mv LazyDesktop-*-x86_64.AppImage "lazydesktop-${VERSION}-x86_64.AppImage"
+          mv LazyDesktop-*.AppImage "lazydesktop-${VERSION}-x86_64.AppImage"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
@@ -111,7 +111,9 @@ jobs:
       - name: Install build dependencies
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel xmake rust qt6-base yaml-cpp git
+          # clang provides libclang, required by the bindgen build script of
+          # llama-cpp-sys-2 when compiling the bundled Rust ai_core crate.
+          pacman -S --noconfirm base-devel xmake rust qt6-base yaml-cpp git clang
 
       - name: Configure (release)
         run: xmake f -m release
@@ -184,14 +186,6 @@ jobs:
           # Qt 6.7 ships win64_msvc2019_64 only (MSVC2022 arch starts at Qt 6.8);
           # it is ABI-compatible with the MSVC 2022 toolchain used by xmake.
           arch: win64_msvc2019_64
-
-      - name: Install yaml-cpp
-        shell: pwsh
-        run: |
-          # Export VCPKG_ROOT for this job: the runner's machine-level
-          # variable is not visible to the workflow env context.
-          echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-          vcpkg install yaml-cpp:x64-windows
 
       - name: Configure (release)
         run: xmake f -m release
