@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/ai_core"]
+members = ["crates/ai_core", "crates/vcs_core"]
 resolver = "2"
 
 [profile.release]

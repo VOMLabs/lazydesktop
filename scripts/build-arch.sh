@@ -21,6 +21,6 @@ makepkg -s --cleanbuild
 
 echo ""
 echo "=== Package built successfully ==="
-echo "Package: lazydesktop-0.1.0-1-x86_64.pkg.tar.zst"
+echo "Package: lazydesktop-0.2.0-1-x86_64.pkg.tar.zst"
 echo ""
-echo "Install with: sudo pacman -U lazydesktop-0.1.0-1-x86_64.pkg.tar.zst"
+echo "Install with: sudo pacman -U lazydesktop-0.2.0-1-x86_64.pkg.tar.zst"

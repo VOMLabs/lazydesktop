@@ -6,6 +6,7 @@ binary          := bindir + "/debug/" + project
 binary_release  := bindir + "/release/" + project
 appdir          := "AppDir"
 ai_core_toml    := "crates/ai_core/Cargo.toml"
+vcs_core_toml   := "crates/vcs_core/Cargo.toml"
 
 # ─── Default ─────────────────────────────────────────────────────
 # Alias for `just build`
@@ -37,14 +38,26 @@ build-release:
 build-ai-core:
     cargo build --manifest-path {{ ai_core_toml }}
 
+# Build only the Rust vcs_core crate
+build-vcs-core:
+    cargo build --manifest-path {{ vcs_core_toml }}
+
 # Generate compile_commands.json for clangd
 compile-commands:
     xmake project -k compile_commands --lsp=clangd
 
 # ─── Test ────────────────────────────────────────────────────────
-# Run the Rust ai_core test suite
+# Run the Rust test suites
 test:
+    cargo test --workspace
+
+# Run only the ai_core Rust tests
+test-ai-core:
     cargo test --manifest-path {{ ai_core_toml }}
+
+# Run only the vcs_core Rust tests
+test-vcs-core:
+    cargo test --manifest-path {{ vcs_core_toml }}
 
 # ─── Run ─────────────────────────────────────────────────────────
 # Build and run the debug binary

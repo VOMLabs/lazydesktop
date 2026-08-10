@@ -44,11 +44,17 @@ with a `QStackedWidget` viewer (diff / placeholder / image), a tabbed sidebar
 
 ### Git process layer
 
-All Git operations shell out to the `git` CLI via `QProcess` — there is
+Most Git operations shell out to the `git` CLI via `QProcess` — there is
 **no libgit2**. Each operation type gets its own process handle
 (`m_gitProcess`, `m_commitProcess`, `m_pushProcess`, `m_branchProcess`,
 `m_checkoutProcess`, `m_createBranchProcess`, `m_logProcess`,
 `m_commitDetailProcess`, `m_stageProcess`, …).
+
+Two operations do **not** shell out: SSH key handling and `git remote`
+config reads/writes run natively through the `vcs_core` Rust crate
+(`ssh-key`, `russh`, `gix-config`) over a C ABI (`vcs_core.h`), wrapped in
+Qt by `VcsBridge`. This removes the `ssh-keygen` / `ssh` / `git remote`
+subprocess dependencies from the Settings SSH page and the Remotes dialog.
 
 ### AI layer
 

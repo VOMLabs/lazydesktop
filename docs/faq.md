@@ -57,10 +57,9 @@ Settings → AI. The `<diff>` placeholder is replaced with the actual diff.
 
 ### How do AI editor skills relate to the app?
 
-The skills (`.opencode/skills/`, `.claude/skills/`, `.gemini/skills/`,
-`.agents/skills/`) teach AI coding tools the repository's commit and branch
-conventions. They are for agents working in this codebase, not for the GUI
-app's AI feature. See [editor skills](ai/editor-skills.md).
+The skills (`.opencode/skills/`) teach AI coding tools the repository's commit
+and branch conventions. They are for agents working in this codebase, not for
+the GUI app's AI feature. See [editor skills](ai/editor-skills.md).
 
 ## Build & install
 

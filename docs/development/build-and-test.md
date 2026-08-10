@@ -2,8 +2,8 @@
 
 ## Building
 
-The primary build system is **XMake** (`xmake.lua`). A `before_build` hook
-compiles the Rust `ai_core` crate automatically:
+The primary build system is **XMake** (`xmake.lua`). `before_build` hooks
+compile the bundled Rust crates (`ai_core`, `vcs_core`) automatically:
 
 ```bash
 xmake f -m debug        # configure
@@ -15,12 +15,15 @@ Or use the `justfile` recipes (`just setup`, `just build`, `just run`). See
 
 ## Testing
 
-There is no C++ test suite yet. The Rust crate has unit tests:
+There is no C++ test suite yet. The Rust crates have unit tests:
 
 ```bash
 just test
 # equivalent:
+cargo test --workspace
+# or per crate:
 cargo test --manifest-path crates/ai_core/Cargo.toml
+cargo test --manifest-path crates/vcs_core/Cargo.toml
 ```
 
 ## Static analysis & formatting

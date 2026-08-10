@@ -2,7 +2,7 @@
 # Contributor: Your Name <you@example.com>
 
 pkgname=lazydesktop
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc='A KDE-native Git GUI alternative'
 arch=('x86_64' 'aarch64')

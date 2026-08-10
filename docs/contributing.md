@@ -15,8 +15,7 @@ here is how to get involved.
 ## Commit conventions
 
 This repository follows **Conventional Commits**. The AI coding skills
-shipped in `.opencode/skills/`, `.claude/skills/`, `.gemini/skills/`, and
-`.agents/skills/` can generate conforming messages for you.
+shipped in `.opencode/skills/` can generate conforming messages for you.
 
 ```
 type(scope): subject

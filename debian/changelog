@@ -1,4 +1,4 @@
-lazydesktop (0.1.0-1) unstable; urgency=medium
+lazydesktop (0.2.0-1) unstable; urgency=medium
 
   * Initial release.
   * Git status list with per-file checkboxes.

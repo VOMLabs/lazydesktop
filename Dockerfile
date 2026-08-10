@@ -4,8 +4,8 @@
 #   docker compose up -d                # X11 (Linux host) or VNC fallback
 #   VNC_MODE=1 docker compose up -d     # force browser/VNC mode
 #
-# Stage 1 builds the app (Qt 6 + C++23 + bundled Rust ai_core crate) and
-# Stage 2 ships only the runtime bits (no toolchain).
+# Stage 1 builds the app (Qt 6 + C++23 + bundled Rust ai_core and vcs_core
+# crates) and Stage 2 ships only the runtime bits (no toolchain).
 
 FROM ubuntu:24.04 AS builder
 
@@ -30,7 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # xmake build system (official installer -> ~/.local/bin)
 RUN curl -fsSL https://xmake.io/shget.text | bash
 
-# Rust stable toolchain (builds the bundled ai_core crate)
+# Rust stable toolchain (builds the bundled ai_core and vcs_core crates)
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
 
 ENV PATH="/root/.local/bin:/root/.cargo/bin:/usr/lib/qt6/bin:${PATH}" \

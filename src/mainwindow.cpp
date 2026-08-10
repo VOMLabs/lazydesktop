@@ -2,8 +2,11 @@
 #include "diffviewer.h"
 #include "mainwindow.h"
 #include "model_manager_bridge.h"
+#include "vcs_bridge.h"
 
+#include <QApplication>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QComboBox>
 #include <QDesktopServices>
 #include <QDialog>
@@ -26,6 +29,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QProcessEnvironment>
@@ -33,7 +37,9 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
+#include <QShortcut>
 #include <QSet>
+#include <QSpinBox>
 #include <QStyledItemDelegate>
 #include <QPainter>
 #include <QPixmap>
@@ -48,7 +54,6 @@
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QTreeWidgetItemIterator>
-#include <QApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -57,6 +62,7 @@
 #include <QUrl>
 #include <QUrlQuery>
 #include <QVBoxLayout>
+#include <functional>
 #include <memory>
 
 #include <yaml-cpp/yaml.h>
@@ -137,6 +143,33 @@ public:
 class FileTreeDelegate : public QStyledItemDelegate {
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
+
+    // The paint() below draws the checkbox at a custom offset (left + 18)
+    // instead of the style's default indicator position, so Qt's built-in
+    // hit-testing never matches the painted box. Handle MouseButtonRelease
+    // ourselves and toggle the check state only when the click lands inside
+    // the same rect we painted.
+    bool editorEvent(QEvent *event, QAbstractItemModel *model,
+                     const QStyleOptionViewItem &option,
+                     const QModelIndex &index) override
+    {
+        if (event->type() == QEvent::MouseButtonRelease) {
+            auto *me = static_cast<QMouseEvent *>(event);
+            if (me->button() == Qt::LeftButton) {
+                const QRect checkRect(option.rect.left() + 18, option.rect.top(),
+                                      20, option.rect.height());
+                if (checkRect.contains(me->position().toPoint())) {
+                    const QVariant value = index.data(Qt::CheckStateRole);
+                    const Qt::CheckState state =
+                        value.isValid() && value.toInt() == Qt::Checked
+                            ? Qt::Unchecked
+                            : Qt::Checked;
+                    return model->setData(index, state, Qt::CheckStateRole);
+                }
+            }
+        }
+        return QStyledItemDelegate::editorEvent(event, model, option, index);
+    }
 
     void paint(QPainter *painter, const QStyleOptionViewItem &option,
                const QModelIndex &index) const override
@@ -300,7 +333,7 @@ static QJsonArray fileStatusesJson(const QString &repoPath, const QString &vcs,
 
     QHash<QString, QString> statusByPath;
     if (vcs == QLatin1String("jujutsu")) {
-        const QString outTxt = runVcsCommand(repoPath, "jj", {"status"});
+        const QString outTxt = runVcsCommand(repoPath, "jj", {"status", "--color", "never", "--config", "ui.pagination=never"});
         bool inSection = false;
         for (const QString &line : outTxt.split(QLatin1Char('\n'))) {
             if (line.startsWith(QLatin1String("Working copy changes"))) {
@@ -311,10 +344,17 @@ static QJsonArray fileStatusesJson(const QString &repoPath, const QString &vcs,
                 inSection = false;
                 continue;
             }
-            if (inSection && line.startsWith(QLatin1Char(' '))) {
-                const QString trimmed = line.trimmed();
-                if (trimmed.length() >= 2)
-                    statusByPath.insert(trimmed.mid(1).trimmed(), trimmed.left(1));
+            // jj status prints one line per path with no leading space:
+            //   "M path", "A path", "D path", "R {old => new}"
+            if (inSection && line.size() >= 2 && line.at(0) != QLatin1Char(' ')) {
+                const QChar status = line.at(0);
+                QString path = line.mid(2).trimmed();
+                if (status == QLatin1Char('R') && path.startsWith(QLatin1Char('{'))) {
+                    path = path.section(QLatin1String("=>"), -1, -1).trimmed();
+                    path.remove(QLatin1Char('}'));
+                    path = path.trimmed();
+                }
+                statusByPath.insert(path, QString(status));
             }
         }
     } else {
@@ -416,6 +456,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_modelManager, &ModelManagerBridge::inferenceToken,
             this, &MainWindow::onLocalAiThinking);
 
+    m_vcsBridge = new VcsBridge(this);
+
     loadRecentProjects();
     checkGitAvailable();
     applySavedTheme();
@@ -489,7 +531,13 @@ void MainWindow::setupUi()
 
     m_pushButton = new QPushButton("Push");
     m_pushButton->setEnabled(false);
+    m_pushButton->setToolTip("Push to remote (Ctrl+Shift+P)");
     m_pushState = PushState::Push;
+
+    m_remotesButton = new QPushButton("Remotes");
+    m_remotesButton->setEnabled(false);
+    m_remotesButton->setToolTip("Manage repository remotes (Ctrl+Shift+R)");
+    connect(m_remotesButton, &QPushButton::clicked, this, &MainWindow::manageRemotes);
 
     m_branchComboBox = new QComboBox();
     m_branchComboBox->setMinimumWidth(160);
@@ -510,6 +558,7 @@ void MainWindow::setupUi()
     topLayout->addWidget(m_branchComboBox);
     topLayout->addWidget(m_deleteBranchButton);
     topLayout->addStretch();
+    topLayout->addWidget(m_remotesButton);
     topLayout->addWidget(m_pushButton);
 
     // --- Files menu (in menubar) ---
@@ -517,21 +566,33 @@ void MainWindow::setupUi()
     auto *filesMenu = menuBar->addMenu("Files");
 
     auto *editorAction = filesMenu->addAction("Open in Editor");
+    editorAction->setShortcut(QKeySequence("Ctrl+E"));
     connect(editorAction, &QAction::triggered, this, &MainWindow::onOpenEditor);
 
     auto *fmAction = filesMenu->addAction("Open in File Manager");
+    fmAction->setShortcut(QKeySequence("Ctrl+Shift+E"));
     connect(fmAction, &QAction::triggered, this, &MainWindow::onOpenFileManager);
 
     auto *termAction = filesMenu->addAction("Open in Terminal");
+    termAction->setShortcut(QKeySequence("Ctrl+Alt+T"));
     connect(termAction, &QAction::triggered, this, &MainWindow::onOpenTerminal);
 
     m_openGitHubAction = filesMenu->addAction("View on GitHub");
     m_openGitHubAction->setEnabled(false);
+    m_openGitHubAction->setShortcut(QKeySequence("Ctrl+Shift+G"));
     connect(m_openGitHubAction, &QAction::triggered, this, &MainWindow::onOpenGitHub);
+
+    m_repoSettingsAction = filesMenu->addAction("Repository Settings...");
+    m_repoSettingsAction->setEnabled(false);
+    m_repoSettingsAction->setToolTip(
+        "Edit this repository's settings on GitHub via the GitHub CLI (gh)");
+    connect(m_repoSettingsAction, &QAction::triggered,
+            this, &MainWindow::onRepositorySettings);
 
     filesMenu->addSeparator();
 
     auto *settingsAction = filesMenu->addAction("Settings...");
+    settingsAction->setShortcut(QKeySequence("Ctrl+,"));
     connect(settingsAction, &QAction::triggered, this, &MainWindow::onOpenSettings);
 
     // --- View menu ---
@@ -540,11 +601,13 @@ void MainWindow::setupUi()
     m_viewCommitPanelAction = viewMenu->addAction("Commit Panel");
     m_viewCommitPanelAction->setCheckable(true);
     m_viewCommitPanelAction->setChecked(true);
+    m_viewCommitPanelAction->setShortcut(QKeySequence("Ctrl+B"));
     connect(m_viewCommitPanelAction, &QAction::toggled, this, &MainWindow::toggleCommitPanel);
 
     m_viewCommitFilesAction = viewMenu->addAction("Commit Files");
     m_viewCommitFilesAction->setCheckable(true);
     m_viewCommitFilesAction->setChecked(false);
+    m_viewCommitFilesAction->setShortcut(QKeySequence("Ctrl+Shift+B"));
     connect(m_viewCommitFilesAction, &QAction::toggled, this, &MainWindow::toggleCommitFilesPanel);
 
     // --- Recent projects drawer (overlay, hidden by default) ---
@@ -686,6 +749,7 @@ void MainWindow::setupUi()
 
     m_commitButton = new QPushButton("Commit");
     m_commitButton->setEnabled(false);
+    m_commitButton->setToolTip("Commit checked files (Ctrl+Enter)");
 
     // Commit pane close button (top right)
     auto *commitHeader = new QWidget();
@@ -717,7 +781,7 @@ void MainWindow::setupUi()
     m_aiCommitButton->setFixedSize(28, 28);
     m_aiCommitButton->setEnabled(false);
     m_aiCommitButton->setFlat(true);
-    m_aiCommitButton->setToolTip("Generate commit message with AI");
+    m_aiCommitButton->setToolTip("Generate commit message with AI (Ctrl+Alt+C)");
     {
         QPixmap pm(20, 20);
         pm.fill(Qt::transparent);
@@ -756,7 +820,7 @@ void MainWindow::setupUi()
     m_aiDescriptionButton->setFixedSize(28, 28);
     m_aiDescriptionButton->setEnabled(false);
     m_aiDescriptionButton->setFlat(true);
-    m_aiDescriptionButton->setToolTip("Generate commit description with AI");
+    m_aiDescriptionButton->setToolTip("Generate commit description with AI (Ctrl+Alt+D)");
     {
         QPixmap pm(20, 20);
         pm.fill(Qt::transparent);
@@ -1072,6 +1136,30 @@ void MainWindow::setupUi()
     connect(m_gitStatusTree, &QTreeWidget::customContextMenuRequested,
             this, &MainWindow::onTreeContextMenu);
 
+    // --- Keyboard shortcuts ---
+    // Ctrl+O is available even with no repository open.
+    auto *openShortcut = new QShortcut(QKeySequence("Ctrl+O"), this);
+    connect(openShortcut, &QShortcut::activated,
+            this, &MainWindow::onOpenExistingProject);
+
+    // Shortcuts below require an open repository; guard on m_repoPath.
+    const auto addRepoSShortcut = [this](const QKeySequence &key,
+                                         void (MainWindow::*slot)()) {
+        auto *sc = new QShortcut(key, this);
+        connect(sc, &QShortcut::activated, this, [this, slot]() {
+            if (!m_repoPath.isEmpty())
+                (this->*slot)();
+        });
+    };
+    addRepoSShortcut(QKeySequence("Ctrl+Enter"), &MainWindow::onCommitClicked);
+    addRepoSShortcut(QKeySequence("Ctrl+Shift+P"), &MainWindow::onPushClicked);
+    addRepoSShortcut(QKeySequence("Ctrl+Shift+R"), &MainWindow::manageRemotes);
+    addRepoSShortcut(QKeySequence("F5"), &MainWindow::refreshAll);
+    addRepoSShortcut(QKeySequence("Ctrl+Shift+A"), &MainWindow::onStageAllFiles);
+    addRepoSShortcut(QKeySequence("Ctrl+Shift+U"), &MainWindow::onUnstageAllFiles);
+    addRepoSShortcut(QKeySequence("Ctrl+Alt+C"), &MainWindow::onGenerateCommitMessage);
+    addRepoSShortcut(QKeySequence("Ctrl+Alt+D"), &MainWindow::onGenerateCommitDescription);
+
     m_fsWatcher = new QFileSystemWatcher(this);
     m_refreshTimer = new QTimer(this);
     m_refreshTimer->setSingleShot(true);
@@ -1118,20 +1206,40 @@ static void runGitConfigSet(const QString &key, const QString &value)
     proc.waitForFinished(3000);
 }
 
+// --- SSH key helpers ---
+
+static QString sshKeysDir()
+{
+    return QDir::home().filePath(".ssh");
+}
+
 static QString gitRemoteOwner(const QString &path)
 {
-    auto readUrl = [&](const QStringList &args) -> QString {
+    auto readCmd = [&](const QString &program,
+                       const QStringList &args) -> QString {
         QProcess proc;
         proc.setWorkingDirectory(path);
-        proc.start("git", args);
+        proc.start(program, args);
         if (!proc.waitForFinished(3000) || proc.exitCode() != 0)
             return {};
         return QString::fromUtf8(proc.readAllStandardOutput()).trimmed();
     };
 
-    QString url = readUrl({"config", "--local", "remote.origin.url"});
+    QString url = readCmd("git", {"config", "--local", "remote.origin.url"});
     if (url.isEmpty())
-        url = readUrl({"remote", "get-url", "origin"});
+        url = readCmd("git", {"remote", "get-url", "origin"});
+    if (url.isEmpty() && detectVcsKind(path) == QLatin1String("jujutsu")) {
+        // jj git remote list prints "<name> <url>" per line.
+        const QStringList lines =
+            readCmd("jj", {"git", "remote", "list"}).split(QLatin1Char('\n'),
+                                                          Qt::SkipEmptyParts);
+        for (const QString &line : lines) {
+            if (line.startsWith(QLatin1String("origin "))) {
+                url = line.mid(7).trimmed();
+                break;
+            }
+        }
+    }
     if (url.isEmpty())
         return {};
 
@@ -1465,7 +1573,7 @@ void MainWindow::onCreateRepository()
 void MainWindow::onOpenExistingProject()
 {
     const QString dir = QFileDialog::getExistingDirectory(
-        this, "Open Git Repository");
+        this, "Open Git or Jujutsu Repository");
     if (!dir.isEmpty())
         openRepository(dir);
 }
@@ -1473,7 +1581,7 @@ void MainWindow::onOpenExistingProject()
 void MainWindow::onScanFolder()
 {
     const QString dir = QFileDialog::getExistingDirectory(
-        this, "Select Folder to Scan for Git Repositories");
+        this, "Select Folder to Scan for Git/Jujutsu Repositories");
     if (dir.isEmpty())
         return;
 
@@ -1504,8 +1612,8 @@ void MainWindow::onScanFolder()
     m_recentDrawer->setVisible(false);
 
     QMessageBox::information(this, "Scan Complete",
-        QString("Added %1 git project(s) to the list.\n"
-                "Skipped %2 folder(s) without a .git directory.")
+        QString("Added %1 project(s) to the list.\n"
+                "Skipped %2 folder(s) without a .git or .jj directory.")
             .arg(added).arg(skipped));
 }
 
@@ -1550,8 +1658,8 @@ bool MainWindow::openRepository(const QString &path)
 {
     if (!isGitRepository(path)) {
         QMessageBox::warning(this, "Invalid Folder",
-            "The selected folder is not a Git repository.\n"
-            "Please select a folder that contains a .git directory.");
+            "The selected folder is not a Git or Jujutsu repository.\n"
+            "Please select a folder that contains a .git or .jj directory.");
         return false;
     }
 
@@ -1559,6 +1667,9 @@ bool MainWindow::openRepository(const QString &path)
     m_projectButton->setText(QDir(path).dirName());
     m_currentPathLabel->setVisible(false);
     m_pushButton->setEnabled(true);
+    m_remotesButton->setEnabled(true);
+    m_openGitHubAction->setEnabled(true);
+    m_repoSettingsAction->setEnabled(true);
     m_gitStatusTree->clear();
     m_fileContentViewer->clear();
     m_viewerStack->setCurrentIndex(0);
@@ -1580,10 +1691,17 @@ bool MainWindow::openRepository(const QString &path)
         m_fsWatcher->removePaths(currentFiles);
     if (!currentDirs.isEmpty())
         m_fsWatcher->removePaths(currentDirs);
-    const QString gitDir = QDir(path).filePath(".git");
-    m_fsWatcher->addPath(gitDir);
-    m_fsWatcher->addPath(QDir(gitDir).filePath("index"));
-    m_fsWatcher->addPath(QDir(gitDir).filePath("HEAD"));
+    if (detectVcsKind(path) == QLatin1String("jujutsu")) {
+        const QString jjDir = QDir(path).filePath(".jj");
+        m_fsWatcher->addPath(jjDir);
+        m_fsWatcher->addPath(QDir(jjDir).filePath("working_copy"));
+        m_fsWatcher->addPath(QDir(jjDir).filePath("repo"));
+    } else {
+        const QString gitDir = QDir(path).filePath(".git");
+        m_fsWatcher->addPath(gitDir);
+        m_fsWatcher->addPath(QDir(gitDir).filePath("index"));
+        m_fsWatcher->addPath(QDir(gitDir).filePath("HEAD"));
+    }
 
     return true;
 }
@@ -1606,10 +1724,12 @@ void MainWindow::closeRepository()
     m_descriptionInput->clear();
     m_commitButton->setEnabled(false);
     m_pushButton->setEnabled(false);
+    m_remotesButton->setEnabled(false);
     m_branchComboBox->setEnabled(false);
     m_branchComboBox->clear();
     m_deleteBranchButton->setEnabled(false);
     m_openGitHubAction->setEnabled(false);
+    m_repoSettingsAction->setEnabled(false);
     m_aiCommitButton->setEnabled(false);
     m_aiDescriptionButton->setEnabled(false);
     m_skipHooksButton->setEnabled(false);
@@ -1705,6 +1825,55 @@ void MainWindow::onOpenTerminal()
 #endif
 }
 
+// Converts any common git remote URL into a browseable https web URL.
+// Handles SCP-style (git@host:path), ssh://, git+ssh://, git://, http(s)://,
+// strips the trailing .git and drops user@ and :port from the authority.
+// Returns an empty string when the URL cannot be parsed.
+static QString remoteToWebUrl(QString url)
+{
+    url = url.trimmed();
+    if (url.isEmpty())
+        return {};
+
+    if (!url.contains("://")) {
+        // SCP-style: [user@]host:path
+        const int at = url.lastIndexOf('@');
+        if (at >= 0)
+            url = url.mid(at + 1);
+        const int colon = url.indexOf(':');
+        if (colon < 0)
+            return {};
+        url = url.left(colon) + "/" + url.mid(colon + 1);
+        url.prepend("https://");
+    } else {
+        const QString scheme = url.section("://", 0, 0);
+        if (scheme == "ssh" || scheme == "git+ssh" || scheme == "git") {
+            // Rebuild as https from authority + path, dropping user@ and :port.
+            const QString rest = url.section("://", 1, 1);
+            const int slash = rest.indexOf('/');
+            QString authority = slash >= 0 ? rest.left(slash) : rest;
+            const QString path = slash >= 0 ? rest.mid(slash) : QString();
+
+            const int at = authority.lastIndexOf('@');
+            if (at >= 0)
+                authority = authority.mid(at + 1);
+            const int portColon = authority.lastIndexOf(':');
+            if (portColon >= 0 && authority.mid(portColon + 1).toInt() > 0)
+                authority = authority.left(portColon);
+
+            url = "https://" + authority + path;
+        } else if (scheme == "http") {
+            url.prepend("s");
+        }
+        // https:// URLs pass through unchanged.
+    }
+
+    if (url.endsWith(".git", Qt::CaseInsensitive))
+        url.chop(4);
+
+    return url;
+}
+
 void MainWindow::onOpenGitHub()
 {
     if (m_repoPath.isEmpty())
@@ -1712,28 +1881,265 @@ void MainWindow::onOpenGitHub()
 
     auto *proc = new QProcess(this);
     proc->setWorkingDirectory(m_repoPath);
-    proc->start("git", {"remote", "get-url", "origin"});
+    if (isJjRepo())
+        proc->start("jj", {"git", "remote", "list"});
+    else
+        proc->start("git", {"remote", "get-url", "origin"});
 
-    connect(proc, &QProcess::finished, this, [proc](int ec, QProcess::ExitStatus es) {
+    connect(proc, &QProcess::finished, this, [this, proc](int ec, QProcess::ExitStatus es) {
+        const bool jj = detectVcsKind(m_repoPath) == QLatin1String("jujutsu");
+        const QString raw = QString::fromUtf8(proc->readAllStandardOutput());
         proc->deleteLater();
-        if (es != QProcess::NormalExit || ec != 0)
+        if (es != QProcess::NormalExit || ec != 0) {
+            QMessageBox::information(this, "View on GitHub",
+                "No \"origin\" remote is configured for this repository.");
             return;
-
-        QString url = QString::fromUtf8(proc->readAllStandardOutput()).trimmed();
-
-        // Convert SSH to HTTPS
-        if (url.startsWith("git@")) {
-            url.remove(0, 4); // "git@"
-            url.replace(':', '/');
-            url.prepend("https://");
         }
-        // Remove trailing .git
-        if (url.endsWith(".git"))
-            url.chop(4);
 
-        if (!url.isEmpty())
-            QDesktopServices::openUrl(QUrl(url));
+        // jj git remote list prints "<name> <url>" lines; extract the origin URL.
+        QString out = raw;
+        if (jj) {
+            out.clear();
+            const QStringList lines = raw.split('\n', Qt::SkipEmptyParts);
+            for (const QString &line : lines) {
+                if (line.startsWith(QLatin1String("origin "))) {
+                    out = line.mid(7).trimmed();
+                    break;
+                }
+            }
+        }
+
+        const QString webUrl = remoteToWebUrl(out);
+        if (webUrl.isEmpty()) {
+            QMessageBox::information(this, "View on GitHub",
+                "Could not determine a web URL from the origin remote.");
+            return;
+        }
+
+        QDesktopServices::openUrl(QUrl(webUrl));
     });
+}
+
+// --- GitHub repository settings (via gh CLI) ---
+
+void MainWindow::onRepositorySettings()
+{
+    if (m_repoPath.isEmpty())
+        return;
+
+    if (QStandardPaths::findExecutable("gh").isEmpty()) {
+        QMessageBox::information(this, "Repository Settings",
+            "The GitHub CLI (gh) is not installed.\n\n"
+            "Install it from https://cli.github.com/ to manage this "
+            "repository's settings on GitHub.");
+        return;
+    }
+
+    QProcess proc;
+    proc.setWorkingDirectory(m_repoPath);
+    proc.start("gh", {"repo", "view", "--json",
+        "nameWithOwner,visibility,description,homepageUrl,repositoryTopics,"
+        "defaultBranchRef,hasIssuesEnabled,hasWikiEnabled,hasProjectsEnabled,"
+        "hasDiscussionsEnabled,deleteBranchOnMerge,isArchived,isInOrganization,"
+        "viewerPermission"});
+    if (!proc.waitForFinished(8000) || proc.exitCode() != 0) {
+        QMessageBox::warning(this, "Repository Settings",
+            "Could not fetch the repository settings from GitHub.\n\n"
+            + QString::fromUtf8(proc.readAllStandardError()).trimmed());
+        return;
+    }
+
+    const QJsonDocument doc = QJsonDocument::fromJson(proc.readAllStandardOutput());
+    if (!doc.isObject()) {
+        QMessageBox::warning(this, "Repository Settings",
+            "Could not parse the repository settings returned by gh.");
+        return;
+    }
+
+    showRepositorySettingsDialog(doc.object());
+}
+
+void MainWindow::showRepositorySettingsDialog(const QJsonObject &repo)
+{
+    const QString nameWithOwner = repo.value("nameWithOwner").toString();
+    const bool isOrg = repo.value("isInOrganization").toBool();
+    const QString oldVis = repo.value("visibility").toString().toLower();
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("Repository Settings — %1").arg(nameWithOwner));
+    dialog.setMinimumWidth(460);
+
+    auto *layout = new QVBoxLayout(&dialog);
+
+    auto *nameLabel = new QLabel(nameWithOwner);
+    {
+        QFont nf = nameLabel->font();
+        nf.setBold(true);
+        nf.setPointSize(nf.pointSize() + 1);
+        nameLabel->setFont(nf);
+    }
+    layout->addWidget(nameLabel);
+
+    auto *metaLabel = new QLabel(QStringLiteral("Your permission: %1%2").arg(
+        repo.value("viewerPermission").toString(),
+        repo.value("isArchived").toBool() ? "  ·  archived" : ""));
+    metaLabel->setStyleSheet("color: gray; font-size: 11px;");
+    layout->addWidget(metaLabel);
+
+    auto *form = new QFormLayout();
+    layout->addLayout(form);
+
+    auto *visibilityCombo = new QComboBox();
+    visibilityCombo->addItem("Public", "public");
+    visibilityCombo->addItem("Private", "private");
+    if (isOrg)
+        visibilityCombo->addItem("Internal", "internal");
+    visibilityCombo->setCurrentIndex(visibilityCombo->findData(oldVis));
+    form->addRow("Visibility:", visibilityCombo);
+
+    auto *descriptionInput = new QLineEdit(repo.value("description").toString());
+    form->addRow("Description:", descriptionInput);
+
+    auto *homepageInput = new QLineEdit(repo.value("homepageUrl").toString());
+    form->addRow("Homepage:", homepageInput);
+
+    QStringList currentTopics;
+    for (const QJsonValue &v : repo.value("repositoryTopics").toArray())
+        currentTopics << v.toObject().value("name").toString();
+    auto *topicsInput = new QLineEdit(currentTopics.join(", "));
+    form->addRow("Topics:", topicsInput);
+
+    auto *defaultBranchInput = new QLineEdit(
+        repo.value("defaultBranchRef").toObject().value("name").toString());
+    form->addRow("Default branch:", defaultBranchInput);
+
+    auto *issuesCheck = new QCheckBox("Issues");
+    issuesCheck->setChecked(repo.value("hasIssuesEnabled").toBool());
+    auto *wikiCheck = new QCheckBox("Wiki");
+    wikiCheck->setChecked(repo.value("hasWikiEnabled").toBool());
+    auto *projectsCheck = new QCheckBox("Projects");
+    projectsCheck->setChecked(repo.value("hasProjectsEnabled").toBool());
+    auto *discussionsCheck = new QCheckBox("Discussions");
+    discussionsCheck->setChecked(repo.value("hasDiscussionsEnabled").toBool());
+    auto *deleteBranchCheck = new QCheckBox("Delete branch on merge");
+    deleteBranchCheck->setChecked(repo.value("deleteBranchOnMerge").toBool());
+
+    auto *featuresRow = new QHBoxLayout();
+    featuresRow->addWidget(issuesCheck);
+    featuresRow->addWidget(wikiCheck);
+    featuresRow->addWidget(projectsCheck);
+    featuresRow->addWidget(discussionsCheck);
+    featuresRow->addWidget(deleteBranchCheck);
+    layout->addLayout(featuresRow);
+
+    auto *status = new QLabel();
+    status->setStyleSheet("color: gray; font-size: 11px;");
+    status->setWordWrap(true);
+    layout->addWidget(status);
+
+    auto *buttons = new QDialogButtonBox();
+    auto *openWebBtn = buttons->addButton("Open Settings Page",
+                                          QDialogButtonBox::ActionRole);
+    auto *saveBtn = buttons->addButton("Save Changes",
+                                       QDialogButtonBox::AcceptRole);
+    buttons->addButton(QDialogButtonBox::Cancel);
+    layout->addWidget(buttons);
+
+    connect(openWebBtn, &QPushButton::clicked, &dialog, [nameWithOwner]() {
+        QDesktopServices::openUrl(QUrl(
+            QStringLiteral("https://github.com/%1/settings").arg(nameWithOwner)));
+    });
+
+    connect(saveBtn, &QPushButton::clicked, &dialog,
+            [this, &dialog, repo, oldVis, currentTopics,
+             visibilityCombo, descriptionInput, homepageInput, topicsInput,
+             defaultBranchInput, issuesCheck, wikiCheck, projectsCheck,
+             discussionsCheck, deleteBranchCheck, status]() {
+        QStringList args{"repo", "edit", repo.value("nameWithOwner").toString()};
+        bool changed = false;
+
+        const QString newVis = visibilityCombo->currentData().toString();
+        if (newVis != oldVis) {
+            args << "--visibility" << newVis
+                 << "--accept-visibility-change-consequences";
+            changed = true;
+        }
+
+        const QString newDesc = descriptionInput->text().trimmed();
+        if (newDesc != repo.value("description").toString().trimmed()) {
+            args << "--description" << newDesc;
+            changed = true;
+        }
+
+        const QString newHome = homepageInput->text().trimmed();
+        if (newHome != repo.value("homepageUrl").toString().trimmed()) {
+            args << "--homepage" << newHome;
+            changed = true;
+        }
+
+        QStringList newTopics;
+        for (const QString &t : topicsInput->text().split(',')) {
+            const QString trimmed = t.trimmed();
+            if (!trimmed.isEmpty())
+                newTopics << trimmed;
+        }
+        for (const QString &t : newTopics) {
+            if (!currentTopics.contains(t)) {
+                args << "--add-topic" << t;
+                changed = true;
+            }
+        }
+        for (const QString &t : currentTopics) {
+            if (!newTopics.contains(t)) {
+                args << "--remove-topic" << t;
+                changed = true;
+            }
+        }
+
+        const QString newBranch = defaultBranchInput->text().trimmed();
+        if (newBranch != repo.value("defaultBranchRef").toObject().value("name").toString()) {
+            args << "--default-branch" << newBranch;
+            changed = true;
+        }
+
+        auto toggleArg = [&args, &changed](const QString &flag,
+                                           bool newValue, bool oldValue) {
+            if (newValue != oldValue) {
+                args << (flag + (newValue ? "=true" : "=false"));
+                changed = true;
+            }
+        };
+        toggleArg("--enable-issues", issuesCheck->isChecked(),
+                  repo.value("hasIssuesEnabled").toBool());
+        toggleArg("--enable-wiki", wikiCheck->isChecked(),
+                  repo.value("hasWikiEnabled").toBool());
+        toggleArg("--enable-projects", projectsCheck->isChecked(),
+                  repo.value("hasProjectsEnabled").toBool());
+        toggleArg("--enable-discussions", discussionsCheck->isChecked(),
+                  repo.value("hasDiscussionsEnabled").toBool());
+        toggleArg("--delete-branch-on-merge", deleteBranchCheck->isChecked(),
+                  repo.value("deleteBranchOnMerge").toBool());
+
+        if (!changed) {
+            status->setText("No changes to save.");
+            return;
+        }
+
+        status->setText("Saving…");
+        QProcess editProc;
+        editProc.setWorkingDirectory(m_repoPath);
+        editProc.start("gh", args);
+        if (!editProc.waitForFinished(20000) || editProc.exitCode() != 0) {
+            status->setText("Failed: "
+                + QString::fromUtf8(editProc.readAllStandardError()).trimmed());
+            return;
+        }
+        status->setText("Settings saved.");
+        QMessageBox::information(&dialog, "Repository Settings",
+            "The repository settings were updated on GitHub.");
+    });
+
+    dialog.exec();
 }
 
 // --- Theme system ---
@@ -2307,7 +2713,16 @@ void MainWindow::onAddCoAuthors()
     for (const QString &file : files) {
         QProcess p;
         p.setWorkingDirectory(m_repoPath);
-        p.start("git", {"log", "--follow", "--format=%an <%ae>", "--", file});
+        if (isJjRepo()) {
+            p.start("jj", {"log", "--no-graph", "-r",
+                           "::@ & files(" + file + ")",
+                           "--limit", "100",
+                           "--config", "ui.pagination=never",
+                           "-T", "if(author.name() == \"\", author.email(), author.name())"
+                                 " ++ \" <\" ++ author.email() ++ \">\""});
+        } else {
+            p.start("git", {"log", "--follow", "--format=%an <%ae>", "--", file});
+        }
         if (p.waitForFinished(5000) && p.exitCode() == 0) {
             const QStringList lines = QString::fromUtf8(p.readAllStandardOutput())
                 .split('\n', Qt::SkipEmptyParts);
@@ -2327,7 +2742,12 @@ void MainWindow::onAddCoAuthors()
 
     // Remove current user from the list
     QProcess whoami;
-    whoami.start("git", {"config", "user.name"});
+    if (isJjRepo())
+        whoami.start("jj", {"log", "--no-graph", "-r", "@",
+                            "--config", "ui.pagination=never",
+                            "-T", "author.name()"});
+    else
+        whoami.start("git", {"config", "user.name"});
     QString currentName;
     if (whoami.waitForFinished(2000) && whoami.exitCode() == 0)
         currentName = QString::fromUtf8(whoami.readAllStandardOutput()).trimmed();
@@ -2471,10 +2891,15 @@ void MainWindow::onOpenSettings()
     }
     appearanceLayout->addRow("Theme:", themeCombo);
 
-    // Git page
+    // Git page: identity + SSH keys
     auto *gitPage = new QWidget();
-    auto *gitLayout = new QFormLayout(gitPage);
-    gitLayout->setContentsMargins(12, 12, 12, 12);
+    auto *gitPageLayout = new QVBoxLayout(gitPage);
+    gitPageLayout->setContentsMargins(12, 12, 12, 12);
+    gitPageLayout->setSpacing(8);
+
+    auto *gitIdentityGroup = new QGroupBox("Identity");
+    auto *gitLayout = new QFormLayout(gitIdentityGroup);
+    gitLayout->setContentsMargins(12, 16, 12, 12);
     gitLayout->setSpacing(8);
 
     auto *gitNameInput = new QLineEdit();
@@ -2496,6 +2921,232 @@ void MainWindow::onOpenSettings()
     gitInfoLabel->setStyleSheet("color: gray; font-size: 11px;");
     gitInfoLabel->setWordWrap(true);
     gitLayout->addRow(gitInfoLabel);
+
+    gitPageLayout->addWidget(gitIdentityGroup);
+
+    auto *sshSectionLabel = new QLabel("SSH Keys");
+    {
+        QFont sf = sshSectionLabel->font();
+        sf.setBold(true);
+        sshSectionLabel->setFont(sf);
+    }
+    gitPageLayout->addWidget(sshSectionLabel);
+
+    // SSH Keys section
+
+    auto *sshScroll = new QScrollArea();
+    sshScroll->setWidgetResizable(true);
+    sshScroll->setFrameShape(QFrame::NoFrame);
+    sshScroll->setMinimumHeight(420);
+    sshScroll->setMaximumHeight(560);
+
+    auto *sshBody = new QWidget();
+    auto *sshBodyLayout = new QVBoxLayout(sshBody);
+    sshBodyLayout->setContentsMargins(0, 0, 0, 0);
+    sshBodyLayout->setSpacing(10);
+    sshScroll->setWidget(sshBody);
+
+    auto *sshGenGroup = new QGroupBox("Generate New Key");
+    auto *sshGenForm = new QFormLayout(sshGenGroup);
+    sshGenForm->setContentsMargins(12, 16, 12, 12);
+    sshGenForm->setSpacing(6);
+
+    auto *sshTypeCombo = new QComboBox();
+    sshTypeCombo->addItem("Ed25519", QStringLiteral("ed25519"));
+    sshTypeCombo->addItem("RSA 4096", QStringLiteral("rsa"));
+    sshTypeCombo->setToolTip("Ed25519 is recommended for new keys.");
+    sshGenForm->addRow("Key type:", sshTypeCombo);
+
+    auto *sshCommentInput = new QLineEdit();
+    sshCommentInput->setPlaceholderText("you@example.com");
+    QString gitEmail = runGitConfig("user.email");
+    if (!gitEmail.isEmpty())
+        sshCommentInput->setText(gitEmail);
+    sshGenForm->addRow("Comment:", sshCommentInput);
+
+    auto *sshPathInput = new QLineEdit();
+    const QString defaultKeyPath = QDir(sshKeysDir()).filePath("id_ed25519");
+    sshPathInput->setText(defaultKeyPath);
+    sshPathInput->setToolTip("Full path where the keypair will be written.");
+    sshGenForm->addRow("Key path:", sshPathInput);
+
+    auto *sshPassInput = new QLineEdit();
+    sshPassInput->setEchoMode(QLineEdit::Password);
+    sshPassInput->setPlaceholderText("(optional)");
+    sshPassInput->setToolTip("Protect the private key with a passphrase. Leave empty for no passphrase.");
+    sshGenForm->addRow("Passphrase:", sshPassInput);
+
+    auto *sshGenRow = new QHBoxLayout();
+    auto *sshGenerateBtn = new QPushButton("Generate Key");
+    auto *sshGenStatus = new QLabel();
+    sshGenStatus->setStyleSheet("color: gray; font-size: 11px;");
+    sshGenStatus->setWordWrap(true);
+    sshGenRow->addWidget(sshGenerateBtn);
+    sshGenRow->addWidget(sshGenStatus, 1);
+    sshGenForm->addRow(sshGenRow);
+
+    sshBodyLayout->addWidget(sshGenGroup);
+
+    auto *sshKeysGroup = new QGroupBox("Existing Keys");
+    auto *sshKeysLayout = new QVBoxLayout(sshKeysGroup);
+    sshKeysLayout->setContentsMargins(12, 16, 12, 12);
+    sshKeysLayout->setSpacing(6);
+
+    auto *sshKeysHint = new QLabel(
+        "Public keys found in ~/.ssh. Only public key material is shown here; "
+        "private keys are never displayed.");
+    sshKeysHint->setStyleSheet("color: gray; font-size: 11px;");
+    sshKeysHint->setWordWrap(true);
+    sshKeysLayout->addWidget(sshKeysHint);
+
+    auto *sshKeysList = new QListWidget();
+    sshKeysList->setAlternatingRowColors(true);
+    sshKeysList->setMaximumHeight(150);
+    sshKeysLayout->addWidget(sshKeysList);
+
+    auto *sshKeysButtons = new QHBoxLayout();
+    auto *sshRefreshBtn = new QPushButton("Refresh");
+    auto *sshCopyBtn = new QPushButton("Copy Public Key");
+    auto *sshDeleteBtn = new QPushButton("Delete Key");
+    sshKeysButtons->addWidget(sshRefreshBtn);
+    sshKeysButtons->addWidget(sshCopyBtn);
+    sshKeysButtons->addWidget(sshDeleteBtn);
+    sshKeysButtons->addStretch();
+    sshKeysLayout->addLayout(sshKeysButtons);
+
+    auto *sshKeysStatus = new QLabel();
+    sshKeysStatus->setStyleSheet("color: gray; font-size: 11px;");
+    sshKeysStatus->setWordWrap(true);
+    sshKeysLayout->addWidget(sshKeysStatus);
+
+    sshBodyLayout->addWidget(sshKeysGroup);
+
+    auto *sshTestGroup = new QGroupBox("Test Connection");
+    auto *sshTestForm = new QFormLayout(sshTestGroup);
+    sshTestForm->setContentsMargins(12, 16, 12, 12);
+    sshTestForm->setSpacing(6);
+
+    auto *sshHostInput = new QLineEdit("git@github.com");
+    sshHostInput->setPlaceholderText("user@host");
+    sshTestForm->addRow("Host:", sshHostInput);
+
+    auto *sshPortInput = new QSpinBox();
+    sshPortInput->setRange(1, 65535);
+    sshPortInput->setValue(22);
+    sshTestForm->addRow("Port:", sshPortInput);
+
+    auto *sshTestBtn = new QPushButton("Test Connection");
+    auto *sshTestResult = new QLabel();
+    sshTestResult->setStyleSheet("color: gray; font-size: 11px;");
+    sshTestResult->setWordWrap(true);
+    auto *sshTestRow = new QHBoxLayout();
+    sshTestRow->addWidget(sshTestBtn);
+    sshTestRow->addWidget(sshTestResult, 1);
+    sshTestForm->addRow(sshTestRow);
+
+    sshBodyLayout->addWidget(sshTestGroup);
+    sshBodyLayout->addStretch();
+
+    auto refreshSshKeys = [this, sshKeysList, sshKeysStatus]() {
+        sshKeysList->clear();
+        const QStringList keys = m_vcsBridge->listSshPublicKeys();
+        for (const QString &pubPath : keys) {
+            const QString name = QFileInfo(pubPath).fileName();
+            const QString fp = m_vcsBridge->fingerprint(pubPath);
+            auto *item = new QListWidgetItem(fp.isEmpty() ? name : QString("%1  ·  %2").arg(name, fp));
+            item->setToolTip(pubPath);
+            item->setData(Qt::UserRole, pubPath);
+            sshKeysList->addItem(item);
+        }
+        sshKeysStatus->setText(keys.isEmpty()
+                                   ? "No SSH keys found. Generate one above."
+                                   : QStringLiteral("%1 key(s) found.").arg(keys.size()));
+    };
+
+    connect(sshGenerateBtn, &QPushButton::clicked, this,
+            [this, sshTypeCombo, sshCommentInput, sshPathInput, sshPassInput,
+             sshGenStatus, refreshSshKeys]() {
+        const QString path = sshPathInput->text().trimmed();
+        const QString comment = sshCommentInput->text().trimmed();
+        const QString passphrase = sshPassInput->text();
+        if (path.isEmpty()) {
+            sshGenStatus->setText("Enter a key path.");
+            return;
+        }
+        if (QFile::exists(path)) {
+            sshGenStatus->setText("A key already exists at that path.");
+            return;
+        }
+        QDir().mkpath(QFileInfo(path).absolutePath());
+        const QString type = sshTypeCombo->currentData().toString();
+        const QString error = m_vcsBridge->generateKey(type, path, comment, passphrase);
+        if (error.isEmpty()) {
+            sshGenStatus->setText("Key generated successfully.");
+            sshPassInput->clear();
+            refreshSshKeys();
+        } else {
+            sshGenStatus->setText(QStringLiteral("Failed: %1").arg(error));
+        }
+    });
+
+    connect(sshRefreshBtn, &QPushButton::clicked, this, [refreshSshKeys]() { refreshSshKeys(); });
+
+    connect(sshCopyBtn, &QPushButton::clicked, this,
+            [this, sshKeysList, &dialog]() {
+        auto *item = sshKeysList->currentItem();
+        if (!item)
+            return;
+        const QString pub = m_vcsBridge->readPublicKey(item->data(Qt::UserRole).toString());
+        if (pub.isEmpty()) {
+            QMessageBox::warning(&dialog, "Copy Public Key",
+                                 "Could not read the public key file.");
+            return;
+        }
+        QApplication::clipboard()->setText(pub);
+        QMessageBox::information(&dialog, "Public Key",
+                                 "The public key was copied to the clipboard. "
+                                 "Add it to GitHub, GitLab, or your hosting provider "
+                                 "under SSH keys.\n\n" + pub);
+    });
+
+    connect(sshDeleteBtn, &QPushButton::clicked, this,
+            [sshKeysList, refreshSshKeys, &dialog]() {
+        auto *item = sshKeysList->currentItem();
+        if (!item)
+            return;
+        const QString pubPath = item->data(Qt::UserRole).toString();
+        const QString privPath = QFileInfo(pubPath).completeBaseName();
+        const QString name = QFileInfo(pubPath).fileName();
+        const auto answer = QMessageBox::question(
+            &dialog, "Delete SSH Key",
+            QString("Delete \"%1\"?\n\nBoth the public key (%2) and the "
+                    "private key (%3) will be permanently removed.")
+                .arg(name, QFileInfo(pubPath).fileName(), QFileInfo(privPath).fileName()),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes)
+            return;
+        QFile::remove(pubPath);
+        QFile::remove(privPath);
+        refreshSshKeys();
+    });
+
+    connect(sshTestBtn, &QPushButton::clicked, this,
+            [this, sshHostInput, sshPortInput, sshTestResult]() {
+        const QString host = sshHostInput->text().trimmed();
+        if (host.isEmpty()) {
+            sshTestResult->setText("Enter a host such as git@github.com.");
+            return;
+        }
+        sshTestResult->setText("Testing…");
+        const QString result = m_vcsBridge->testConnection(host, sshPortInput->value());
+        sshTestResult->setText(result.isEmpty() ? "No response."
+                                                : QString(result).replace('\n', " "));
+    });
+
+    refreshSshKeys();
+
+    gitPageLayout->addWidget(sshScroll);
+    sshBodyLayout->setSizeConstraint(QLayout::SetMinimumSize);
 
     // AI page
     auto *aiPage = new QWidget();
@@ -3109,7 +3760,13 @@ void MainWindow::onOpenSettings()
 bool MainWindow::isGitRepository(const QString &path)
 {
     const QFileInfo gitInfo(QDir(path).filePath(".git"));
-    return gitInfo.exists();
+    const QFileInfo jjInfo(QDir(path).filePath(".jj"));
+    return gitInfo.exists() || jjInfo.exists();
+}
+
+bool MainWindow::isJjRepo() const
+{
+    return detectVcsKind(m_repoPath) == QLatin1String("jujutsu");
 }
 
 bool MainWindow::isDirtyRepository(const QString &path)
@@ -3118,7 +3775,12 @@ bool MainWindow::isDirtyRepository(const QString &path)
         return false;
     QProcess proc;
     proc.setWorkingDirectory(path);
-    proc.start("git", {"status", "--porcelain"});
+    if (detectVcsKind(path) == QLatin1String("jujutsu")) {
+        proc.start("jj", {"diff", "--summary", "--color", "never",
+                          "--config", "ui.pagination=never"});
+    } else {
+        proc.start("git", {"status", "--porcelain"});
+    }
     if (!proc.waitForFinished(3000) || proc.exitCode() != 0)
         return false;
     return !proc.readAllStandardOutput().trimmed().isEmpty();
@@ -3208,7 +3870,9 @@ void MainWindow::onTreeContextMenu(const QPoint &pos)
         return;
 
     const QChar status = item->data(0, Qt::UserRole + 1).toChar();
-    const bool isUntracked = (status == '?');
+    // In jj, new files appear as 'A' (no separate untracked state), so both
+    // '?' and (in jj mode) 'A' offer "Delete File".
+    const bool isNewFile = (status == '?') || (isJjRepo() && status == 'A');
 
     QMenu menu(this);
 
@@ -3221,7 +3885,7 @@ void MainWindow::onTreeContextMenu(const QPoint &pos)
 
     menu.addSeparator();
 
-    if (isUntracked) {
+    if (isNewFile) {
         auto *deleteAct = menu.addAction("Delete File");
         connect(deleteAct, &QAction::triggered, this, [this, path]() {
             QFile::remove(QDir(m_repoPath).filePath(path));
@@ -3231,7 +3895,10 @@ void MainWindow::onTreeContextMenu(const QPoint &pos)
         auto *discardAct = menu.addAction("Discard Changes");
         connect(discardAct, &QAction::triggered, this, [this, path]() {
             m_stageProcess->setWorkingDirectory(m_repoPath);
-            m_stageProcess->start("git", {"restore", path});
+            if (isJjRepo())
+                m_stageProcess->start("jj", {"restore", path});
+            else
+                m_stageProcess->start("git", {"restore", path});
         });
     }
 
@@ -3249,16 +3916,20 @@ void MainWindow::onDiscardFile()
         return;
 
     m_stageProcess->setWorkingDirectory(m_repoPath);
-    m_stageProcess->start("git", {"restore", path});
+    if (isJjRepo())
+        m_stageProcess->start("jj", {"restore", path});
+    else
+        m_stageProcess->start("git", {"restore", path});
 }
 
 // --- Tree item click (diff viewer) ---
 
-static QString runGitDiff(const QString &repoPath, const QStringList &args)
+static QString runGitDiff(const QString &repoPath, const QString &program,
+                          const QStringList &args)
 {
     QProcess proc;
     proc.setWorkingDirectory(repoPath);
-    proc.start("git", args);
+    proc.start(program, args);
     if (!proc.waitForFinished(5000) || proc.exitCode() != 0)
         return {};
     return QString::fromUtf8(proc.readAllStandardOutput());
@@ -3304,10 +3975,16 @@ void MainWindow::onTreeItemClicked(QTreeWidgetItem *item, int column)
     // that would reset checkbox states
     m_fsWatcher->blockSignals(true);
 
-    QString diff = runGitDiff(m_repoPath, {"diff", "HEAD", "--", relPath});
-
-    if (diff.isEmpty())
-        diff = runGitDiff(m_repoPath, {"diff", "@{u}..HEAD", "--", relPath});
+    QString diff;
+    if (isJjRepo()) {
+        diff = runGitDiff(m_repoPath, "jj",
+                          {"diff", "--git", "--color", "never",
+                           "--config", "ui.pagination=never", "--", relPath});
+    } else {
+        diff = runGitDiff(m_repoPath, "git", {"diff", "HEAD", "--", relPath});
+        if (diff.isEmpty())
+            diff = runGitDiff(m_repoPath, "git", {"diff", "@{u}..HEAD", "--", relPath});
+    }
 
     m_fsWatcher->blockSignals(false);
 
@@ -3333,6 +4010,11 @@ void MainWindow::onCommitClicked()
     if (files.isEmpty()) {
         QMessageBox::information(this, "Nothing Selected",
             "Check at least one file to commit.");
+        return;
+    }
+
+    if (isJjRepo()) {
+        commitJj();
         return;
     }
 
@@ -3372,6 +4054,62 @@ void MainWindow::onCommitClicked()
 
     m_commitProcess->setWorkingDirectory(m_repoPath);
     m_commitProcess->start("git", args);
+}
+
+// jj has no staging area; the working copy is already a change. When every
+// changed file is checked, describe the working copy (keeps the bookmark on the
+// described commit). When only a subset is checked, jj split creates a new
+// commit containing exactly those files and leaves the rest in the working copy.
+void MainWindow::commitJj()
+{
+    QStringList realChecked;
+    int realItems = 0;
+    int checkedRealItems = 0;
+    for (int i = 0; i < m_gitStatusTree->topLevelItemCount(); ++i) {
+        auto *item = m_gitStatusTree->topLevelItem(i);
+        const QChar st = item->data(0, Qt::UserRole + 1).toChar();
+        if (st == QLatin1Char('['))   // "[P]" unpushed-marker duplicates
+            continue;
+        ++realItems;
+        const QString path = item->data(0, Qt::UserRole).toString();
+        if (item->checkState(0) == Qt::Checked) {
+            ++checkedRealItems;
+            realChecked << path;
+        }
+    }
+    if (realItems == 0)
+        return;
+
+    QString message = m_summaryInput->text().trimmed();
+    const QString desc = m_descriptionInput->toPlainText().trimmed();
+    if (!desc.isEmpty())
+        message += QLatin1String("\n\n") + desc;
+
+    if (!m_commitProcess || m_commitProcess->state() != QProcess::NotRunning) {
+        if (m_commitProcess) {
+            m_commitProcess->deleteLater();
+            m_commitProcess = nullptr;
+        }
+        m_commitProcess = new QProcess(this);
+        connect(m_commitProcess, &QProcess::finished,
+                this, &MainWindow::onCommitFinished);
+        connect(m_commitProcess, &QProcess::errorOccurred,
+                this, &MainWindow::onCommitErrorOccurred);
+    }
+
+    m_commitButton->setEnabled(false);
+    m_commitButton->setText("Committing…");
+
+    QStringList args;
+    if (checkedRealItems == realItems) {
+        args = {"describe", "-m", message};
+    } else {
+        args = {"split", "-m", message};
+        args += realChecked;
+    }
+
+    m_commitProcess->setWorkingDirectory(m_repoPath);
+    m_commitProcess->start("jj", args);
 }
 
 void MainWindow::onCommitFinished(int exitCode, QProcess::ExitStatus exitStatus)
@@ -3432,6 +4170,22 @@ void MainWindow::loadBranches()
     // Get current branch synchronously (fast)
     QProcess cur;
     cur.setWorkingDirectory(m_repoPath);
+    if (isJjRepo()) {
+        // Current bookmarks on the working-copy change (may be comma-joined).
+        cur.start("jj", {"log", "--no-graph", "-r", "@",
+                         "--config", "ui.pagination=never",
+                         "-T", "bookmarks.join(\",\")"});
+        if (cur.waitForFinished(3000) && cur.exitCode() == 0)
+            m_currentBranch = QString::fromUtf8(cur.readAllStandardOutput()).trimmed();
+
+        // Load all bookmarks asynchronously (plain names, one per line).
+        m_branchProcess->setWorkingDirectory(m_repoPath);
+        m_branchProcess->start("jj", {"bookmark", "list",
+                                      "--config", "ui.pagination=never",
+                                      "-T", "name ++ \"\\n\""});
+        return;
+    }
+
     cur.start("git", {"branch", "--show-current"});
     if (cur.waitForFinished(3000) && cur.exitCode() == 0)
         m_currentBranch = QString::fromUtf8(cur.readAllStandardOutput()).trimmed();
@@ -3508,6 +4262,14 @@ void MainWindow::onBranchChanged(int index)
         return;
     }
 
+    // jj edit carries uncommitted changes to the new working-copy commit, so
+    // the dirty-check prompt is unnecessary (and its git query would not reflect
+    // jj state in non-colocated repos).
+    if (isJjRepo()) {
+        doCheckout(selected);
+        return;
+    }
+
     // Check for uncommitted changes
     QProcess dirty;
     dirty.setWorkingDirectory(m_repoPath);
@@ -3542,7 +4304,10 @@ void MainWindow::doCheckout(const QString &branch)
 {
     m_branchComboBox->setEnabled(false);
     m_checkoutProcess->setWorkingDirectory(m_repoPath);
-    m_checkoutProcess->start("git", {"checkout", branch});
+    if (isJjRepo())
+        m_checkoutProcess->start("jj", {"edit", branch});
+    else
+        m_checkoutProcess->start("git", {"checkout", branch});
 }
 
 void MainWindow::restoreBranchSelection()
@@ -3617,7 +4382,10 @@ void MainWindow::onDeleteBranch()
     m_populatingBranches = true;
     QProcess del;
     del.setWorkingDirectory(m_repoPath);
-    del.start("git", {"branch", "-D", branch});
+    if (isJjRepo())
+        del.start("jj", {"bookmark", "delete", branch});
+    else
+        del.start("git", {"branch", "-D", branch});
     if (del.waitForFinished(5000) && del.exitCode() == 0) {
         loadBranches();
     } else {
@@ -3638,6 +4406,25 @@ void MainWindow::createNewBranch()
         return;
     }
 
+    if (isJjRepo()) {
+        // Create the bookmark synchronously; jj bookmark create prints a
+        // "Created 1 bookmarks..." line to stdout that onBranchesLoaded would
+        // otherwise misparse as branch names.
+        m_populatingBranches = true;
+        QProcess create;
+        create.setWorkingDirectory(m_repoPath);
+        create.start("jj", {"bookmark", "create", name.trimmed()});
+        if (create.waitForFinished(5000) && create.exitCode() == 0) {
+            loadBranches();
+        } else {
+            QMessageBox::warning(this, "Create Failed",
+                QString::fromUtf8(create.readAllStandardError()));
+            m_populatingBranches = false;
+            restoreBranchSelection();
+        }
+        return;
+    }
+
     m_populatingBranches = true;
     m_createBranchProcess->setWorkingDirectory(m_repoPath);
     m_createBranchProcess->start("git", {"checkout", "-b", name.trimmed()});
@@ -3653,6 +4440,7 @@ void MainWindow::refreshAll()
 
     loadBranches();
     startGitStatusQuery();
+    startGitLogQuery();
 }
 
 // --- Push / Fetch / Pull ---
@@ -3668,13 +4456,31 @@ void MainWindow::onPushClicked()
 
     switch (m_pushState) {
     case PushState::Push:
-        m_pushProcess->start("git", {"push"});
+        if (isJjRepo()) {
+            if (m_currentBranch.isEmpty())
+                m_pushProcess->start("jj", {"git", "push", "-c", "@"});
+            else
+                m_pushProcess->start("jj", {"git", "push", "--bookmark",
+                                            m_currentBranch.section(QLatin1Char(','), 0, 0)});
+        } else {
+            m_pushProcess->start("git", {"push"});
+        }
         break;
     case PushState::Fetch:
-        m_pushProcess->start("git", {"fetch"});
+        if (isJjRepo())
+            m_pushProcess->start("jj", {"git", "fetch"});
+        else
+            m_pushProcess->start("git", {"fetch"});
         break;
     case PushState::Pull:
-        m_pushProcess->start("git", {"pull"});
+        // jj has no pull: fetch first, then rebase the working copy onto the
+        // updated remote bookmark (handled in onPushFinished).
+        if (isJjRepo()) {
+            m_pullRebasePending = true;
+            m_pushProcess->start("jj", {"git", "fetch"});
+        } else {
+            m_pushProcess->start("git", {"pull"});
+        }
         break;
     }
 }
@@ -3694,7 +4500,12 @@ void MainWindow::onPushFinished(int exitCode, QProcess::ExitStatus exitStatus)
     switch (m_pushState) {
     case PushState::Push: {
         if (exitCode != 0) {
-            if (stdErr.contains("rejected") || stdErr.contains("non-fast-forward")) {
+            const bool diverged = isJjRepo()
+                ? (stdErr.contains("moved on the remote")
+                   || stdErr.contains("bookmark conflicts")
+                   || stdErr.contains("conflict in bookmark"))
+                : (stdErr.contains("rejected") || stdErr.contains("non-fast-forward"));
+            if (diverged) {
                 m_pushState = PushState::Pull;
                 m_pushButton->setText("Pull");
                 QMessageBox::warning(this, "Push Rejected",
@@ -3707,7 +4518,17 @@ void MainWindow::onPushFinished(int exitCode, QProcess::ExitStatus exitStatus)
             return;
         }
 
-        if (stdOut.contains("Everything up-to-date")) {
+        if (isJjRepo()) {
+            // jj prints "Nothing changed." when the bookmark is already pushed.
+            if (stdOut.contains("Nothing changed")) {
+                m_pushState = PushState::Fetch;
+                m_pushButton->setText("Fetch");
+            } else {
+                m_gitStatusTree->clear();
+                m_fileContentViewer->clear();
+                startGitStatusQuery();
+            }
+        } else if (stdOut.contains("Everything up-to-date")) {
             m_pushState = PushState::Fetch;
             m_pushButton->setText("Fetch");
         } else {
@@ -3725,6 +4546,23 @@ void MainWindow::onPushFinished(int exitCode, QProcess::ExitStatus exitStatus)
             m_pushButton->setText("Push");
             m_pushButton->setEnabled(true);
             return;
+        }
+
+        if (isJjRepo()) {
+            // Behind = a remote bookmark points at commits not reachable from @.
+            QProcess behind;
+            behind.setWorkingDirectory(m_repoPath);
+            behind.start("jj", {"log", "--no-graph", "-r",
+                                "remote_bookmarks() & ~ancestors(@)",
+                                "--limit", "1", "-T", "change_id.short()",
+                                "--config", "ui.pagination=never"});
+            const bool isBehind = behind.waitForFinished(5000)
+                && behind.exitCode() == 0
+                && !behind.readAllStandardOutput().trimmed().isEmpty();
+            m_pushState = isBehind ? PushState::Pull : PushState::Push;
+            m_pushButton->setText(isBehind ? "Pull" : "Push");
+            m_pushButton->setEnabled(true);
+            break;
         }
 
         QProcess behind;
@@ -3748,17 +4586,35 @@ void MainWindow::onPushFinished(int exitCode, QProcess::ExitStatus exitStatus)
     }
     case PushState::Pull: {
         if (exitCode != 0) {
+            m_pullRebasePending = false;
             QMessageBox::warning(this, "Pull Failed", stdErr);
             m_pushButton->setEnabled(true);
             return;
         }
 
+        if (isJjRepo() && m_pullRebasePending) {
+            // First half of pull (fetch) done; rebase @ onto the remote
+            // bookmark, then come back here to finish.
+            m_pullRebasePending = false;
+            QStringList args = {"rebase", "-r", "@"};
+            if (!m_currentBranch.isEmpty())
+                args << "-d" << (m_currentBranch.section(QLatin1Char(','), 0, 0)
+                                 + QLatin1String("@origin"));
+            else
+                args << "-d" << "remote_bookmarks()";
+            m_pushProcess->setWorkingDirectory(m_repoPath);
+            m_pushProcess->start("jj", args);
+            return;
+        }
+
+        m_pullRebasePending = false;
         m_pushState = PushState::Push;
         m_pushButton->setText("Push");
 
         m_gitStatusTree->clear();
         m_fileContentViewer->clear();
         startGitStatusQuery();
+        startGitLogQuery();
         m_pushButton->setEnabled(true);
         break;
     }
@@ -3774,6 +4630,185 @@ void MainWindow::onPushErrorOccurred(QProcess::ProcessError error)
     m_pushButton->setEnabled(true);
 }
 
+// --- Remote management ---
+
+void MainWindow::manageRemotes()
+{
+    if (m_repoPath.isEmpty())
+        return;
+
+    QDialog dialog(this);
+    dialog.setWindowTitle("Remotes");
+    dialog.setMinimumSize(520, 320);
+
+    auto *layout = new QVBoxLayout(&dialog);
+
+    auto *remoteList = new QListWidget();
+    remoteList->setAlternatingRowColors(true);
+    layout->addWidget(remoteList, 1);
+
+    // Runs a remote operation through the native vcs_core crate; returns an
+    // error string prefixed with "ERR:" or an empty string on success.
+    auto runRemote = [this](const std::function<QString()> &op) -> QString {
+        const QString result = op();
+        if (result.isEmpty())
+            return {};
+        return QStringLiteral("ERR: %1").arg(result);
+    };
+
+    auto reloadRemotes = [this, &remoteList]() {
+        remoteList->clear();
+        const QJsonArray remotes = m_vcsBridge->listRemotes(m_repoPath);
+        for (const QJsonValue &value : remotes) {
+            const QJsonObject obj = value.toObject();
+            const QString name = obj.value(QLatin1String("name")).toString();
+            const QString url = obj.value(QLatin1String("url")).toString();
+            if (name.isEmpty())
+                continue;
+            auto *item = new QListWidgetItem(
+                QStringLiteral("%1  —  %2").arg(name, url));
+            item->setData(Qt::UserRole, name);
+            item->setData(Qt::UserRole + 1, url);
+            remoteList->addItem(item);
+        }
+    };
+
+    reloadRemotes();
+
+    auto *buttons = new QHBoxLayout();
+    auto *addBtn = new QPushButton("Add Remote");
+    auto *editBtn = new QPushButton("Edit");
+    auto *removeBtn = new QPushButton("Remove");
+    auto *copyBtn = new QPushButton("Copy URL");
+    buttons->addWidget(addBtn);
+    buttons->addWidget(editBtn);
+    buttons->addWidget(removeBtn);
+    buttons->addWidget(copyBtn);
+    buttons->addStretch();
+    layout->addLayout(buttons);
+
+    connect(addBtn, &QPushButton::clicked, this,
+            [this, &dialog, &runRemote, &reloadRemotes]() {
+        QDialog inputDlg(&dialog);
+        inputDlg.setWindowTitle("Add Remote");
+        inputDlg.setMinimumWidth(400);
+        auto *form = new QFormLayout(&inputDlg);
+        auto *nameInput = new QLineEdit();
+        nameInput->setPlaceholderText("origin");
+        auto *urlInput = new QLineEdit();
+        urlInput->setPlaceholderText("git@github.com:user/repo.git");
+        form->addRow("Name:", nameInput);
+        form->addRow("URL:", urlInput);
+        auto *box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+        form->addRow(box);
+        connect(box, &QDialogButtonBox::accepted, &inputDlg, &QDialog::accept);
+        connect(box, &QDialogButtonBox::rejected, &inputDlg, &QDialog::reject);
+        if (inputDlg.exec() != QDialog::Accepted)
+            return;
+
+        const QString name = nameInput->text().trimmed();
+        const QString url = urlInput->text().trimmed();
+        if (name.isEmpty() || url.isEmpty()) {
+            QMessageBox::warning(&dialog, "Add Remote",
+                                 "Both a remote name and URL are required.");
+            return;
+        }
+        const QString result = runRemote([this, name, url]() {
+            return m_vcsBridge->addRemote(m_repoPath, name, url);
+        });
+        if (result.startsWith(QLatin1String("ERR:"))) {
+            QMessageBox::warning(&dialog, "Add Remote",
+                                 result.mid(4));
+            return;
+        }
+        reloadRemotes();
+    });
+
+    connect(editBtn, &QPushButton::clicked, this,
+            [this, &dialog, &remoteList, &runRemote, &reloadRemotes]() {
+        auto *item = remoteList->currentItem();
+        if (!item)
+            return;
+        const QString oldName = item->data(Qt::UserRole).toString();
+        const QString oldUrl = item->data(Qt::UserRole + 1).toString();
+
+        QDialog inputDlg(&dialog);
+        inputDlg.setWindowTitle(QStringLiteral("Edit Remote — %1").arg(oldName));
+        inputDlg.setMinimumWidth(420);
+        auto *form = new QFormLayout(&inputDlg);
+        auto *nameInput = new QLineEdit(oldName);
+        auto *urlInput = new QLineEdit(oldUrl);
+        form->addRow("Name:", nameInput);
+        form->addRow("URL:", urlInput);
+        auto *box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+        form->addRow(box);
+        connect(box, &QDialogButtonBox::accepted, &inputDlg, &QDialog::accept);
+        connect(box, &QDialogButtonBox::rejected, &inputDlg, &QDialog::reject);
+        if (inputDlg.exec() != QDialog::Accepted)
+            return;
+
+        const QString newName = nameInput->text().trimmed();
+        const QString newUrl = urlInput->text().trimmed();
+
+        if (newName != oldName) {
+            const QString result = runRemote([this, oldName, newName]() {
+                return m_vcsBridge->renameRemote(m_repoPath, oldName, newName);
+            });
+            if (result.startsWith(QLatin1String("ERR:"))) {
+                QMessageBox::warning(&dialog, "Rename Remote", result.mid(4));
+                return;
+            }
+        }
+        if (!newUrl.isEmpty() && newUrl != oldUrl) {
+            const QString result = runRemote([this, newName, newUrl]() {
+                return m_vcsBridge->setRemoteUrl(m_repoPath, newName, newUrl);
+            });
+            if (result.startsWith(QLatin1String("ERR:"))) {
+                QMessageBox::warning(&dialog, "Edit Remote", result.mid(4));
+                return;
+            }
+        }
+        reloadRemotes();
+    });
+
+    connect(removeBtn, &QPushButton::clicked, this,
+            [this, &dialog, &remoteList, &runRemote, &reloadRemotes]() {
+        auto *item = remoteList->currentItem();
+        if (!item)
+            return;
+        const QString name = item->data(Qt::UserRole).toString();
+        const auto answer = QMessageBox::question(
+            &dialog, "Remove Remote",
+            QStringLiteral("Remove the remote \"%1\"? This cannot be undone.")
+                .arg(name),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes)
+            return;
+        const QString result = runRemote([this, name]() {
+            return m_vcsBridge->removeRemote(m_repoPath, name);
+        });
+        if (result.startsWith(QLatin1String("ERR:"))) {
+            QMessageBox::warning(&dialog, "Remove Remote", result.mid(4));
+            return;
+        }
+        reloadRemotes();
+    });
+
+    connect(copyBtn, &QPushButton::clicked, this,
+            [&remoteList]() {
+        auto *item = remoteList->currentItem();
+        if (!item)
+            return;
+        QApplication::clipboard()->setText(item->data(Qt::UserRole + 1).toString());
+    });
+
+    auto *closeBox = new QDialogButtonBox(QDialogButtonBox::Close);
+    connect(closeBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(closeBox);
+
+    dialog.exec();
+}
+
 // --- Status queries ---
 
 void MainWindow::startGitStatusQuery()
@@ -3783,7 +4818,11 @@ void MainWindow::startGitStatusQuery()
 
     m_currentQuery = GitQuery::Status;
     m_gitProcess->setWorkingDirectory(m_repoPath);
-    m_gitProcess->start("git", {"status", "--porcelain"});
+    if (isJjRepo())
+        m_gitProcess->start("jj", {"status", "--color", "never",
+                                   "--config", "ui.pagination=never"});
+    else
+        m_gitProcess->start("git", {"status", "--porcelain"});
 }
 
 void MainWindow::onStageAllFiles()
@@ -3813,7 +4852,12 @@ void MainWindow::startGitUnpushedQuery()
 
     m_currentQuery = GitQuery::Unpushed;
     m_gitProcess->setWorkingDirectory(m_repoPath);
-    m_gitProcess->start("git", {"diff", "--name-only", "@{u}..HEAD"});
+    if (isJjRepo())
+        m_gitProcess->start("jj", {"diff", "--summary", "--color", "never",
+                                   "--config", "ui.pagination=never",
+                                   "-r", "remote_bookmarks()..@"});
+    else
+        m_gitProcess->start("git", {"diff", "--name-only", "@{u}..HEAD"});
 }
 
 void MainWindow::onGitProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)
@@ -3847,7 +4891,19 @@ void MainWindow::onGitProcessFinished(int exitCode, QProcess::ExitStatus exitSta
             if (trimmed.isEmpty())
                 continue;
 
-            addGitFileToTree(trimmed, "[P]");
+            QString path = trimmed;
+            if (isJjRepo()) {
+                // jj diff --summary prints "M path" / "A path" / "R {old => new}".
+                if (path.size() >= 2)
+                    path = path.mid(2).trimmed();
+                if (path.startsWith(QLatin1Char('{'))) {
+                    path = path.section(QLatin1String("=>"), -1, -1).trimmed();
+                    path.remove(QLatin1Char('}'));
+                    path = path.trimmed();
+                }
+            }
+
+            addGitFileToTree(path, "[P]");
         }
 
         m_currentQuery = GitQuery::None;
@@ -3877,27 +4933,67 @@ void MainWindow::updateStagedUnstagedTrees(const QString &output)
 
     m_gitStatusTree->clear();
 
-    const QStringList lines = output.split('\n', Qt::SkipEmptyParts);
+    // Collect (status, path) pairs from either VCS's status output.
+    struct Change { QChar status; QString path; };
+    QList<Change> changes;
+
+    if (isJjRepo()) {
+        // jj status format (verified):
+        //   "Working copy changes:" then "M file" / "A file" / "D file" /
+        //   "R {old => new}" lines with NO leading space, then "Untracked paths:"
+        //   with "? path" lines. Rename lines carry the target path in braces.
+        bool inWorkingCopy = false;
+        const QStringList lines = output.split(QLatin1Char('\n'));
+        for (const QString &line : lines) {
+            if (line.startsWith(QLatin1String("Working copy changes"))) {
+                inWorkingCopy = true;
+                continue;
+            }
+            if (line.trimmed().isEmpty() || line.endsWith(QLatin1Char(':'))) {
+                inWorkingCopy = false;
+                continue;
+            }
+            if (!inWorkingCopy || line.size() < 2 || line.at(0) == QLatin1Char(' '))
+                continue;
+            const QChar status = line.at(0);
+            if (status != QLatin1Char('M') && status != QLatin1Char('A')
+                && status != QLatin1Char('D') && status != QLatin1Char('R')
+                && status != QLatin1Char('C') && status != QLatin1Char('?'))
+                continue;
+            QString path = line.mid(2).trimmed();
+            if (status == QLatin1Char('R') && path.startsWith(QLatin1Char('{'))) {
+                path = path.section(QLatin1String("=>"), -1, -1).trimmed();
+                path.remove(QLatin1Char('}'));
+                path = path.trimmed();
+            }
+            changes.append({status, path});
+        }
+    } else {
+        const QStringList lines = output.split('\n', Qt::SkipEmptyParts);
+        for (const QString &line : lines) {
+            const QString xy = line.left(2);
+            const QChar status = xy.at(0) != QLatin1Char(' ')
+                    ? xy.at(0) : (xy.size() > 1 ? xy.at(1) : QChar());
+            QString path = line.mid(3).trimmed();
+            if (path.contains(QLatin1String(" -> ")))
+                path = path.section(QLatin1String(" -> "), -1, -1);
+            changes.append({status, path});
+        }
+    }
+
     int count = 0;
-
-    for (const QString &line : lines) {
-        const QString xy = line.left(2);
-
+    for (const Change &ch : changes) {
         QString prefix;
-        if (xy == "??")
-            prefix = "[?]";
-        else if (xy.contains('M'))
-            prefix = "[M]";
-        else if (xy.contains('A'))
-            prefix = "[A]";
-        else if (xy.contains('D'))
-            prefix = "[D]";
-        else if (xy.contains('R'))
-            prefix = "[R]";
-        else
-            prefix = "[*]";
+        switch (ch.status.toLatin1()) {
+        case 'M': prefix = "[M]"; break;
+        case 'A': prefix = "[A]"; break;
+        case 'D': prefix = "[D]"; break;
+        case 'R': prefix = "[R]"; break;
+        case '?': prefix = "[?]"; break;
+        default:  prefix = "[*]"; break;
+        }
 
-        const QString path = line.mid(3).trimmed();
+        const QString path = ch.path;
 
         auto *fileItem = new QTreeWidgetItem();
         fileItem->setText(0, path);
@@ -3942,10 +5038,27 @@ void MainWindow::startGitLogQuery()
         return;
 
     m_logProcess->setWorkingDirectory(m_repoPath);
-    m_logProcess->start("git", {
-        "log", "--pretty=format:%h%n%an%n%ar%n%s", "--max-count=100",
-        "--abbrev-commit"
-    });
+    if (isJjRepo()) {
+        // Template emits the same 4-line groups the git format below uses:
+        // change id, author, relative date, first description line. Empty
+        // author/description fall back to placeholders so the groups survive
+        // Qt::SkipEmptyParts.
+        const QString tmpl = QStringLiteral(
+            "change_id.short() ++ \"\\n\""
+            " ++ if(author.name() == \"\", \"?\", author.name()) ++ \"\\n\""
+            " ++ author.timestamp().ago() ++ \"\\n\""
+            " ++ if(description.first_line() == \"\", \"(no description)\", description.first_line())"
+            " ++ \"\\n\"");
+        m_logProcess->start("jj", {
+            "log", "--no-graph", "--limit", "100",
+            "--config", "ui.pagination=never", "-T", tmpl
+        });
+    } else {
+        m_logProcess->start("git", {
+            "log", "--pretty=format:%h%n%an%n%ar%n%s", "--max-count=100",
+            "--abbrev-commit"
+        });
+    }
 }
 
 void MainWindow::onLogFinished(int exitCode, QProcess::ExitStatus exitStatus)
@@ -3996,10 +5109,15 @@ void MainWindow::onHistoryItemClicked(QListWidgetItem *item)
         m_viewCommitFilesAction->setChecked(true);
 
     m_commitDetailProcess->setWorkingDirectory(m_repoPath);
-    m_commitDetailProcess->start("git", {
-        "diff-tree", "--no-commit-id", "-r", "--name-status",
-        m_selectedCommitHash
-    });
+    if (isJjRepo())
+        m_commitDetailProcess->start("jj", {"diff", "--summary", "--color", "never",
+                                            "--config", "ui.pagination=never",
+                                            "-r", m_selectedCommitHash});
+    else
+        m_commitDetailProcess->start("git", {
+            "diff-tree", "--no-commit-id", "-r", "--name-status",
+            m_selectedCommitHash
+        });
 }
 
 void MainWindow::onCommitDetailFinished(int exitCode, QProcess::ExitStatus exitStatus)
@@ -4014,13 +5132,25 @@ void MainWindow::onCommitDetailFinished(int exitCode, QProcess::ExitStatus exitS
     const QStringList lines = output.split('\n', Qt::SkipEmptyParts);
 
     for (const QString &line : lines) {
-        // Format: "M\tpath/to/file" or "A\tpath/to/file" etc.
+        // git: "M\tpath/to/file"; jj: "M path/to/file" or "R {old => new}"
+        QString status;
+        QString filePath;
         const int tabPos = line.indexOf('\t');
-        if (tabPos < 0)
+        if (tabPos >= 0) {
+            status = line.left(tabPos);
+            filePath = line.mid(tabPos + 1);
+        } else if (line.size() >= 2) {
+            status = line.left(1);
+            filePath = line.mid(2).trimmed();
+            if (filePath.startsWith(QLatin1Char('{'))) {
+                filePath = filePath.section(QLatin1String("=>"), -1, -1).trimmed();
+                filePath.remove(QLatin1Char('}'));
+                filePath = filePath.trimmed();
+            }
+        }
+        if (filePath.isEmpty())
             continue;
 
-        const QString status = line.left(tabPos);
-        const QString filePath = line.mid(tabPos + 1);
         const QString fileName = filePath.section('/', -1);
 
         // Show "M  filename.ext" with status prefix
@@ -4051,7 +5181,12 @@ void MainWindow::onCommitFileClicked(QListWidgetItem *item)
 
     auto *diffProc = new QProcess(this);
     diffProc->setWorkingDirectory(m_repoPath);
-    diffProc->start("git", {"show", m_selectedCommitHash, "--", filePath});
+    if (isJjRepo())
+        diffProc->start("jj", {"diff", "--git", "--color", "never",
+                               "--config", "ui.pagination=never",
+                               "-r", m_selectedCommitHash, "--", filePath});
+    else
+        diffProc->start("git", {"show", m_selectedCommitHash, "--", filePath});
 
     m_viewerStack->setCurrentIndex(0);
     connect(diffProc, &QProcess::finished, this, [this, diffProc](int ec, QProcess::ExitStatus es) {
