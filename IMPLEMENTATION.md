@@ -613,6 +613,157 @@ compose file mounts the host X socket, a named volume for config
 
 ---
 
+## Part 4: Addon System (`crates/addons`) — Implementation Status
+
+> Session summary: Phase 2 of the addon system (ADDON_SPEC.md). This part
+> documents the current state of the `lazydesktop-addons` Rust security core,
+> the in-flight test fixes (root causes identified), and the performance
+> roadmap.
+
+### 4.1 Overview
+
+The addon system adds scriptable, sandboxed extensions to LazyDesktop. Rust is
+the trust boundary: archive parsing, directory loading, ignore rules, manifest
+validation, path security, and resource access are enforced in Rust; C++/Qt
+only consumes validated data through a C ABI.
+
+**Deliverables so far:**
+
+- `ADDON_SPEC.md` — full design specification (package format, `.lzdignore`
+  system, security model, provider architecture, FFI ABI, error model, Lua
+  execution model, testing strategy).
+- `crates/addons/` — new workspace member `lazydesktop-addons`
+  (`staticlib`, C ABI via `include/addons.h`, `#![deny(unsafe_code)]` with
+  `unsafe` isolated to `ffi.rs`).
+- Workspace wiring: `crates/addons` added to `Cargo.toml` members and
+  `Cargo.lock`.
+
+**Module layout:**
+
+| Module | Responsibility |
+|--------|---------------|
+| `archive.rs` | `.zip`/`.lzd` streaming extraction, path-security, size/entry limits, symlink handling, duplicate detection, ignore rules, manifest peeking |
+| `pathsec.rs` | path normalization, traversal rejection, lexical/canonical containment, symlink target policy |
+| `ignore.rs` | `.lzdignore` parsing + gitignore-style matching (`*`, `?`, `[...]`, `**`, `!`, escapes), default ignores |
+| `manifest.rs` | `config.toml` schema + ordered validation (semver, API version, ID rules) |
+| `registry.rs` | provider aggregation, snapshot index (`by_id`), install/uninstall/open/read-asset |
+| `provider/` | `AddonProvider` trait; `local.rs` (dirs/zips/`.lzd` scanning, shadowing/conflict resolution), `remote.rs` (design-ready stub returning `NotSupported`) |
+| `error.rs` | structured `AddonError` taxonomy + sanitized JSON serialization (never leaks absolute paths) |
+| `ffi.rs` + `include/addons.h` | C ABI (`lda_*` functions, `lda_result` codes, error JSON contract) |
+| `json.rs`, `package.rs` | JSON helpers, descriptor/package model |
+
+### 4.2 Test status (session start)
+
+`cargo test -p lazydesktop-addons`: **59 passed, 14 failed.** No production
+code changes had been made yet; the failures below had been fully diagnosed
+with concrete fix plans.
+
+### 4.3 Failing tests — root causes and fix plans
+
+**`archive.rs` (4 tests) — all test-fixture bugs:**
+
+1. `extract_rejects_duplicate_entries` — the `zip` crate's `ZipWriter`
+   rejects duplicate raw filenames (`start_file("x.txt")` twice panics on
+   `unwrap`). Fix: write `x.txt` + `./x.txt` (distinct raw names, same
+   normalized path) so the crate's own normalized `seen`-set duplicate
+   detection fires.
+2. `content_size_counts_only_non_ignored` — fixture writes
+   `root/.git/config` without creating the `.git` directory first
+   (`fs::write` does not create parents) → `NotFound`. Fix: create `.git`
+   before writing.
+3./4. `symlink_within_root_is_extracted` and `symlink_escaping_root_is_rejected`
+   — `zip::write::SimpleFileOptions::unix_permissions(0o120777)` masks the
+   mode with `& 0o777` (zip crate `write.rs`), stripping the `S_IFLNK`
+   (0o120000) type bit, so `entry.is_symlink()` returns false and the entry
+   extracts as a regular file. Fix: build the fixture with hand-crafted raw
+   zip bytes whose central-directory `external_attributes = 0o120777 << 16`
+   and `version_made_by` high byte = 3 (Unix) — the read path maps
+   `unix_mode()` to `external_attributes >> 16`.
+
+**`error.rs` (1 test) — production bug:**
+
+5. `sanitizer_keeps_urls` — `sanitize_message` destroys `https://...` URLs:
+   the Windows drive-prefix branch fires on the `s` in `https:` (any letter
+   followed by `:`), and the absolute-path branch redacts `//example.com/addon`.
+   Fix: only treat a drive prefix or absolute path as such when it starts a
+   token (`i == 0` or previous char is whitespace).
+
+**`ignore.rs` (2 tests) — production + reference bugs:**
+
+6. `double_star_crosses_directories` — a non-dir-only pattern (`a/**/b`)
+   matching a path *prefix* sets `excluded_ancestor = true`, so `a/x/b/y` is
+   reported ignored; the contract says only directory-only patterns
+   (trailing `/`) may exclude a whole subtree. Fix: in `is_ignored`, only
+   `dir_only` patterns may claim ancestor directories.
+7. `proptest_tests::matches_reference_implementation` — the naive reference
+   matcher treats a `Glob` pattern as matching only when `g == "*" || g == s`,
+   so `*.txt` never matches `x.txt` in the reference. Fix: make the reference
+   use the production `glob_segment_match` for glob segments and mirror the
+   dir-only-prefix rule.
+
+**`manifest.rs` (3 tests):**
+
+8. `id_validator` — `"a"*65 + ".b"` accepted because only the *total* length
+   (≤ 128) is enforced. Fix: add a per-segment maximum (64, DNS-label style).
+9. `rejects_bad_ids` — all-numeric `"1.2"` passes the `^[a-z0-9]+(\.[a-z0-9]+)+$`
+   regex. Fix: require at least one ASCII letter per segment (reverse-DNS
+   convention; `a0.b1.c2` still valid).
+10. `rejects_bad_semver` — `"1.2.3-beta+ok"` is *valid* semver 2.0.0 (the
+    spec mandates the `semver` crate), so the test expectation is wrong.
+    Fix: remove that entry from the bad list.
+
+**`pathsec.rs` (1 test) — production bug:**
+
+11. `symlink_target_validation` — `validate_symlink_target` rejects
+    `RootDir`/`Prefix` components in the *joined* path. In real extraction
+    `entry_dir` is absolute (derived from `dest`), so `entry_dir.join("../src/main.lua")`
+    starts with `RootDir` and is wrongly rejected as "must be relative".
+    Fix: allow `RootDir`/`Prefix` components (the *target string* itself is
+    still required to be relative/backslash-free), reject pops past the root,
+    and require the resolved path to be *strictly* inside `root` (rejecting a
+    target that resolves exactly to the root, e.g. `..`).
+
+**`registry.rs` (2 tests) — same production bug:**
+
+12. `user_root_wins_over_system` — `AddonRegistry::load()` computes the full
+    list (winners + shadowed + error descriptors) but stores only `by_id`
+    (winners) in `RegistrySnapshot`, so `list()` drops shadowed/error entries
+    (expected 2, got 1).
+13. `invalid_manifest_is_surfaced_not_fatal` — same root cause: error
+    descriptors never make it into the snapshot. Fix: snapshot stores the full
+    `all` descriptor list alongside `by_id` (lookups still resolve winners).
+
+**`provider/local.rs` (1 test) — production bug:**
+
+14. `open_after_install_and_uninstall` — `LocalEntry.user` is hard-coded to
+    `false` in `load_directory`/`load_archive`, and `scan()` never propagates
+    the root's `user` flag into `entries_map`, so uninstalling a user-root
+    addon wrongly returns `ReadOnly`. Fix: set `entry.user` from the root flag
+    when building `entries_map` in `scan()`.
+
+### 4.4 Performance roadmap (directive)
+
+Audit and optimize the Rust backend concurrency/performance:
+
+- **`tokio`** — offload blocking system calls, background subprocesses (git
+  execution), and network/remote fetches to async tasks; keep the FFI ⇄
+  C++/Qt event-loop hand-off non-blocking.
+- **`rayon`** — convert CPU/memory-bound loops (multi-entry zip extraction,
+  git status scanning, commit-graph metrics) to parallel iterators.
+- **Ecosystem crates** — `flume` or `crossbeam-channel` for lock-free FFI
+  message passing; `dashmap` for concurrent state/cache maps.
+- **Verification** — `cargo clippy --all-targets -D warnings` and
+  `cargo test` must stay clean.
+
+### 4.5 Next steps
+
+1. Apply the 14 diagnosed fixes (fixture + production), then get the suite
+   green.
+2. Implement the concurrency work above with clippy `-D warnings` clean.
+3. Commit and push.
+
+---
+
 ## Known Notes / Caveats
 
 - **Packaging build system drift** — The Debian rules (`debian/rules` uses
