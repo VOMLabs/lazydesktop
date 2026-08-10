@@ -39,6 +39,10 @@ requiring additional runtimes like Electron.
 │  - clone, init                    │    crate (FFI)     │
 │  - background model downloads     │                     │
 ├─────────────────────────────────────────────────────────┤
+│  Native Rust Layer (vcs_core)     │                     │
+│  - SSH keys, connection tests     │                     │
+│  - git remote read/write          │                     │
+├─────────────────────────────────────────────────────────┤
 │  Persistence Layer  │
 │  - QSettings (INI)   │
 │  - YAML (projects,   │
@@ -55,6 +59,7 @@ requiring additional runtimes like Electron.
 | Build System | XMake | Compilation and linking of the C++ app and the Rust crate |
 | Config Storage | yaml-cpp | YAML parsing for projects and themes |
 | Local AI | Rust `ai_core` crate (`llama-cpp-2`) | GGUF model inference and download, exposed over a C FFI |
+| Native VCS/SSH | Rust `vcs_core` crate (`ssh-key`, `russh`, `gix-config`) | SSH key management, connection tests, git remote config reads/writes, exposed over a C FFI |
 | Background Downloads | Detached worker process (`--background-dl`) | Model downloads that survive UI restarts |
 
 ### Data Storage
@@ -80,21 +85,26 @@ All persistent data lives under `~/.config/lazydesktop/`:
 | `src/mainwindow.cpp` | All application logic: UI setup, git operations, AI generation, settings, project management |
 | `src/diffviewer.h` / `.cpp` | Custom `QPlainTextEdit` subclass with line numbers and diff syntax highlighting |
 | `src/model_manager_bridge.h` / `.cpp` | C++ wrapper around the `ai_core` C FFI: loading, streaming inference, commit-message generation |
+| `src/vcs_bridge.h` / `.cpp` | C++ wrapper around the `vcs_core` C FFI: SSH key listing/generation/fingerprinting, connection tests, remote add/edit/rename/remove |
 | `src/background_download.h` / `.cpp` | Detached "model installer" mode for background model downloads (sidecar status files, cancellation) |
 | `src/main.cpp` | Entry point, creates `QApplication` and `MainWindow` |
 | `crates/ai_core/` | Rust crate: local GGUF inference (`inference.rs`), model download/discovery (`download.rs`, `discovery.rs`), Conventional Commits message generation (`commit_message.rs`), and the C ABI (`ffi.rs`, `ai_core.h`) |
+| `crates/vcs_core/` | Rust crate: SSH key management (`ssh.rs`), SSH connection testing via `russh` (`connect.rs`), git remote read/write via `gix-config` (`remote.rs`), and the C ABI (`ffi.rs`, `vcs_core.h`) |
 
 ### Build System
 
 LazyDesktop builds with **XMake** (`xmake.lua`). The build:
 
-1. Runs `cargo build --lib` for `crates/ai_core` in a `before_build` hook
-   (release profile when building in release mode).
-2. Links the resulting static library (`add_links("ai_core")`) from
-   `target/debug` or `target/release`.
+1. Runs `cargo build --lib` for `crates/ai_core` and `crates/vcs_core` in
+   `before_build` hooks (release profile when building in release mode).
+2. Links the resulting static libraries (`add_links("ai_core")`,
+   `add_links("vcs_core")`) from `target/debug` or `target/release`.
 3. Enables `cxx23`, the Qt Widgets rule, and platform-specific system
    libraries (`pthread`, `dl`, `rt`, `gomp` on Linux; OpenMP on macOS; `/EHsc`
    on Windows).
+4. On Linux/macOS, passes `--allow-multiple-definition` to the linker because
+   each Rust staticlib embeds its own copy of Rust's std; the first (identical)
+   definition wins.
 
 A [`justfile`](justfile) wraps common workflows: `just setup`, `just build`,
 `just run`, `just test` (cargo tests), `just format`, `just tidy`,
@@ -258,12 +268,7 @@ See `src/background_download.h` for the sidecar path helpers
 #### AI Editor Skills
 
 The repo ships skills that teach AI coding tools the project's commit and
-branch conventions, duplicated across four tool locations:
-
-- `.opencode/skills/` (OpenCode)
-- `.claude/skills/` (Claude Code)
-- `.gemini/skills/` (Gemini CLI)
-- `.agents/skills/` (Antigravity IDE/CLI)
+branch conventions, installed for OpenCode in `.opencode/skills/`.
 
 Each directory contains `commit` and `create-branch` skills. Both auto-detect
 Git vs Jujutsu (preferring `.jj` in a colocated repo). `commit` produces a
@@ -566,6 +571,29 @@ compose file mounts the host X socket, a named volume for config
 - [x] Temporary askpass script creation
 - [x] Script cleanup on shutdown
 - [x] Auth environment setup for push/fetch/pull
+
+### SSH Keys (native `vcs_core` crate)
+
+- [x] Generate Ed25519 / RSA-4096 keypairs (optionally passphrase-encrypted)
+- [x] List public keys in `~/.ssh` (public material only, never private)
+- [x] SHA256 fingerprint via `ssh-key` crate (no `ssh-keygen` subprocess)
+- [x] Copy public key to clipboard
+- [x] Delete keypair with confirmation
+- [x] Connection test via `russh` (batch mode, 10s timeout, no prompts)
+
+### Remotes (native `vcs_core` crate)
+
+- [x] List remotes with URLs (`gix-config`, no `git remote` subprocess)
+- [x] Add remote (name + URL, installs default fetch refspec)
+- [x] Edit remote (rename with refspec re-keying, set URL)
+- [x] Remove remote with confirmation
+- [x] Copy URL to clipboard
+
+### Bug Fixes (v0.2)
+
+- [x] FileTreeDelegate staging checkboxes respond to clicks (Qt
+      `editorEvent` handling)
+- [x] "View on GitHub" opens SSH-style remotes via URL normalization
 
 ### Build, Packaging, and CI
 

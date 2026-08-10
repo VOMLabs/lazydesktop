@@ -13,6 +13,7 @@ class QAction;
 class QCheckBox;
 class QComboBox;
 class QDialog;
+class QJsonObject;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -28,6 +29,7 @@ class QTreeWidget;
 class QTreeWidgetItem;
 
 class ModelManagerBridge;
+class VcsBridge;
 
 struct GitCredentials
 {
@@ -64,6 +66,7 @@ private slots:
     void onPushClicked();
     void onPushFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onPushErrorOccurred(QProcess::ProcessError error);
+    void manageRemotes();
     void onInstallFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onAuthCheckFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onGitProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
@@ -78,6 +81,7 @@ private slots:
     void onOpenFileManager();
     void onOpenTerminal();
     void onOpenGitHub();
+    void onRepositorySettings();
     void onOpenSettings();
     void onGenerateCommitMessage();
     void onGenerateCommitDescription();
@@ -107,9 +111,11 @@ private:
     bool openRepository(const QString &path);
     static bool isGitRepository(const QString &path);
     static bool isDirtyRepository(const QString &path);
+    bool isJjRepo() const;
     void startGitStatusQuery();
     void startGitUnpushedQuery();
     void startGitLogQuery();
+    void commitJj();
     void addGitFileToTree(const QString &path, const QString &prefix, QTreeWidgetItem *parent = nullptr);
     void setAllCheckStates(Qt::CheckState state);
     QStringList checkedFiles() const;
@@ -134,6 +140,7 @@ private:
     void onOpenExistingProject();
     void applySavedTheme();
     void onAiResponse(QNetworkReply *reply);
+    void showRepositorySettingsDialog(const QJsonObject &repo);
 
     bool checkGitAvailable();
     void installGit();
@@ -155,6 +162,7 @@ private:
     QListWidget *m_recentList = nullptr;
     QTreeWidget *m_gitStatusTree = nullptr;
     QAction *m_openGitHubAction = nullptr;
+    QAction *m_repoSettingsAction = nullptr;
     QAction *m_viewCommitPanelAction = nullptr;
     QAction *m_viewCommitFilesAction = nullptr;
     DiffViewer *m_fileContentViewer = nullptr;
@@ -190,8 +198,10 @@ private:
     bool m_aiThinkingVisible = false;
 
     PushState m_pushState = PushState::Push;
+    bool m_pullRebasePending = false;
     QPushButton *m_pushButton = nullptr;
     QProcess *m_pushProcess = nullptr;
+    QPushButton *m_remotesButton = nullptr;
 
     QComboBox *m_branchComboBox = nullptr;
     QPushButton *m_deleteBranchButton = nullptr;
@@ -216,6 +226,7 @@ private:
     GitQuery m_currentQuery = GitQuery::None;
     QStringList m_recentProjects;
     ModelManagerBridge *m_modelManager = nullptr;
+    VcsBridge *m_vcsBridge = nullptr;
     bool m_aiEnabled = false;
 };
 

@@ -1,0 +1,39 @@
+[package]
+name = "vcs_core"
+version = "0.2.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+# OpenSSH key generation / parsing / fingerprinting. The `ed25519` and `rsa`
+# algorithm features are required for keygen; `std` + `alloc` enable the
+# OpenSSH file encoders; `encryption` enables passphrase-encrypted private
+# keys (aes256-ctr + bcrypt-pbkdf). Pinned to the 0.6 stable line (0.7 is
+# still -rc).
+ssh-key = { version = "0.6", features = ["std", "alloc", "ed25519", "rsa", "encryption"] }
+# CSPRNG for ssh-key's PrivateKey::random (implements rand_core 0.6).
+rand = "0.8"
+
+# Native SSH client for connection tests. We use the `ring` crypto backend
+# instead of the default `aws-lc-rs` to avoid requiring cmake on the build
+# host; both are statically linked C/asm backends (no runtime C dependency).
+# `rsa` is enabled so OpenSSH RSA keys can be loaded for authentication.
+# NOTE: russh pins ssh-key =0.7.0-rc.11 internally; Cargo will resolve a
+# second copy of ssh-key. Types never cross between ssh.rs (0.6) and
+# russh::keys (0.7) — the boundary stays at file paths and strings.
+russh = { version = "0.62", default-features = false, features = ["ring", "rsa"] }
+tokio = { version = "1", features = ["rt", "net", "time", "io-util", "sync"] }
+
+# Lossless read/write of [remote "..."] sections in .git/config.
+# `sha1` enables the hash kind used by standard git repositories (gix-hash
+# refuses to compile without a hash feature enabled).
+gix-config = { version = "0.59", features = ["sha1"] }
+
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"

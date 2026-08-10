@@ -29,6 +29,12 @@ gives you a clean, keyboard-friendly interface for everyday Git work.
   `Co-authored-by:` trailers to the description.
 - **Push / Fetch / Pull** — One smart button that cycles through push, fetch,
   and pull based on repository state.
+- **Remote management** — Manage remotes (add, edit, rename, remove, copy URL)
+  from the toolbar. Native and dependency-free: powered by the bundled
+  `crates/vcs_core` Rust crate, no `git remote` subprocess.
+- **SSH keys** — Generate Ed25519/RSA-4096 keypairs (optionally
+  passphrase-encrypted), list existing public keys, copy or delete them, and
+  test connections — all native, no `ssh-keygen`/`ssh` subprocess.
 - **Branch management** — Switch, create, and delete branches from a dropdown.
 - **Commit history** — Tabbed sidebar with a colored commit list. Click a
   commit to see its files; click a file to see its diff.
@@ -59,14 +65,11 @@ gives you a clean, keyboard-friendly interface for everyday Git work.
 
 The repository ships **Conventional Commits** and **branch-creation** skills
 so AI coding tools produce commit messages and branch names consistent with
-the project's conventions. The same two skills are installed for four tools:
+the project's conventions. The two skills live in `.opencode/skills/`:
 
 | Tool | Location | Skills |
 |------|----------|--------|
 | OpenCode | `.opencode/skills/` | `commit`, `create-branch` |
-| Claude Code | `.claude/skills/` | `commit`, `create-branch` |
-| Gemini CLI | `.gemini/skills/` | `commit`, `create-branch` |
-| Antigravity (IDE / CLI) | `.agents/skills/` | `commit`, `create-branch` |
 
 - **`commit`** detects Git vs Jujutsu, gathers the diff and recent history,
   and produces a Conventional Commits message (`type(scope): subject`),
@@ -112,6 +115,8 @@ A categorized settings dialog covers:
 - **Appearance** — System Default, Dark, and any custom YAML themes.
 - **Git** — Read and write global `user.name` / `user.email` via
   `git config --global`.
+- **SSH Keys** — Generate keypairs, browse existing public keys (only public
+  material is ever shown), copy them to the clipboard, and test connections.
 - **AI** — Enable toggle, provider, API key, model name, system prompts, and
   local model downloads.
 
@@ -140,8 +145,9 @@ xmake                     # builds C++ and the Rust ai_core crate
 ```
 
 The binary runs directly from the build directory — no `make install`
-needed. The `xmake` build automatically runs `cargo build` for the `ai_core`
-Rust crate and links it in. Your data survives rebuilds:
+needed. The `xmake` build automatically runs `cargo build` for the bundled
+Rust crates (`ai_core`, and `vcs_core` for SSH/remote operations) and links
+them in. Your data survives rebuilds:
 
 - Projects: `~/.config/lazydesktop/projects.yaml`
 - Settings (API key, theme, model, system prompt): `~/.config/lazydesktop/lazydesktop.conf`
@@ -158,9 +164,10 @@ full guide, or use the included [`justfile`](justfile) recipes
 
 ## Run in Docker
 
-The Docker image builds the C++ UI and the bundled Rust `ai_core` crate, then
-ships only the runtime (no toolchain). The Qt window either connects to your
-host's X server or falls back to a browser-accessible VNC session.
+The Docker image builds the C++ UI and the bundled Rust crates (`ai_core`,
+`vcs_core`), then ships only the runtime (no toolchain). The Qt window either
+connects to your host's X server or falls back to a browser-accessible VNC
+session.
 
 ```bash
 docker compose build            # build the image
@@ -222,7 +229,8 @@ See the [AI documentation](docs/ai/overview.md) for details.
 
 - Qt 6 (Core, Gui, Widgets, Network) — Qt 6.7+ recommended
 - xmake (build system)
-- Rust stable toolchain (builds the bundled `ai_core` crate automatically)
+- Rust stable toolchain (builds the bundled `ai_core` and `vcs_core` crates
+  automatically)
 - yaml-cpp
 - Git
 - A C++23 compiler (GCC 14+ or Clang 18+)

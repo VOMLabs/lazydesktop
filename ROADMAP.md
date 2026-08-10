@@ -1,13 +1,17 @@
 # Roadmap
 
-> **Current status (v0.2 era):** the build system has moved from Meson to
-> XMake, and local AI inference moved from a bundled llama.cpp subproject into
-> the Rust `ai_core` crate (`crates/ai_core`), exposed to the UI over a C FFI
-> with a dedicated Conventional Commits message API. Model downloads now run as
-> detached background workers so the UI stays responsive. The repo also ships
-> `commit` and `create-branch` skills for OpenCode, Claude Code, Gemini CLI,
-> and Antigravity in `.opencode/skills/`, `.claude/skills/`, `.gemini/skills/`,
-> and `.agents/skills/`.
+> **Current status (v0.3 era):** v0.2 is **tagged and released** (`v0.2`;
+> `v1.0.0-ALPHA` was the earlier pre-release). The build system runs on XMake,
+> and local AI inference lives in the Rust `ai_core` crate (`crates/ai_core`),
+> exposed to the UI over a C FFI with a dedicated Conventional Commits message
+> API. SSH key management and Git remote operations live in a second native
+> Rust crate, `crates/vcs_core`, also exposed over a C FFI — no `ssh-keygen`,
+> `ssh`, or `git remote` subprocesses. Model downloads run as detached
+> background workers so the UI stays responsive. The repo also ships `commit`
+> and `create-branch` skills for OpenCode in `.opencode/skills/`. Releases are
+> tag-driven and build `.deb`, `.AppImage`,
+> `.pkg.tar.zst`, and `.msi` artifacts on GitHub Actions. **The active
+> milestone is v0.3 (Short Term).**
 
 ## v0.1 — Shipped (Foundation)
 
@@ -21,7 +25,7 @@
 - [x] Settings dialog (Appearance, Git config, AI)
 - [x] Debian and Arch packaging
 
-## v0.2 — Current (GitHub Desktop Lite)
+## v0.2 — Shipped (GitHub Desktop Lite)
 
 - [x] Skip pre-commit hooks toggle (`--no-verify`)
 - [x] Co-author selection from git history
@@ -44,9 +48,26 @@
 - [x] XMake build system (replaces Meson)
 - [x] Docker packaging (X11 or VNC/noVNC)
 - [x] AI editor skills (`commit`, `create-branch`)
-
-**Next release:** cut a `v0.2` tag once the remaining short-term items below
-are either done or explicitly deferred.
+- [x] AI description generation with its own configurable prompt
+- [x] `<diff>` prompt placeholder for custom system prompts
+- [x] AI "thinking" overlay with expandable raw output
+- [x] Jujutsu (jj) support in the AI commit-message path (diff, status,
+      change id, recent history)
+- [x] Rebuilt AI settings page and theme picker
+- [x] AppImage packaging (linuxdeploy + Qt plugin)
+- [x] Windows MSI packaging (WiX toolset, deployed Qt runtime)
+- [x] Tag-driven GitHub Actions release workflow (`.deb`, `.AppImage`,
+      `.pkg.tar.zst`, `.msi`, `checksums.txt`)
+- [x] GitHub Actions CI matrix (Ubuntu / Windows / macOS)
+- [x] CodeQL static analysis and Dependabot config
+- [x] Full documentation tree under `docs/`
+- [x] Staging checkbox fix — checkboxes toggle with the selection (Qt
+      `editorEvent` handling in `FileTreeDelegate`)
+- [x] "View on GitHub" opens the remote web URL, even for SSH-style remotes
+- [x] Native SSH key management (generate / list / fingerprint / copy / test)
+      in Settings via the `vcs_core` Rust crate
+- [x] Remote management dialog (add / edit / rename / remove / copy URL)
+      via the `vcs_core` Rust crate
 
 ## v0.3 — Short Term
 
@@ -59,9 +80,24 @@ are either done or explicitly deferred.
 - [ ] **Stash management** — Stash / pop / drop UI with a stash list
 - [ ] **Rebase / cherry-pick UI** — Interactive rebase and cherry-pick via
       context menus on commit history
-- [ ] **SSH key management** — Generate, load, and test SSH keys from settings
 - [ ] **Tabbed multi-repo** — Open several repos in tabs; per-tab sidebar state
-- [ ] **Remote management** — Add / remove remotes, edit remote URLs from UI
+- [ ] **Fix packaging build-system drift** — Migrate `debian/rules`,
+      `PKGBUILD`, and `install/windows/build-msi.bat` from the legacy
+      Meson/Ninja build to XMake (currently only CI builds with XMake)
+- [ ] **Full Jujutsu (jj) UI support** — Today only the AI commit-message path
+      understands `jj`; extend the status tree, commit, branch, and
+      push/fetch/pull flows to jj repos
+- [ ] **Amend last commit** — Edit the summary/description of `HEAD`
+      (`git commit --amend`) with an amend toggle on the commit panel
+- [ ] **Reset / revert** — Soft / mixed / hard reset with confirmation, plus
+      `git reflog`-based undo after destructive operations
+- [ ] **Tag management** — Create, annotate, delete, and push tags from the UI
+- [ ] **Status filter + history search** — Filter the Changes list by path or
+      status, and search commit history by message or hash
+- [ ] **Multi-select files** — Shift/Ctrl+click for batch stage, discard, and
+      selection toggling
+- [ ] **Keyboard shortcuts** — Ctrl+Enter to commit, Ctrl+A select all, and
+      discoverable shortcut hints
 
 ## v0.4 — Medium Term
 
@@ -76,6 +112,18 @@ are either done or explicitly deferred.
 - [ ] **Hooks editor** — View, edit, and manage local Git hooks from the UI
 - [ ] **Bisect UI** — GUI for `git bisect` with visual commit marking
 - [ ] **File history / blame** — Per-file annotation view with blame
+- [ ] **Compare branches / commits** — Diff any two refs or commits without
+      checking them out
+- [ ] **Cloud auth via device flow** — GitHub / GitLab / Gitea OAuth with
+      tokens stored in the system keyring instead of pasted PATs
+- [ ] **Per-repo settings** — Repo-local overrides (default branch, remote,
+      hooks toggle, AI provider) stored per project
+- [ ] **Git worktrees** — Create, list, switch, and prune worktrees
+- [ ] **Reflog viewer** — Browse `git reflog` and restore lost commits
+- [ ] **System tray presence** — Background status indicator with quick
+      commit/push actions
+- [ ] **C++ / UI test suite** — Qt Test coverage for the widget layer
+      (currently only the Rust `ai_core` crate has automated tests)
 
 ## v0.5 — Long Term
 
@@ -83,16 +131,24 @@ are either done or explicitly deferred.
       commit graph
 - [ ] **Visual commit graph** — DAG render of branches with drag-to-rebase
 - [ ] **Side-by-side diff** — Split-view editor for staged/unstaged comparison
-- [ ] **Cross-platform Windows/macOS packaging** — MSI installer, macOS .app
-      bundle
+- [ ] **macOS packaging** — `.app` bundle and notarized DMG (Windows MSI
+      shipped in v0.2)
+- [ ] **Flatpak packaging** — Sandboxed distribution alongside the existing
+      `.deb`, `.AppImage`, `.pkg.tar.zst`, and `.msi`
+- [ ] **Command palette** — Fuzzy launcher for actions, file jumping, and
+      refs (Ctrl+P style)
 - [ ] **Internationalisation** — i18n via Qt Linguist `.ts` files
+- [ ] **Accessibility pass** — Screen-reader labels, full keyboard
+      navigation, and high-contrast theme support
 
 ---
 
 ## Non-goals (for now)
 
-- **libgit2** — All Git operations stay on the `git` CLI via `QProcess` for
-  behavioral parity with the command line.
+- **libgit2** — Most Git operations stay on the `git` CLI via `QProcess` for
+  behavioral parity with the command line. Two exceptions are native Rust
+  crates: `ai_core` (local GGUF inference) and `vcs_core` (SSH key handling +
+  `git remote` config reads/writes).
 - **Web tech / Electron** — LazyDesktop is intentionally native Qt Widgets.
 - **A database** — `QSettings` (INI) plus YAML files cover configuration and
   project state.

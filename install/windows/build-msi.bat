@@ -45,9 +45,9 @@ if errorlevel 1 exit /b 1
 
 light.exe -ext WixUIExtension ^
     -cultures:en-US ^
-    -out "lazydesktop-0.1.0.msi" ^
+    -out "lazydesktop-0.2.0.msi" ^
     lazydesktop.wixobj
 
 if errorlevel 1 exit /b 1
 
-echo === MSI built successfully: lazydesktop-0.1.0.msi ===
+echo === MSI built successfully: lazydesktop-0.2.0.msi ===
