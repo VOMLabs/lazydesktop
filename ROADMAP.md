@@ -141,6 +141,49 @@
 - [ ] **Accessibility pass** — Screen-reader labels, full keyboard
       navigation, and high-contrast theme support
 
+## v1.0 — Pure Rust Architecture & Slint UI
+
+> **Status:** Replaces the Qt Widgets C++23 UI (v0.1–v0.5) with a native Rust
+> frontend built on Slint. Reuses the existing `ai_core` and `vcs_core` crates,
+> ports the Git/`QProcess` layer to Rust, and drops the XMake/GCC/Clang build
+> chain so the entire application builds with a single Cargo workspace.
+
+### Workspace & Toolchain Consolidation
+
+- [ ] Convert repository to a unified Cargo workspace (`crates/app`,
+      `crates/ai_core`, `crates/vcs_core`)
+- [ ] Remove `xmake` build system, GCC/Clang dependencies, and C++23 source
+      directories (`src/`)
+- [ ] Remove C-FFI layers (`cbindgen`, `mm_generate_commit_message`, raw C
+      pointer marshalling)
+
+### Frontend & UI Layer (Slint)
+
+- [ ] Implement main window layout in Slint (`.slint`): sidebar, changes
+      tree, diff viewer, and commit panel
+- [ ] Build custom `.theme.yaml` parser mapping directly to Slint global
+      design tokens
+- [ ] Implement settings dialog tabs (Appearance, Git config, SSH Key
+      Manager, AI configuration)
+- [ ] Implement syntax-highlighted diff viewer with inline media
+      placeholders
+
+### Core Engine & Async Pipeline
+
+- [ ] Replace `QProcess` Git CLI calls with `tokio::process::Command` (or
+      native `gix`/`git2`)
+- [ ] Replace `QFileSystemWatcher` with the `notify` crate and debounced
+      `tokio` timers
+- [ ] Wire `ai_core` and `vcs_core` directly into Slint event loops via
+      `tokio::mpsc` channels
+
+### Packaging & CI Overhaul
+
+- [ ] Replace Qt-bundled packaging scripts (`linuxdeploy`, WiX Qt runtime
+      deployment) with lightweight single-binary builders
+- [ ] Update GitHub Actions CI workflows to use standard `cargo build` and
+      `cargo-packager`
+
 ---
 
 ## Non-goals (for now)

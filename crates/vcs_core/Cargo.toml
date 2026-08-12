@@ -24,7 +24,23 @@ rand = "0.8"
 # second copy of ssh-key. Types never cross between ssh.rs (0.6) and
 # russh::keys (0.7) — the boundary stays at file paths and strings.
 russh = { version = "0.62", default-features = false, features = ["ring", "rsa"] }
-tokio = { version = "1", features = ["rt", "net", "time", "io-util", "sync"] }
+# Async runtime for the jj subprocess runner (`rt-multi-thread` for the
+# shared runtime in runtime.rs, `process` for tokio::process::Command,
+# `macros` for #[tokio::test] in later tasks). The remaining features serve
+# connect.rs (russh) and jj.rs timeouts.
+tokio = { version = "1", features = ["rt", "net", "time", "io-util", "sync", "rt-multi-thread", "process", "macros"] }
+
+# Parallel parsing of large command outputs (rayon `par_iter` wrapped in
+# `tokio::task::spawn_blocking`, which is the tokio-recommended way to run
+# blocking work off the async worker threads).
+rayon = "1.12"
+# Process-wide per-repo state cache shared across FFI calls. `DashMap` gives
+# lock-free concurrent reads and sharded writes so C++ callers can query
+# cached repo state without spawning jj.
+dashmap = "6.2"
+# Bounded channel bridging blocking work back to the async runtime where a
+# streaming result (e.g. large logs) is preferable to buffering it all first.
+flume = "0.12"
 
 # Lossless read/write of [remote "..."] sections in .git/config.
 # `sha1` enables the hash kind used by standard git repositories (gix-hash

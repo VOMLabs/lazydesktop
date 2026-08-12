@@ -3,12 +3,18 @@ name: CI
 on:
   push:
     branches: [main]
+    # Skip CI for documentation-only changes to main; PRs always run the
+    # full suite so required status checks are never left pending.
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.opencode/**'
   pull_request:
     branches: [main]
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -22,7 +28,7 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - ubuntu-24.04
+          - ubuntu-latest
           - windows-2022
           - macos-14
 
@@ -39,12 +45,15 @@ jobs:
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: latest
+          package-cache: true
+          build-cache: true
 
       - name: Install Qt (Linux)
         if: runner.os == 'Linux'
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.7'
+          cache: true
 
       - name: Install Qt (Windows)
         if: runner.os == 'Windows'
@@ -54,12 +63,14 @@ jobs:
           # Qt 6.7 ships win64_msvc2019_64 only (MSVC2022 arch starts at Qt 6.8);
           # it is ABI-compatible with the MSVC 2022 toolchain used by xmake.
           arch: win64_msvc2019_64
+          cache: true
 
       - name: Install Qt (macOS)
         if: runner.os == 'macOS'
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.7'
+          cache: true
 
       - name: Install yaml-cpp (Linux)
         if: runner.os == 'Linux'
@@ -80,21 +91,6 @@ jobs:
       - name: Build
         run: xmake
 
-      - name: Run Rust tests (ai_core)
-        run: cargo test --workspace
-
-      - name: Run pre-commit hooks on changed files (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          pipx install pre-commit
-          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-            git fetch origin "$GITHUB_BASE_REF" --depth=1
-            CHANGED=$(git diff --name-only "FETCH_HEAD...$GITHUB_HEAD_REF")
-          else
-            CHANGED=$(git diff --name-only "HEAD~1" HEAD)
-          fi
-          echo "$CHANGED" | xargs -r pre-commit run --files
-
       - name: Smoke test (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
@@ -112,3 +108,39 @@ jobs:
           path: build/*/*/debug/lazydesktop*
           if-no-files-found: error
           retention-days: 7
+
+  test-rust:
+    name: Rust tests (crates)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Rust tests
+        run: cargo test --workspace
+
+  lint:
+    name: Lint (pre-commit)
+    runs-on: ubuntu-latest
+    steps:
+      # Full history is required so the diff below can resolve both
+      # "HEAD~1..HEAD" (push) and the fetched base ref (pull_request).
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Run pre-commit hooks on changed files
+        run: |
+          pipx install pre-commit
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch origin "$GITHUB_BASE_REF" --depth=1
+            CHANGED=$(git diff --name-only "FETCH_HEAD...$GITHUB_HEAD_REF")
+          else
+            CHANGED=$(git diff --name-only "HEAD~1" HEAD)
+          fi
+          echo "$CHANGED" | xargs -r pre-commit run --files

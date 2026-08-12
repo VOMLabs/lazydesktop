@@ -3,11 +3,23 @@ name: CodeQL
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.opencode/**'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.opencode/**'
   schedule:
     - cron: '0 3 * * 1'
   workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -15,8 +27,9 @@ permissions:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
+      # Required by github/codeql-action to upload results.
       security-events: write
       actions: read
     strategy:
@@ -37,11 +50,14 @@ jobs:
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: latest
+          package-cache: true
+          build-cache: true
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.7'
+          cache: true
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libyaml-cpp-dev libgl1-mesa-dev
@@ -54,7 +70,7 @@ jobs:
 
       - name: Build
         run: |
-          xmake f -m debug
+          xmake f -m debug -y
           xmake
 
       - name: Perform CodeQL Analysis

@@ -4,13 +4,17 @@ on:
   push:
     tags: ['v*']
 
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release-linux:
     name: Linux (.deb + .AppImage)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v7
@@ -25,11 +29,14 @@ jobs:
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: latest
+          package-cache: true
+          build-cache: true
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.7'
+          cache: true
 
       - name: Install system dependencies
         run: |
@@ -97,7 +104,7 @@ jobs:
 
   release-arch:
     name: Linux (.pkg.tar.zst)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     container:
       image: archlinux:latest
       options: --user root
@@ -180,6 +187,8 @@ jobs:
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: latest
+          package-cache: true
+          build-cache: true
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
@@ -188,6 +197,7 @@ jobs:
           # Qt 6.7 ships win64_msvc2019_64 only (MSVC2022 arch starts at Qt 6.8);
           # it is ABI-compatible with the MSVC 2022 toolchain used by xmake.
           arch: win64_msvc2019_64
+          cache: true
 
       - name: Configure (release)
         run: xmake f -m release -y
@@ -248,7 +258,7 @@ jobs:
     # Always create a GitHub Release on tag push, even if one or more
     # platform jobs fail, so a tag never ends up without a release.
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       contents: write
 
