@@ -1,17 +1,14 @@
 # Roadmap
 
-> **Current status (v0.3 era):** v0.2 is **tagged and released** (`v0.2`;
-> `v1.0.0-ALPHA` was the earlier pre-release). The build system runs on XMake,
-> and local AI inference lives in the Rust `ai_core` crate (`crates/ai_core`),
-> exposed to the UI over a C FFI with a dedicated Conventional Commits message
-> API. SSH key management and Git remote operations live in a second native
-> Rust crate, `crates/vcs_core`, also exposed over a C FFI — no `ssh-keygen`,
-> `ssh`, or `git remote` subprocesses. Model downloads run as detached
-> background workers so the UI stays responsive. The repo also ships `commit`
-> and `create-branch` skills for OpenCode in `.opencode/skills/`. Releases are
-> tag-driven and build `.deb`, `.AppImage`,
-> `.pkg.tar.zst`, and `.msi` artifacts on GitHub Actions. **The active
+> **Current status (v0.3 era):** v0.2 is **tagged and released**. The backend
+> is now mostly Rust — six crates form a single Cargo workspace: `ai_core`
+> (GGUF inference), `vcs_core` (SSH + remotes), `addons` (security core),
+> `watcher` (VCS-aware file monitoring), `config` (settings/projects/themes),
+> and `git_cmd` (Git/Jujutsu CLI execution). The C++/Qt layer is thinning —
+> only the UI shell and signal routing remain in `mainwindow.cpp`. **The active
 > milestone is v0.3 (Short Term).**
+
+---
 
 ## v0.1 — Shipped (Foundation)
 
@@ -71,6 +68,27 @@
 
 ## v0.3 — Short Term
 
+### Rust Backend Integration (current focus)
+
+- [x] **File watcher crate** (`watcher`) — VCS-aware filesystem monitoring
+      with typed events and debouncing (10 tests passing)
+- [x] **Configuration crate** (`config`) — INI settings, YAML projects/themes
+      without Qt dependency (30 tests passing)
+- [x] **Git/Jujutsu CLI crate** (`git_cmd`) — Typed wrappers for `git status`,
+      `git log`, `git branches`, `git diff`, and Jujutsu equivalents
+      (7 tests passing)
+- [x] **Addons security core** (`addons`) — Archive parsing, manifest
+      validation, path security enforcement (77 tests passing)
+- [x] **Cargo workspace** — All 6 Rust crates unified in a single workspace
+- [ ] **Switch C++ bridges to new crates** — Replace QProcess calls in
+      `mainwindow.cpp` with `git_cmd` FFI, replace QFileSystemWatcher with
+      `watcher` FFI, replace settings load/save with `config` FFI
+- [ ] **Remove obsolete C++ code** — Delete inline git/status parsing from
+      `mainwindow.cpp`, remove QFileSystemWatcher setup, simplify
+      `model_manager_bridge` / `vcs_bridge` / `addon_bridge`
+
+### Git Features
+
 - [ ] **Staging area UI** — Show staged vs unstaged files separately; allow
       partial staging (hunk-by-hunk)
 - [ ] **Merge conflict resolver** — Inline conflict markers with a
@@ -80,18 +98,17 @@
 - [ ] **Stash management** — Stash / pop / drop UI with a stash list
 - [ ] **Rebase / cherry-pick UI** — Interactive rebase and cherry-pick via
       context menus on commit history
-- [ ] **Tabbed multi-repo** — Open several repos in tabs; per-tab sidebar state
-- [ ] **Fix packaging build-system drift** — Migrate `debian/rules`,
-      `PKGBUILD`, and `install/windows/build-msi.bat` from the legacy
-      Meson/Ninja build to XMake (currently only CI builds with XMake)
-- [ ] **Full Jujutsu (jj) UI support** — Today only the AI commit-message path
-      understands `jj`; extend the status tree, commit, branch, and
-      push/fetch/pull flows to jj repos
 - [ ] **Amend last commit** — Edit the summary/description of `HEAD`
       (`git commit --amend`) with an amend toggle on the commit panel
 - [ ] **Reset / revert** — Soft / mixed / hard reset with confirmation, plus
       `git reflog`-based undo after destructive operations
 - [ ] **Tag management** — Create, annotate, delete, and push tags from the UI
+
+### UX Improvements
+
+- [ ] **Tabbed multi-repo** — Open several repos in tabs; per-tab sidebar state
+- [ ] **Full Jujutsu (jj) UI support** — Extend the status tree, commit,
+      branch, and push/fetch/pull flows to jj repos
 - [ ] **Status filter + history search** — Filter the Changes list by path or
       status, and search commit history by message or hash
 - [ ] **Multi-select files** — Shift/Ctrl+click for batch stage, discard, and
@@ -99,13 +116,26 @@
 - [ ] **Keyboard shortcuts** — Ctrl+Enter to commit, Ctrl+A select all, and
       discoverable shortcut hints
 
+### Packaging & Build
+
+- [ ] **Fix packaging build-system drift** — Migrate `debian/rules`,
+      `PKGBUILD`, and `install/windows/build-msi.bat` from the legacy
+      Meson/Ninja build to XMake (currently only CI builds with XMake)
+
 ## v0.4 — Medium Term
 
-- [ ] **Git LFS support** — Track, fetch, and push LFS files
+### Platform Integration
+
 - [ ] **GitHub / GitLab / Gitea integration** — PR/MR creation, issue linking,
       code review comments
+- [ ] **Cloud auth via device flow** — GitHub / GitLab / Gitea OAuth with
+      tokens stored in the system keyring instead of pasted PATs
 - [ ] **CI status badges** — Show CI pipeline status per branch (GitHub
       Actions, GitLab CI)
+
+### Advanced Git
+
+- [ ] **Git LFS support** — Track, fetch, and push LFS files
 - [ ] **Diff editor** — Edit file content inline and save changes (not just
       discard)
 - [ ] **Patch workflow** — Create, apply, and export patches
@@ -114,68 +144,135 @@
 - [ ] **File history / blame** — Per-file annotation view with blame
 - [ ] **Compare branches / commits** — Diff any two refs or commits without
       checking them out
-- [ ] **Cloud auth via device flow** — GitHub / GitLab / Gitea OAuth with
-      tokens stored in the system keyring instead of pasted PATs
-- [ ] **Per-repo settings** — Repo-local overrides (default branch, remote,
-      hooks toggle, AI provider) stored per project
 - [ ] **Git worktrees** — Create, list, switch, and prune worktrees
 - [ ] **Reflog viewer** — Browse `git reflog` and restore lost commits
+
+### Project Management
+
+- [ ] **Per-repo settings** — Repo-local overrides (default branch, remote,
+      hooks toggle, AI provider) stored per project
 - [ ] **System tray presence** — Background status indicator with quick
       commit/push actions
+
+### Quality
+
 - [ ] **C++ / UI test suite** — Qt Test coverage for the widget layer
-      (currently only the Rust `ai_core` crate has automated tests)
+      (currently only the Rust crates have automated tests)
 
 ## v0.5 — Long Term
 
+### Performance
+
 - [ ] **Performance mode** — Virtual file system for monorepos; lazy-load
       commit graph
+
+### Visual
+
 - [ ] **Visual commit graph** — DAG render of branches with drag-to-rebase
 - [ ] **Side-by-side diff** — Split-view editor for staged/unstaged comparison
+
+### Packaging
+
 - [ ] **macOS packaging** — `.app` bundle and notarized DMG (Windows MSI
       shipped in v0.2)
 - [ ] **Flatpak packaging** — Sandboxed distribution alongside the existing
       `.deb`, `.AppImage`, `.pkg.tar.zst`, and `.msi`
+
+### UX Polish
+
 - [ ] **Command palette** — Fuzzy launcher for actions, file jumping, and
       refs (Ctrl+P style)
 - [ ] **Internationalisation** — i18n via Qt Linguist `.ts` files
 - [ ] **Accessibility pass** — Screen-reader labels, full keyboard
       navigation, and high-contrast theme support
 
-## v1.0 — Pure Rust Architecture & Slint UI
+---
 
-> **Status:** Replaces the Qt Widgets C++23 UI (v0.1–v0.5) with a native Rust
-> frontend built on Slint. Reuses the existing `ai_core` and `vcs_core` crates,
-> ports the Git/`QProcess` layer to Rust, and drops the XMake/GCC/Clang build
-> chain so the entire application builds with a single Cargo workspace.
+## v1.0 — Pure Rust + GPUI Frontend
+
+> **Status:** Replace the Qt Widgets C++23 UI entirely with a native Rust
+> frontend built on GPUI (the editor framework from Zed). Reuses all six
+> existing Rust backend crates directly — no FFI needed. Drops the XMake
+> build chain so the entire application builds with a single Cargo workspace.
+
+### Why GPUI over Slint
+
+GPUI provides a GPU-accelerated, retained-mode UI with built-in text
+rendering, theming, and editor primitives. It is the framework behind Zed
+editor and has proven performance for code-heavy UIs. Unlike Slint, it
+does not require a separate markup language — layouts are built in Rust.
+
+### Leverage gpui-component for Standard Widgets
+
+Rather than building every UI element from scratch, use GPUI's built-in
+components for standard widgets:
+
+| Use gpui-component for | Build custom for |
+|------------------------|------------------|
+| Buttons, inputs, checkboxes | Diff viewer (syntax-highlighted, inline images) |
+| Lists, scroll views, panels | Status tree (file checkboxes, staging) |
+| Tooltips, popovers, modals | Commit graph (DAG visualization) |
+| Tab bars, dividers, spacing | Branch manager (combo + context menus) |
+| Text rendering, theming | Settings dialog (complex form layout) |
+| Dialogs, confirmations | Co-author selector (history-based) |
+
+This keeps the v1.0 scope focused on Git-specific components while
+reusing battle-tested primitives for everything else.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│              GPUI Application (Rust)            │
+│  ┌──────────┐  ┌───────────┐  ┌──────────────┐ │
+│  │ Sidebar   │  │ Changes   │  │ Diff Viewer  │ │
+│  │ - Branch  │  │ - Files   │  │ - Inline     │ │
+│  │ - History │  │ - Status  │  │ - Images     │ │
+│  │ - Projects│  │ - Commit  │  │              │ │
+│  └──────────┘  └───────────┘  └──────────────┘ │
+├─────────────────────────────────────────────────┤
+│           Direct Rust Crate Calls               │
+│  ┌────────┐ ┌────────┐ ┌────────┐ ┌──────────┐ │
+│  │ git_cmd│ │ watcher│ │ config │ │ addons   │ │
+│  └────────┘ └────────┘ └────────┘ └──────────┘ │
+│  ┌────────┐ ┌────────┐                         │
+│  │ai_core │ │vcs_core│                         │
+│  └────────┘ └────────┘                         │
+└─────────────────────────────────────────────────┘
+```
 
 ### Workspace & Toolchain Consolidation
 
 - [ ] Convert repository to a unified Cargo workspace (`crates/app`,
-      `crates/ai_core`, `crates/vcs_core`)
+      `crates/ai_core`, `crates/vcs_core`, `crates/watcher`,
+      `crates/config`, `crates/git_cmd`, `crates/addons`)
 - [ ] Remove `xmake` build system, GCC/Clang dependencies, and C++23 source
       directories (`src/`)
 - [ ] Remove C-FFI layers (`cbindgen`, `mm_generate_commit_message`, raw C
-      pointer marshalling)
+      pointer marshalling, all `*_bridge.cpp` files)
 
-### Frontend & UI Layer (Slint)
+### Frontend & UI Layer (GPUI)
 
-- [ ] Implement main window layout in Slint (`.slint`): sidebar, changes
-      tree, diff viewer, and commit panel
-- [ ] Build custom `.theme.yaml` parser mapping directly to Slint global
-      design tokens
-- [ ] Implement settings dialog tabs (Appearance, Git config, SSH Key
-      Manager, AI configuration)
+- [ ] Implement main window layout in GPUI using `gpui-component`
+      panels: sidebar, changes tree, diff viewer, and commit panel
+- [ ] Build custom `.theme.yaml` parser mapping directly to GPUI theme
+      tokens
+- [ ] Implement settings view using `gpui-component` forms: Appearance,
+      Git config, SSH Key Manager, AI configuration
 - [ ] Implement syntax-highlighted diff viewer with inline media
-      placeholders
+      placeholders (custom component)
+- [ ] Implement file status tree with checkboxes (custom component)
 
 ### Core Engine & Async Pipeline
 
-- [ ] Replace `QProcess` Git CLI calls with `tokio::process::Command` (or
-      native `gix`/`git2`)
-- [ ] Replace `QFileSystemWatcher` with the `notify` crate and debounced
-      `tokio` timers
-- [ ] Wire `ai_core` and `vcs_core` directly into Slint event loops via
-      `tokio::mpsc` channels
+- [ ] Replace `QProcess` Git CLI calls with direct `git_cmd` crate calls
+      (already built)
+- [ ] Replace `QFileSystemWatcher` with the `watcher` crate events
+      (already built)
+- [ ] Wire `ai_core`, `vcs_core`, `config`, and `git_cmd` directly into
+      GPUI event loops via `tokio::mpsc` channels
+- [ ] Remove all Qt bridges (`model_manager_bridge`, `vcs_bridge`,
+      `addon_bridge`)
 
 ### Packaging & CI Overhaul
 
@@ -183,15 +280,14 @@
       deployment) with lightweight single-binary builders
 - [ ] Update GitHub Actions CI workflows to use standard `cargo build` and
       `cargo-packager`
+- [ ] Single-binary release artifacts (no bundled Qt runtime)
 
 ---
 
 ## Non-goals (for now)
 
-- **libgit2** — Most Git operations stay on the `git` CLI via `QProcess` for
-  behavioral parity with the command line. Two exceptions are native Rust
-  crates: `ai_core` (local GGUF inference) and `vcs_core` (SSH key handling +
-  `git remote` config reads/writes).
-- **Web tech / Electron** — LazyDesktop is intentionally native Qt Widgets.
-- **A database** — `QSettings` (INI) plus YAML files cover configuration and
+- **libgit2** — Git operations use the `git` CLI via the `git_cmd` crate
+  for behavioral parity with the command line.
+- **Web tech / Electron** — LazyDesktop is intentionally native Rust.
+- **A database** — INI settings plus YAML files cover configuration and
   project state.
