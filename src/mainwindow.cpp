@@ -5,6 +5,12 @@
 #include "model_manager_bridge.h"
 #include "vcs_bridge.h"
 
+extern "C" {
+#include "config.h"
+#include "git_cmd.h"
+#include "watcher.h"
+}
+
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
@@ -247,6 +253,10 @@ static QString defaultThemesDir()
 
 static std::unique_ptr<QSettings> lazySettings()
 {
+    // Config is now managed by the Rust 'config' crate.
+    // This wrapper preserves compatibility with existing QSettings call sites.
+    // During the transition, we still use QSettings for writes (setValue/sync)
+    // but reads can be migrated to config_settings_get() FFI.
     const QString path = defaultSettingsPath();
     QDir().mkpath(defaultSettingsDir());
     return std::make_unique<QSettings>(path, QSettings::IniFormat);
@@ -308,6 +318,20 @@ static QString detectVcsKind(const QString& repoPath)
 
 static QString runVcsCommand(const QString& repoPath, const QString& program, const QStringList& args)
 {
+    // Use the Rust git_cmd crate for git commands
+    if (program == QLatin1String("git"))
+    {
+        QByteArray argsJson = QJsonDocument(QJsonArray::fromStringList(args)).toJson(QJsonDocument::Compact);
+        char* result = vcs_git_run_raw(repoPath.toUtf8().constData(), argsJson.constData());
+        if (result)
+        {
+            QString output = QString::fromUtf8(result);
+            vcs_free_string(result);
+            return output.trimmed();
+        }
+        return {};
+    }
+    // Fall back to QProcess for non-git commands (e.g. jj)
     QProcess p;
     p.setWorkingDirectory(repoPath);
     p.start(program, args);
@@ -530,6 +554,12 @@ MainWindow::~MainWindow()
     {
         m_createBranchProcess->kill();
         m_createBranchProcess->waitForFinished(3000);
+    }
+    if (m_watcherHandle)
+    {
+        watcher_handle* tmp = m_watcherHandle;
+        watcher_destroy(&tmp);
+        m_watcherHandle = nullptr;
     }
     cleanupAskPass();
 }
@@ -1164,13 +1194,16 @@ void MainWindow::setupUi()
     addRepoSShortcut(QKeySequence("Ctrl+Alt+C"), &MainWindow::onGenerateCommitMessage);
     addRepoSShortcut(QKeySequence("Ctrl+Alt+D"), &MainWindow::onGenerateCommitDescription);
 
-    m_fsWatcher = new QFileSystemWatcher(this);
     m_refreshTimer = new QTimer(this);
     m_refreshTimer->setSingleShot(true);
     m_refreshTimer->setInterval(2000);
-    connect(m_fsWatcher, &QFileSystemWatcher::directoryChanged, this, &MainWindow::onRepoDirChanged);
-    connect(m_fsWatcher, &QFileSystemWatcher::fileChanged, this, &MainWindow::onRepoDirChanged);
     connect(m_refreshTimer, &QTimer::timeout, this, &MainWindow::onRefreshDebounce);
+
+    // Periodic watcher poll timer — checks the Rust watcher channel for events
+    auto* watcherPollTimer = new QTimer(this);
+    watcherPollTimer->setInterval(500);
+    connect(watcherPollTimer, &QTimer::timeout, this, &MainWindow::onRepoDirChanged);
+    watcherPollTimer->start();
 
     m_networkManager = new QNetworkAccessManager(this);
 
@@ -1197,6 +1230,7 @@ void MainWindow::setupUi()
 
 static QString runGitConfig(const QString& key)
 {
+    // Use the global git config (no repo path needed)
     QProcess proc;
     proc.start("git", {"config", "--global", key});
     if (!proc.waitForFinished(3000) || proc.exitCode() != 0)
@@ -1570,14 +1604,11 @@ void MainWindow::onCreateRepository()
     info.setStandardButtons(QMessageBox::NoButton);
     info.show();
 
-    QProcess proc;
-    proc.setWorkingDirectory(dir);
-    proc.start("git", {"init"});
-    if (!proc.waitForFinished(10000) || proc.exitCode() != 0)
+    if (vcs_git_init(dir.toUtf8().constData()) != 0)
     {
         info.done(0);
         QMessageBox::warning(this, "Init Failed",
-                             "Failed to initialize git repository:\n" + QString::fromUtf8(proc.readAll()));
+                             "Failed to initialize git repository.");
         return;
     }
     info.done(0);
@@ -1707,26 +1738,19 @@ bool MainWindow::openRepository(const QString& path)
     startGitStatusQuery();
     startGitLogQuery();
 
-    // Watch for file changes to auto-refresh
-    QStringList currentFiles = m_fsWatcher->files();
-    QStringList currentDirs = m_fsWatcher->directories();
-    if (!currentFiles.isEmpty())
-        m_fsWatcher->removePaths(currentFiles);
-    if (!currentDirs.isEmpty())
-        m_fsWatcher->removePaths(currentDirs);
-    if (detectVcsKind(path) == QLatin1String("jujutsu"))
+    // Watch for file changes to auto-refresh via Rust watcher crate
+    if (m_watcherHandle)
     {
-        const QString jjDir = QDir(path).filePath(".jj");
-        m_fsWatcher->addPath(jjDir);
-        m_fsWatcher->addPath(QDir(jjDir).filePath("working_copy"));
-        m_fsWatcher->addPath(QDir(jjDir).filePath("repo"));
+        watcher_handle* tmp = m_watcherHandle;
+        watcher_destroy(&tmp);
+        m_watcherHandle = nullptr;
     }
-    else
     {
-        const QString gitDir = QDir(path).filePath(".git");
-        m_fsWatcher->addPath(gitDir);
-        m_fsWatcher->addPath(QDir(gitDir).filePath("index"));
-        m_fsWatcher->addPath(QDir(gitDir).filePath("HEAD"));
+        QByteArray pathBa = path.toUtf8();
+        QByteArray vcsKindBa = detectVcsKind(path).toUtf8();
+        watcher_handle* handle = nullptr;
+        if (watcher_create(pathBa.constData(), vcsKindBa.constData(), 2000, &handle) == 0)
+            m_watcherHandle = handle;
     }
 
     return true;
@@ -1763,13 +1787,13 @@ void MainWindow::closeRepository()
     m_currentBranch.clear();
     m_selectedCommitHash.clear();
 
-    // Safely remove paths from watcher
-    QStringList files = m_fsWatcher->files();
-    QStringList dirs = m_fsWatcher->directories();
-    if (!files.isEmpty())
-        m_fsWatcher->removePaths(files);
-    if (!dirs.isEmpty())
-        m_fsWatcher->removePaths(dirs);
+    // Destroy watcher
+    if (m_watcherHandle)
+    {
+        watcher_handle* tmp = m_watcherHandle;
+        watcher_destroy(&tmp);
+        m_watcherHandle = nullptr;
+    }
 }
 
 void MainWindow::onOpenEditor()
@@ -4326,9 +4350,7 @@ void MainWindow::onOpenSettings()
 
 bool MainWindow::isGitRepository(const QString& path)
 {
-    const QFileInfo gitInfo(QDir(path).filePath(".git"));
-    const QFileInfo jjInfo(QDir(path).filePath(".jj"));
-    return gitInfo.exists() || jjInfo.exists();
+    return vcs_is_git_repo(path.toUtf8().constData()) || vcs_is_jj_repo(path.toUtf8().constData());
 }
 
 bool MainWindow::isJjRepo() const
@@ -4340,19 +4362,19 @@ bool MainWindow::isDirtyRepository(const QString& path)
 {
     if (!QDir(path).exists())
         return false;
-    QProcess proc;
-    proc.setWorkingDirectory(path);
     if (detectVcsKind(path) == QLatin1String("jujutsu"))
     {
+        QProcess proc;
+        proc.setWorkingDirectory(path);
         proc.start("jj", {"diff", "--summary", "--color", "never", "--config", "ui.pagination=never"});
+        if (!proc.waitForFinished(3000) || proc.exitCode() != 0)
+            return false;
+        return !proc.readAllStandardOutput().trimmed().isEmpty();
     }
     else
     {
-        proc.start("git", {"status", "--porcelain"});
+        return vcs_git_is_dirty(path.toUtf8().constData());
     }
-    if (!proc.waitForFinished(3000) || proc.exitCode() != 0)
-        return false;
-    return !proc.readAllStandardOutput().trimmed().isEmpty();
 }
 
 static QIcon statusIcon(const QColor& color)
@@ -4566,7 +4588,7 @@ void MainWindow::onTreeItemClicked(QTreeWidgetItem* item, int column)
 
     // Block watcher signals so git reads don't trigger a status refresh
     // that would reset checkbox states
-    m_fsWatcher->blockSignals(true);
+    m_watcherBlocked = true;
 
     QString diff;
     if (isJjRepo())
@@ -4581,7 +4603,7 @@ void MainWindow::onTreeItemClicked(QTreeWidgetItem* item, int column)
             diff = runGitDiff(m_repoPath, "git", {"diff", "@{u}..HEAD", "--", relPath});
     }
 
-    m_fsWatcher->blockSignals(false);
+    m_watcherBlocked = false;
 
     if (diff.isEmpty())
     {
@@ -4616,13 +4638,16 @@ void MainWindow::onCommitClicked()
     }
 
     // Stage checked files first
-    QProcess stageProc;
-    stageProc.setWorkingDirectory(m_repoPath);
-    stageProc.start("git", QStringList({"add", "--"}) + files);
-    if (!stageProc.waitForFinished(5000) || stageProc.exitCode() != 0)
     {
-        QMessageBox::warning(this, "Staging Failed", QString::fromUtf8(stageProc.readAllStandardError()));
-        return;
+        QJsonArray filesArray;
+        for (const QString& f : files)
+            filesArray.append(f);
+        QByteArray filesJson = QJsonDocument(filesArray).toJson(QJsonDocument::Compact);
+        if (vcs_git_add(m_repoPath.toUtf8().constData(), filesJson.constData()) != 0)
+        {
+            QMessageBox::warning(this, "Staging Failed", "Failed to stage files.");
+            return;
+        }
     }
 
     if (!m_commitProcess || m_commitProcess->state() != QProcess::NotRunning)
@@ -4771,11 +4796,10 @@ void MainWindow::loadBranches()
     m_branchComboBox->clear();
 
     // Get current branch synchronously (fast)
-    QProcess cur;
-    cur.setWorkingDirectory(m_repoPath);
     if (isJjRepo())
     {
-        // Current bookmarks on the working-copy change (may be comma-joined).
+        QProcess cur;
+        cur.setWorkingDirectory(m_repoPath);
         cur.start("jj",
                   {"log", "--no-graph", "-r", "@", "--config", "ui.pagination=never", "-T", "bookmarks.join(\",\")"});
         if (cur.waitForFinished(3000) && cur.exitCode() == 0)
@@ -4786,10 +4810,15 @@ void MainWindow::loadBranches()
         m_branchProcess->start("jj", {"bookmark", "list", "--config", "ui.pagination=never", "-T", "name ++ \"\\n\""});
         return;
     }
-
-    cur.start("git", {"branch", "--show-current"});
-    if (cur.waitForFinished(3000) && cur.exitCode() == 0)
-        m_currentBranch = QString::fromUtf8(cur.readAllStandardOutput()).trimmed();
+    else
+    {
+        char* branch = vcs_git_current_branch(m_repoPath.toUtf8().constData());
+        if (branch)
+        {
+            m_currentBranch = QString::fromUtf8(branch);
+            vcs_free_string(branch);
+        }
+    }
 
     // Load all branches asynchronously
     m_branchProcess->setWorkingDirectory(m_repoPath);
@@ -4876,34 +4905,37 @@ void MainWindow::onBranchChanged(int index)
     }
 
     // Check for uncommitted changes
-    QProcess dirty;
-    dirty.setWorkingDirectory(m_repoPath);
-    dirty.start("git", {"status", "--porcelain"});
-    if (dirty.waitForFinished(3000) && dirty.exitCode() == 0)
+    bool isDirty = false;
     {
-        const QString status = QString::fromUtf8(dirty.readAllStandardOutput()).trimmed();
-        if (!status.isEmpty())
+        char* statusJson = vcs_git_status(m_repoPath.toUtf8().constData());
+        if (statusJson)
         {
-            auto reply = QMessageBox::question(
-                this, "Uncommitted Changes",
-                "You have uncommitted changes. Commit them before switching branches?\n\n"
-                "Press 'Yes' to commit, 'No' to discard changes and switch, or 'Cancel' to abort.",
-                QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+            QString status = QString::fromUtf8(statusJson).trimmed();
+            vcs_free_string(statusJson);
+            isDirty = !status.isEmpty() && status != "[]";
+        }
+    }
+    if (isDirty)
+    {
+        auto reply = QMessageBox::question(
+            this, "Uncommitted Changes",
+            "You have uncommitted changes. Commit them before switching branches?\n\n"
+            "Press 'Yes' to commit, 'No' to discard changes and switch, or 'Cancel' to abort.",
+            QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
 
-            if (reply == QMessageBox::Cancel)
-            {
-                restoreBranchSelection();
-                return;
-            }
+        if (reply == QMessageBox::Cancel)
+        {
+            restoreBranchSelection();
+            return;
+        }
 
-            if (reply == QMessageBox::Yes)
-            {
-                m_summaryInput->setFocus();
-                restoreBranchSelection();
-                QMessageBox::information(this, "Commit First",
-                                         "Please write a summary above and click Commit, then switch branches.");
-                return;
-            }
+        if (reply == QMessageBox::Yes)
+        {
+            m_summaryInput->setFocus();
+            restoreBranchSelection();
+            QMessageBox::information(this, "Commit First",
+                                     "Please write a summary above and click Commit, then switch branches.");
+            return;
         }
     }
 
@@ -4990,20 +5022,28 @@ void MainWindow::onDeleteBranch()
         return;
 
     m_populatingBranches = true;
-    QProcess del;
-    del.setWorkingDirectory(m_repoPath);
     if (isJjRepo())
-        del.start("jj", {"bookmark", "delete", branch});
-    else
-        del.start("git", {"branch", "-D", branch});
-    if (del.waitForFinished(5000) && del.exitCode() == 0)
     {
-        loadBranches();
+        QProcess del;
+        del.setWorkingDirectory(m_repoPath);
+        del.start("jj", {"bookmark", "delete", branch});
+        if (del.waitForFinished(5000) && del.exitCode() == 0)
+            loadBranches();
+        else
+        {
+            QMessageBox::warning(this, "Delete Failed", QString::fromUtf8(del.readAllStandardError()));
+            m_populatingBranches = false;
+        }
     }
     else
     {
-        QMessageBox::warning(this, "Delete Failed", QString::fromUtf8(del.readAllStandardError()));
-        m_populatingBranches = false;
+        if (vcs_git_delete_branch(m_repoPath.toUtf8().constData(), branch.toUtf8().constData()) == 0)
+            loadBranches();
+        else
+        {
+            QMessageBox::warning(this, "Delete Failed", "Failed to delete branch.");
+            m_populatingBranches = false;
+        }
     }
 }
 
@@ -5900,9 +5940,20 @@ void MainWindow::onCommitFileClicked(QListWidgetItem* item)
 
 void MainWindow::onRepoDirChanged()
 {
+    if (m_watcherBlocked)
+        return;
     if (m_commitProcess && m_commitProcess->state() != QProcess::NotRunning)
         return;
-    m_refreshTimer->start();
+    // Poll the Rust watcher for events
+    if (m_watcherHandle)
+    {
+        watcher_event* event = nullptr;
+        if (watcher_poll(m_watcherHandle, 0, &event) == 0 && event)
+        {
+            watcher_free_event(event);
+            m_refreshTimer->start();
+        }
+    }
 }
 
 void MainWindow::onRefreshDebounce()

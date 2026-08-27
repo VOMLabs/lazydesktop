@@ -4,9 +4,12 @@
 #include <QMainWindow>
 #include <QProcess>
 
-#include <QFileSystemWatcher>
 #include <QNetworkAccessManager>
 #include <QTimer>
+
+extern "C" {
+#include "watcher.h"
+}
 
 class DiffViewer;
 class QAction;
@@ -234,7 +237,8 @@ private:
     GitCredentials m_gitCredentials;
     QString m_askPassScriptPath;
 
-    QFileSystemWatcher* m_fsWatcher = nullptr;
+    watcher_handle* m_watcherHandle = nullptr;
+    bool m_watcherBlocked = false;
     QTimer* m_refreshTimer = nullptr;
     QProcess* m_gitProcess = nullptr;
     QString m_repoPath;

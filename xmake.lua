@@ -20,12 +20,18 @@ target("lazydesktop")
     add_includedirs("crates/ai_core")
     add_includedirs("crates/vcs_core")
     add_includedirs("crates/addons/include")
+    add_includedirs("crates/watcher/include")
+    add_includedirs("crates/config/include")
+    add_includedirs("crates/git_cmd/include")
 
     add_frameworks("QtNetwork")
     add_packages("yaml-cpp")
     add_links("ai_core")
     add_links("vcs_core")
     add_links("addons")
+    add_links("watcher")
+    add_links("config")
+    add_links("git_cmd")
 
     if is_mode("release") then
         add_linkdirs(path.join(os.projectdir(), "target/release"))
@@ -38,6 +44,9 @@ target("lazydesktop")
         os.exec("cargo build --lib --manifest-path " .. os.projectdir() .. "/crates/ai_core/Cargo.toml " .. profile)
         os.exec("cargo build --lib --manifest-path " .. os.projectdir() .. "/crates/vcs_core/Cargo.toml " .. profile)
         os.exec("cargo build --lib --manifest-path " .. os.projectdir() .. "/crates/addons/Cargo.toml " .. profile)
+        os.exec("cargo build --lib --manifest-path " .. os.projectdir() .. "/crates/watcher/Cargo.toml " .. profile)
+        os.exec("cargo build --lib --manifest-path " .. os.projectdir() .. "/crates/config/Cargo.toml " .. profile)
+        os.exec("cargo build --lib --manifest-path " .. os.projectdir() .. "/crates/git_cmd/Cargo.toml " .. profile)
     end)
 
     if is_plat("linux") then

@@ -21,7 +21,7 @@ use std::sync::OnceLock;
 use dashmap::DashMap;
 
 /// Cached state for a single repository.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct RepoState {
     /// Full 40-hex commit id of the working-copy commit as of the last
     /// [`crate::jj::jj_log`] call; `None` when the repo has not been logged.
@@ -58,13 +58,14 @@ impl RepoStateCache {
 
     /// Update the state for `repo_path` in place (inserting a default first).
     ///
-    /// Uses the dashmap `entry` API; the entry guard is dropped before the
-    /// function returns.
+    /// Uses the dashmap `entry` API; the `RefMut` guard is dropped when the
+    /// closure returns, before this function returns.
     pub fn update(&self, repo_path: &Path, f: impl FnOnce(&mut RepoState)) {
-        self.inner
+        let mut state = self
+            .inner
             .entry(repo_path.to_path_buf())
-            .or_default()
-            .and_modify(f);
+            .or_insert_with(RepoState::default);
+        f(&mut state);
     }
 
     /// Remove the state for `repo_path` (e.g. when a repo is unloaded).
@@ -124,13 +125,13 @@ mod tests {
 
     #[test]
     fn concurrent_updates_do_not_lose_entries() {
-        let cache = RepoStateCache::new();
+        let cache = std::sync::Arc::new(RepoStateCache::new());
         let paths: Vec<PathBuf> = (0..32).map(|i| PathBuf::from(format!("/tmp/repo-{i}"))).collect();
         let handles: Vec<_> = paths
             .iter()
             .map(|path| {
                 let path = path.clone();
-                let cache = &cache;
+                let cache = std::sync::Arc::clone(&cache);
                 std::thread::spawn(move || {
                     for _ in 0..100 {
                         cache.update(&path, |state| {
