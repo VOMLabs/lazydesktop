@@ -35,7 +35,9 @@ struct Root {
 
 #[derive(Debug, Clone)]
 enum EntryKind {
-    Directory { path: PathBuf },
+    Directory {
+        path: PathBuf,
+    },
     Archive {
         archive_path: PathBuf,
         #[allow(dead_code)] // structural metadata for diagnostics/future use
@@ -166,9 +168,7 @@ impl LocalProvider {
                 let cache = cache_root.clone();
                 let limits = self.limits;
                 let rx = match c.kind {
-                    None => {
-                        runtime::spawn_blocking(move || Self::load_directory(&path, &app, api))
-                    }
+                    None => runtime::spawn_blocking(move || Self::load_directory(&path, &app, api)),
                     Some(kind) => runtime::spawn_blocking(move || {
                         Self::load_archive(&path, kind, &app, api, &limits, &cache)
                     }),
@@ -329,7 +329,9 @@ impl LocalProvider {
             manifest,
             ignore,
             root,
-            kind: EntryKind::Directory { path: dir.to_path_buf() },
+            kind: EntryKind::Directory {
+                path: dir.to_path_buf(),
+            },
             user: false,
         })
     }
@@ -436,8 +438,9 @@ impl LocalProvider {
             PackageSource::Directory { path } => {
                 let dest = user_dir.join(&manifest.id);
                 if dest.exists() {
-                    fs::remove_dir_all(&dest)
-                        .map_err(|e| AddonError::internal(format!("cannot replace addon dir: {e}")))?;
+                    fs::remove_dir_all(&dest).map_err(|e| {
+                        AddonError::internal(format!("cannot replace addon dir: {e}"))
+                    })?;
                 }
                 let ignore = load_ignore_dir(path);
                 copy_tree(path, &dest, &ignore)?;
@@ -513,11 +516,10 @@ impl AddonProvider for LocalProvider {
     }
 
     fn uninstall(&self, id: &str) -> Result<(), ProviderError> {
-        let entry = self
-            .entries
-            .get(id)
-            .map(|e| e.clone())
-            .ok_or_else(|| ProviderError::InvalidAddon(format!("addon '{id}' is not installed")))?;
+        let entry =
+            self.entries.get(id).map(|e| e.clone()).ok_or_else(|| {
+                ProviderError::InvalidAddon(format!("addon '{id}' is not installed"))
+            })?;
         self.remove_entry(&entry)?;
         let _ = self.scan();
         Ok(())
@@ -634,10 +636,7 @@ fn validate_entry(
     if pathsec::canonical_within(root, &entry_path).is_err() {
         return Err((
             manifest.id.clone(),
-            AddonError::path_security(
-                &manifest.entry,
-                "entry script escapes the package root",
-            ),
+            AddonError::path_security(&manifest.entry, "entry script escapes the package root"),
         ));
     }
     if ignore.is_ignored(&manifest.entry, false) {

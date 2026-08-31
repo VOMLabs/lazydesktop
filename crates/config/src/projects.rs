@@ -42,7 +42,8 @@ impl ProjectsFile {
             })?;
         }
 
-        let content = serde_yaml::to_string(self).map_err(|e| ProjectError::Serialize(e.to_string()))?;
+        let content =
+            serde_yaml::to_string(self).map_err(|e| ProjectError::Serialize(e.to_string()))?;
 
         fs::write(path, content).map_err(|e| ProjectError::Io {
             path: path.display().to_string(),

@@ -11,9 +11,7 @@ use crate::archive::Limits;
 use crate::error::AddonError;
 use crate::manifest::{validate_addon_id, HOST_API_VERSION};
 use crate::package::{AddonDescriptor, LoadedPackage};
-use crate::provider::{
-    local::LocalProvider, package_source_from_path, AddonProvider, DynProvider,
-};
+use crate::provider::{local::LocalProvider, package_source_from_path, AddonProvider, DynProvider};
 
 /// Immutable snapshot of the resolved addon set. Swapped atomically on
 /// load/refresh so readers never block on writers.
@@ -100,10 +98,7 @@ impl AddonRegistry {
         all.extend(extras);
         all.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
 
-        *self.snapshot.write().unwrap() = Arc::new(RegistrySnapshot {
-            by_id,
-            all,
-        });
+        *self.snapshot.write().unwrap() = Arc::new(RegistrySnapshot { by_id, all });
         Ok(())
     }
 

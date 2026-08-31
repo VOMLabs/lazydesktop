@@ -7,7 +7,7 @@
 use std::ffi::{c_char, c_int, CStr, CString};
 use std::path::PathBuf;
 
-use crate::{RepoWatcher, WatcherConfig, VcsKind, FileEvent};
+use crate::{FileEvent, RepoWatcher, VcsKind, WatcherConfig};
 
 // ─── Opaque handle ─────────────────────────────────────────
 
@@ -59,9 +59,12 @@ pub extern "C" fn watcher_create(
             } else {
                 std::time::Duration::from_millis(debounce_ms as u64)
             };
-            let config = WatcherConfig { debounce, vcs_kind: vcs };
-            let watcher = RepoWatcher::watch(PathBuf::from(path).as_path(), &config)
-                .map_err(|_| -1)?;
+            let config = WatcherConfig {
+                debounce,
+                vcs_kind: vcs,
+            };
+            let watcher =
+                RepoWatcher::watch(PathBuf::from(path).as_path(), &config).map_err(|_| -1)?;
             let boxed = Box::new(watcher);
             let raw = Box::into_raw(boxed) as *mut watcher_handle;
             *out_handle = raw;
@@ -188,7 +191,9 @@ impl Drop for watcher_event {
 }
 
 fn to_cstring(s: String) -> *mut c_char {
-    CString::new(s).unwrap_or_else(|_| CString::new("<bad>").unwrap()).into_raw()
+    CString::new(s)
+        .unwrap_or_else(|_| CString::new("<bad>").unwrap())
+        .into_raw()
 }
 
 fn event_to_ffi(event: FileEvent) -> watcher_event {

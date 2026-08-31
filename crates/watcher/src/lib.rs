@@ -127,7 +127,10 @@ impl RepoWatcher {
             }
         }
 
-        Ok(Self { rx, _watcher: watcher })
+        Ok(Self {
+            rx,
+            _watcher: watcher,
+        })
     }
 
     /// Create a watcher that monitors custom paths (not VCS-derived).
@@ -159,7 +162,10 @@ impl RepoWatcher {
             }
         }
 
-        Ok(Self { rx, _watcher: watcher })
+        Ok(Self {
+            rx,
+            _watcher: watcher,
+        })
     }
 
     /// Block until the next event is available.

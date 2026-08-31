@@ -123,9 +123,7 @@ pub extern "C" fn vcs_ssh_test_connection(host: *const c_char, port: u16) -> *mu
 
 // ─── Remotes ───────────────────────────────────────────
 
-fn remote_json(
-    result: VcsJsonResult,
-) -> *mut c_char {
+fn remote_json(result: VcsJsonResult) -> *mut c_char {
     let json = match result {
         VcsJsonResult::Ok(s) => s,
         VcsJsonResult::Err(e) => format!("{{\"error\":{}}}", serde_json::json!(e)),
@@ -178,10 +176,7 @@ pub extern "C" fn vcs_remote_add(
 
 /// Remove a remote. Returns "ok" or an error message.
 #[no_mangle]
-pub extern "C" fn vcs_remote_remove(
-    repo_path: *const c_char,
-    name: *const c_char,
-) -> *mut c_char {
+pub extern "C" fn vcs_remote_remove(repo_path: *const c_char, name: *const c_char) -> *mut c_char {
     let result = crate::remote::remove_remote(
         std::path::Path::new(&cstr_or(repo_path, "")),
         &cstr_or(name, ""),

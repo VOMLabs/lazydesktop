@@ -61,10 +61,7 @@ impl RepoStateCache {
     /// Uses the dashmap `entry` API; the `RefMut` guard is dropped when the
     /// closure returns, before this function returns.
     pub fn update(&self, repo_path: &Path, f: impl FnOnce(&mut RepoState)) {
-        let mut state = self
-            .inner
-            .entry(repo_path.to_path_buf())
-            .or_insert_with(RepoState::default);
+        let mut state = self.inner.entry(repo_path.to_path_buf()).or_default();
         f(&mut state);
     }
 
@@ -110,23 +107,19 @@ mod tests {
         cache.update(path, |state| {
             state.working_copy_commit_id = Some("a".repeat(40));
         });
-        assert_eq!(
-            cache.get(path).working_copy_commit_id,
-            Some("a".repeat(40))
-        );
+        assert_eq!(cache.get(path).working_copy_commit_id, Some("a".repeat(40)));
         cache.update(path, |state| {
             state.working_copy_commit_id = Some("b".repeat(40));
         });
-        assert_eq!(
-            cache.get(path).working_copy_commit_id,
-            Some("b".repeat(40))
-        );
+        assert_eq!(cache.get(path).working_copy_commit_id, Some("b".repeat(40)));
     }
 
     #[test]
     fn concurrent_updates_do_not_lose_entries() {
         let cache = std::sync::Arc::new(RepoStateCache::new());
-        let paths: Vec<PathBuf> = (0..32).map(|i| PathBuf::from(format!("/tmp/repo-{i}"))).collect();
+        let paths: Vec<PathBuf> = (0..32)
+            .map(|i| PathBuf::from(format!("/tmp/repo-{i}")))
+            .collect();
         let handles: Vec<_> = paths
             .iter()
             .map(|path| {
@@ -135,7 +128,8 @@ mod tests {
                 std::thread::spawn(move || {
                     for _ in 0..100 {
                         cache.update(&path, |state| {
-                            state.working_copy_commit_id = Some(path.to_string_lossy().into_owned());
+                            state.working_copy_commit_id =
+                                Some(path.to_string_lossy().into_owned());
                         });
                     }
                 })

@@ -483,14 +483,11 @@ mod tests {
 
         fn ref_segments_match(pats: &[SegmentPattern], parts: &[&str]) -> bool {
             pats.len() == parts.len()
-                && pats
-                    .iter()
-                    .zip(parts)
-                    .all(|(p, s)| match p {
-                        SegmentPattern::Literal(l) => l == s,
-                        SegmentPattern::Glob(g) => glob_segment_match(g, s),
-                        SegmentPattern::DoubleStar => false,
-                    })
+                && pats.iter().zip(parts).all(|(p, s)| match p {
+                    SegmentPattern::Literal(l) => l == s,
+                    SegmentPattern::Glob(g) => glob_segment_match(g, s),
+                    SegmentPattern::DoubleStar => false,
+                })
         }
     }
 }

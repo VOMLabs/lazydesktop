@@ -142,9 +142,12 @@ pub fn restore_file(repo_path: &Path, file: &str) -> Result<CommandResult, VcsEr
 
 /// Check if a jj repository is dirty.
 pub fn is_dirty(repo_path: &Path) -> bool {
-    run_jj(repo_path, &["diff", "--git", "--config", "ui.pagination=never"])
-        .map(|r| !r.stdout.trim().is_empty())
-        .unwrap_or(false)
+    run_jj(
+        repo_path,
+        &["diff", "--git", "--config", "ui.pagination=never"],
+    )
+    .map(|r| !r.stdout.trim().is_empty())
+    .unwrap_or(false)
 }
 
 #[cfg(test)]

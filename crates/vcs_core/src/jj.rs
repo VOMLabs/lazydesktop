@@ -22,7 +22,7 @@ use tokio::process::Command;
 use crate::error::{VcsError, VcsResult};
 use crate::jjparse::{self, JjBookmark, JjCommit, JjFileStatus, JjOpEntry, JjTag};
 use crate::runtime::runtime;
-use crate::state::{repo_state_cache, RepoState};
+use crate::state::repo_state_cache;
 
 /// Number of output lines above which parsing is offloaded to a rayon thread
 /// pool inside `spawn_blocking` instead of doing the serial parse on the async
@@ -82,14 +82,13 @@ pub async fn run_jj_with_timeout(
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
 
-    let child = command.spawn().map_err(|err| {
-        VcsError::Other(format!("failed to spawn {binary}: {err}"))
-    })?;
+    let child = command
+        .spawn()
+        .map_err(|err| VcsError::Other(format!("failed to spawn {binary}: {err}")))?;
 
     let output = match tokio::time::timeout(timeout, child.wait_with_output()).await {
-        Ok(result) => result.map_err(|err| {
-            VcsError::Other(format!("failed to read {binary} output: {err}"))
-        })?,
+        Ok(result) => result
+            .map_err(|err| VcsError::Other(format!("failed to read {binary} output: {err}")))?,
         Err(_elapsed) => {
             // `child` is dropped here; `kill_on_drop(true)` terminates it so
             // a timed-out jj never keeps running in the background.
@@ -119,11 +118,7 @@ pub async fn run_jj_with_timeout(
 
 /// Synchronous wrapper for callers that cannot await (e.g. the FFI layer).
 /// Drives [`run_jj_with_timeout`] on the shared [`runtime`].
-pub fn run_jj_blocking(
-    repo_path: &Path,
-    args: &[&str],
-    timeout: Duration,
-) -> VcsResult<Output> {
+pub fn run_jj_blocking(repo_path: &Path, args: &[&str], timeout: Duration) -> VcsResult<Output> {
     runtime().block_on(run_jj_with_timeout(repo_path, args, timeout))
 }
 
@@ -187,9 +182,7 @@ pub async fn jj_log(
 /// Populated by the last [`jj_log`] call; never spawns a subprocess and never
 /// blocks (the dashmap guard is released before returning).
 pub fn jj_cached_working_copy_id(repo_path: &Path) -> Option<String> {
-    repo_state_cache()
-        .get(repo_path)
-        .working_copy_commit_id
+    repo_state_cache().get(repo_path).working_copy_commit_id
 }
 
 /// Parse a JSON-lines `jj log` output on the rayon thread pool.
@@ -272,10 +265,7 @@ pub async fn jj_redo(repo_path: &Path) -> VcsResult<()> {
 ///
 /// `limit` caps the number of entries with jj's `-n`/`--limit` option. Parsed
 /// with [`jjparse::parse_ops_jsonl`].
-pub async fn jj_op_log(
-    repo_path: &Path,
-    limit: Option<usize>,
-) -> VcsResult<Vec<JjOpEntry>> {
+pub async fn jj_op_log(repo_path: &Path, limit: Option<usize>) -> VcsResult<Vec<JjOpEntry>> {
     let mut args: Vec<String> = vec![
         "op".to_string(),
         "log".to_string(),
@@ -412,8 +402,7 @@ mod tests {
 
     /// Run `jj <args>` in `repo` and return stdout as a lossy string.
     fn jj_stdout(repo: &Path, args: &[&str]) -> String {
-        let output =
-            run_jj_blocking(repo, args, DEFAULT_TIMEOUT).expect("jj command must succeed");
+        let output = run_jj_blocking(repo, args, DEFAULT_TIMEOUT).expect("jj command must succeed");
         String::from_utf8_lossy(&output.stdout).into_owned()
     }
 
@@ -588,7 +577,14 @@ mod tests {
             .expect("jj describe must succeed");
         let stdout = jj_stdout(
             &repo,
-            &["log", "--no-graph", "-r", "@", "-T", "description.first_line()"],
+            &[
+                "log",
+                "--no-graph",
+                "-r",
+                "@",
+                "-T",
+                "description.first_line()",
+            ],
         );
         assert!(stdout.contains("hello world"), "got: {stdout}");
     }
@@ -634,7 +630,14 @@ mod tests {
             .expect("jj undo must succeed");
         let after_undo = jj_stdout(
             &repo,
-            &["log", "--no-graph", "-r", "@", "-T", "description.first_line()"],
+            &[
+                "log",
+                "--no-graph",
+                "-r",
+                "@",
+                "-T",
+                "description.first_line()",
+            ],
         );
         assert!(
             !after_undo.contains("undone-msg"),
@@ -646,7 +649,14 @@ mod tests {
             .expect("jj redo must succeed");
         let after_redo = jj_stdout(
             &repo,
-            &["log", "--no-graph", "-r", "@", "-T", "description.first_line()"],
+            &[
+                "log",
+                "--no-graph",
+                "-r",
+                "@",
+                "-T",
+                "description.first_line()",
+            ],
         );
         assert!(
             after_redo.contains("undone-msg"),
@@ -678,7 +688,14 @@ mod tests {
             .expect("jj describe must succeed");
         assert!(jj_stdout(
             &repo,
-            &["log", "--no-graph", "-r", "@", "-T", "description.first_line()"]
+            &[
+                "log",
+                "--no-graph",
+                "-r",
+                "@",
+                "-T",
+                "description.first_line()"
+            ]
         )
         .contains("changed"));
 
@@ -687,7 +704,14 @@ mod tests {
             .expect("jj op restore must succeed");
         let restored = jj_stdout(
             &repo,
-            &["log", "--no-graph", "-r", "@", "-T", "description.first_line()"],
+            &[
+                "log",
+                "--no-graph",
+                "-r",
+                "@",
+                "-T",
+                "description.first_line()",
+            ],
         );
         assert!(restored.contains("original"), "got: {restored}");
     }
@@ -849,11 +873,13 @@ mod tests {
         // Build > PARALLEL_PARSE_THRESHOLD JSON lines so the parallel path is
         // exercised for real.
         let line = r#"{"commit_id":"0123456789abcdef0123456789abcdef01234567","commit_id_short":"0123456789ab","change_id":"qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq","change_id_short":"qqqqqqqq","description":"bulk","parents":[],"bookmarks":[],"tags":[],"is_conflict":false,"is_empty":false,"author_email":"a@example.com","timestamp":"2001-02-03T04:05:09+07:00"}"#;
-        let output = std::iter::repeat_with(|| line).take(600).collect::<Vec<_>>().join("\n");
+        let output = std::iter::repeat_with(|| line)
+            .take(600)
+            .collect::<Vec<_>>()
+            .join("\n");
         let stdout = std::borrow::Cow::Owned(output.clone());
 
-        let parallel = runtime()
-            .block_on(parse_commits_parallel(stdout));
+        let parallel = runtime().block_on(parse_commits_parallel(stdout));
         let serial = jjparse::parse_commits_jsonl(&output);
         assert_eq!(parallel.len(), 600, "all lines must parse");
         assert_eq!(parallel, serial, "parallel and serial parses must agree");
@@ -869,14 +895,13 @@ mod tests {
             }
         });
 
-        let received: Vec<u32> = runtime()
-            .block_on(async move {
-                let mut items = Vec::new();
-                while let Ok(item) = receiver.recv_async().await {
-                    items.push(item);
-                }
-                items
-            });
+        let received: Vec<u32> = runtime().block_on(async move {
+            let mut items = Vec::new();
+            while let Ok(item) = receiver.recv_async().await {
+                items.push(item);
+            }
+            items
+        });
         assert_eq!(received, (0..100).collect::<Vec<u32>>());
     }
 }

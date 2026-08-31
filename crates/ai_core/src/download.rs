@@ -15,7 +15,10 @@ use crate::error::AiError;
 /// invisible to consumers that check `Path::exists()` and prevents a failed
 /// or cancelled download from leaving a corrupt file in place of a good one.
 fn part_path(dest: &Path) -> PathBuf {
-    let mut name = dest.file_name().map(|s| s.to_os_string()).unwrap_or_default();
+    let mut name = dest
+        .file_name()
+        .map(|s| s.to_os_string())
+        .unwrap_or_default();
     name.push(".part");
     dest.with_file_name(name)
 }
@@ -78,6 +81,11 @@ pub async fn download_file(
 
     tokio::fs::rename(&part, dest).await?;
 
-    info!("Downloaded {} -> {} (sha256: {})", url, dest.display(), actual_hash);
+    info!(
+        "Downloaded {} -> {} (sha256: {})",
+        url,
+        dest.display(),
+        actual_hash
+    );
     Ok(actual_hash)
 }

@@ -3,8 +3,6 @@ name: CI
 on:
   push:
     branches: [main]
-    # Skip CI for documentation-only changes to main; PRs always run the
-    # full suite so required status checks are never left pending.
     paths-ignore:
       - 'docs/**'
       - '*.md'
@@ -21,9 +19,55 @@ permissions:
   contents: read
 
 jobs:
+  # ─── Rust Quality Gate ───────────────────────────────────────
+  rust-quality:
+    name: Rust quality (${{ matrix.check }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        check:
+          - clippy
+          - fmt
+          - test
+          - audit
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: ${{ matrix.check == 'clippy' && 'clippy' || '' }}${{ matrix.check == 'fmt' && 'rustfmt' || '' }}
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-audit
+        if: matrix.check == 'audit'
+        run: cargo install cargo-audit
+
+      - name: Run clippy
+        if: matrix.check == 'clippy'
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Check formatting
+        if: matrix.check == 'fmt'
+        run: cargo fmt --all -- --check
+
+      - name: Run tests
+        if: matrix.check == 'test'
+        run: cargo test --workspace
+
+      - name: Security audit
+        if: matrix.check == 'audit'
+        run: cargo audit
+
+  # ─── Build (C++ + Rust, all platforms) ──────────────────────
   build:
     name: build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: [rust-quality]
     strategy:
       fail-fast: false
       matrix:
@@ -60,8 +104,6 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.7'
-          # Qt 6.7 ships win64_msvc2019_64 only (MSVC2022 arch starts at Qt 6.8);
-          # it is ABI-compatible with the MSVC 2022 toolchain used by xmake.
           arch: win64_msvc2019_64
           cache: true
 
@@ -79,11 +121,6 @@ jobs:
       - name: Install yaml-cpp (macOS)
         if: runner.os == 'macOS'
         run: brew install yaml-cpp
-
-      # yaml-cpp on Windows is provided by xmake itself: with
-      # add_requires("yaml-cpp") (no {system = true}) xmake falls back to
-      # fetching yaml-cpp from the xmake package repo when it cannot find a
-      # system copy, so no vcpkg step is needed here.
 
       - name: Configure (debug)
         run: xmake f -m debug -y
@@ -109,27 +146,11 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  test-rust:
-    name: Rust tests (crates)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run Rust tests
-        run: cargo test --workspace
-
+  # ─── Lint (pre-commit on changed files) ─────────────────────
   lint:
     name: Lint (pre-commit)
     runs-on: ubuntu-latest
     steps:
-      # Full history is required so the diff below can resolve both
-      # "HEAD~1..HEAD" (push) and the fetched base ref (pull_request).
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0

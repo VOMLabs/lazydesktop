@@ -301,15 +301,13 @@ fn parse_optional_version(
 ) -> Result<Option<Version>, AddonError> {
     match v {
         None => Ok(None),
-        Some(s) => semver::Version::parse(s)
-            .map(Some)
-            .map_err(|_| {
-                AddonError::invalid_manifest(
-                    Some(id.to_string()),
-                    Some(field.to_string()),
-                    format!("field '{field}' is not valid semver: {s:?}"),
-                )
-            }),
+        Some(s) => semver::Version::parse(s).map(Some).map_err(|_| {
+            AddonError::invalid_manifest(
+                Some(id.to_string()),
+                Some(field.to_string()),
+                format!("field '{field}' is not valid semver: {s:?}"),
+            )
+        }),
     }
 }
 
@@ -389,7 +387,11 @@ min_app_version = "0.3.0"
     fn rejects_missing_required_fields() {
         for field in ["id", "name", "version", "entry"] {
             let mut toml = valid_toml();
-            toml = toml.lines().filter(|l| !l.starts_with(&format!("{field} ="))).collect::<Vec<_>>().join("\n");
+            toml = toml
+                .lines()
+                .filter(|l| !l.starts_with(&format!("{field} =")))
+                .collect::<Vec<_>>()
+                .join("\n");
             let e = validate(&toml).unwrap_err();
             assert_eq!(e.code(), "InvalidManifest", "{field}");
             assert!(e.to_string().contains(field), "{field}: {e}");
@@ -398,7 +400,16 @@ min_app_version = "0.3.0"
 
     #[test]
     fn rejects_bad_ids() {
-        for bad in ["bad", "Bad.Addon", "1.2", "a..b", ".a.b", "a.b.", "a b.c", "é.c"] {
+        for bad in [
+            "bad",
+            "Bad.Addon",
+            "1.2",
+            "a..b",
+            ".a.b",
+            "a.b.",
+            "a b.c",
+            "é.c",
+        ] {
             let mut toml = valid_toml();
             toml = toml.replace("example.addon", bad);
             let e = validate(&toml).unwrap_err();
@@ -443,7 +454,13 @@ min_app_version = "0.3.0"
 
     #[test]
     fn rejects_entry_escape() {
-        for bad in ["../main.lua", "/etc/x.lua", "C:\\x.lua", "src\\main.lua", "src/main.txt"] {
+        for bad in [
+            "../main.lua",
+            "/etc/x.lua",
+            "C:\\x.lua",
+            "src\\main.lua",
+            "src/main.txt",
+        ] {
             let mut toml = valid_toml();
             toml = toml.replace("src/main.lua", bad);
             assert!(validate(&toml).is_err(), "{bad}");
