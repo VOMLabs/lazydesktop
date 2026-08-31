@@ -25,12 +25,8 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Install xmake
-        uses: xmake-io/github-action-setup-xmake@v1
-        with:
-          xmake-version: latest
-          package-cache: true
-          build-cache: true
+      - name: Install Meson and Ninja
+        run: pip install meson ninja
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
@@ -43,14 +39,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libyaml-cpp-dev libgl1-mesa-dev file
 
+      - name: Build Rust crates
+        run: cargo build --workspace --release
+
       - name: Configure (release)
-        run: xmake f -m release -y
+        run: meson setup build --buildtype=release
 
       - name: Build
-        run: xmake
+        run: ninja -C build
 
       - name: Strip binary
-        run: strip build/linux/x86_64/release/lazydesktop
+        run: strip build/lazydesktop
 
       - name: Build .deb
         run: |
@@ -59,7 +58,7 @@ jobs:
           PKG="debroot"
           rm -rf "${PKG}"
           mkdir -p "${PKG}/DEBIAN"
-          install -Dm755 build/linux/x86_64/release/lazydesktop "${PKG}/usr/bin/lazydesktop"
+          install -Dm755 build/lazydesktop "${PKG}/usr/bin/lazydesktop"
           install -Dm644 data/lazydesktop.desktop "${PKG}/usr/share/applications/lazydesktop.desktop"
           install -Dm644 data/icons/hicolor/scalable/apps/lazydesktop.svg "${PKG}/usr/share/icons/hicolor/scalable/apps/lazydesktop.svg"
           cat > "${PKG}/DEBIAN/control" <<EOF
@@ -88,7 +87,7 @@ jobs:
           rm -rf AppDir
           mkdir -p AppDir
           ./linuxdeploy-x86_64.AppImage --appdir AppDir \
-            --executable build/linux/x86_64/release/lazydesktop \
+            --executable build/lazydesktop \
             --desktop-file data/lazydesktop.desktop \
             --icon-file data/icons/hicolor/scalable/apps/lazydesktop.svg \
             --plugin qt --output appimage
@@ -108,9 +107,6 @@ jobs:
     container:
       image: archlinux:latest
       options: --user root
-    env:
-      # xmake refuses to run as root unless explicitly allowed.
-      XMAKE_ROOT: y
 
     steps:
       - uses: actions/checkout@v7
@@ -118,17 +114,16 @@ jobs:
       - name: Install build dependencies
         run: |
           pacman -Syu --noconfirm
-          # clang provides libclang, required by the bindgen build script of
-          # llama-cpp-sys-2 when compiling the bundled Rust ai_core crate.
-          # cmake is needed by llama-cpp-sys-2 to configure/compile llama.cpp,
-          # ninja is the default generator xmake uses for C++ builds.
-          pacman -S --noconfirm base-devel xmake rust qt6-base yaml-cpp git clang cmake ninja
+          pacman -S --noconfirm base-devel rust qt6-base yaml-cpp git clang cmake ninja meson python-pip
+
+      - name: Build Rust crates
+        run: cargo build --workspace --release
 
       - name: Configure (release)
-        run: xmake f -m release -y
+        run: meson setup build --buildtype=release
 
       - name: Build
-        run: xmake
+        run: ninja -C build
 
       - name: Package (.pkg.tar.zst)
         run: |
@@ -136,7 +131,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           PKG="pkg"
           rm -rf "${PKG}"
-          install -Dm755 build/linux/x86_64/release/lazydesktop "${PKG}/usr/bin/lazydesktop"
+          install -Dm755 build/lazydesktop "${PKG}/usr/bin/lazydesktop"
           install -Dm644 data/lazydesktop.desktop "${PKG}/usr/share/applications/lazydesktop.desktop"
           install -Dm644 data/icons/hicolor/scalable/apps/lazydesktop.svg "${PKG}/usr/share/icons/hicolor/scalable/apps/lazydesktop.svg"
           SIZE="$(du -sb "${PKG}" | cut -f1)"
@@ -183,39 +178,32 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Install xmake
-        uses: xmake-io/github-action-setup-xmake@v1
-        with:
-          xmake-version: latest
-          package-cache: true
-          build-cache: true
+      - name: Install Meson and Ninja
+        run: pip install meson ninja
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.7'
-          # Qt 6.7 ships win64_msvc2019_64 only (MSVC2022 arch starts at Qt 6.8);
-          # it is ABI-compatible with the MSVC 2022 toolchain used by xmake.
           arch: win64_msvc2019_64
           cache: true
 
+      - name: Build Rust crates
+        run: cargo build --workspace --release
+
       - name: Configure (release)
-        run: xmake f -m release -y
+        run: meson setup build --buildtype=release
 
       - name: Build
-        run: xmake
+        run: ninja -C build
 
       - name: Install WiX Toolset
         run: dotnet tool install --global wix --version 4.0.5
 
       - name: Install WiX UI Extension
-        # wix build does not auto-download extensions; the WixUI dialog set
-        # ships in a separate NuGet package that must be cached first.
         run: wix extension add WixToolset.UI.wixext/4.0.5 --global
 
       - name: Deploy Qt runtime
-        # windeployqt copies Qt DLLs/plugins next to the exe, then
-        # deploy-msi.ps1 emits AppFiles.g.wxs listing every deployed file.
         run: |
           $VERSION = $env:GITHUB_REF_NAME -replace '^v', ''
           $QT_ROOT = $env:Qt6_DIR
@@ -223,7 +211,7 @@ jobs:
             $qmake = Get-Command qmake6.exe, qmake.exe -ErrorAction SilentlyContinue | Select-Object -First 1
             $QT_ROOT = Split-Path (Split-Path $qmake.Source)
           }
-          $BIN_DIR = "$env:GITHUB_WORKSPACE\build\windows\x64\release"
+          $BIN_DIR = "$env:GITHUB_WORKSPACE\build"
           & .\install\windows\deploy-msi.ps1 -BuildDir "$BIN_DIR" -QtRoot "$QT_ROOT" -OutputFile "$env:GITHUB_WORKSPACE\install\windows\AppFiles.g.wxs"
           Write-Host "Generated fragment:"
           Get-Content .\install\windows\AppFiles.g.wxs | Select-Object -First 40
@@ -236,7 +224,7 @@ jobs:
             $qmake = Get-Command qmake6.exe, qmake.exe -ErrorAction SilentlyContinue | Select-Object -First 1
             $QT_ROOT = Split-Path (Split-Path $qmake.Source)
           }
-          $BIN_DIR = "$env:GITHUB_WORKSPACE\build\windows\x64\release"
+          $BIN_DIR = "$env:GITHUB_WORKSPACE\build"
           wix build install/windows/lazydesktop.wxs install/windows/AppFiles.g.wxs `
             -out "lazydesktop-${VERSION}.msi" `
             -arch x64 `
@@ -255,8 +243,6 @@ jobs:
   create-release:
     name: Create GitHub Release
     needs: [release-linux, release-arch, release-windows]
-    # Always create a GitHub Release on tag push, even if one or more
-    # platform jobs fail, so a tag never ends up without a release.
     if: always()
     runs-on: ubuntu-latest
     permissions:

@@ -1,0 +1,13 @@
+# Moon toolchain configuration
+# https://moonrepo.dev/docs/config/toolchain
+
+rust:
+  version: 'stable'
+  bins:
+    - 'cargo'
+    - 'clippy'
+    - 'rustfmt'
+
+# System tools managed by mise
+node:
+  version: ''

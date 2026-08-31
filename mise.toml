@@ -1,13 +1,12 @@
 [tools]
-# Task runner
-just = "latest"
+# Task runner (moonrepo orchestrates builds, tests, lint)
+moon = "latest"
 
-# Build system (primary: xmake; meson/ninja used for packaging)
-xmake = "latest"
+# Build system (Meson + Ninja for C++ compilation)
 ninja = "1.12"
 meson = "1.6"
 
-# Rust toolchain (builds the bundled ai_core crate)
+# Rust toolchain (builds the bundled crates)
 rust = "stable"
 
 # Compiler (C++23 support requires GCC 14+ or Clang 18+)

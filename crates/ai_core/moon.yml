@@ -1,0 +1,32 @@
+# ai_core Rust crate project
+language: 'rust'
+layer: 'library'
+
+tasks:
+  build:
+    command: 'cargo build --manifest-path crates/ai_core/Cargo.toml'
+    inputs:
+      - 'crates/ai_core/**/*'
+    outputs:
+      - 'target/debug/libai_core.a'
+      - 'target/release/libai_core.a'
+
+  test:
+    command: 'cargo test --manifest-path crates/ai_core/Cargo.toml'
+    inputs:
+      - 'crates/ai_core/**/*'
+
+  lint:
+    command: 'cargo clippy --manifest-path crates/ai_core/Cargo.toml -- -D warnings'
+    inputs:
+      - 'crates/ai_core/**/*'
+
+  format:
+    command: 'cargo fmt --manifest-path crates/ai_core/Cargo.toml -- --check'
+    inputs:
+      - 'crates/ai_core/**/*'
+
+  format-fix:
+    command: 'cargo fmt --manifest-path crates/ai_core/Cargo.toml'
+    inputs:
+      - 'crates/ai_core/**/*'

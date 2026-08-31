@@ -1,0 +1,32 @@
+# addons Rust crate project
+language: 'rust'
+layer: 'library'
+
+tasks:
+  build:
+    command: 'cargo build --manifest-path crates/addons/Cargo.toml'
+    inputs:
+      - 'crates/addons/**/*'
+    outputs:
+      - 'target/debug/libaddons.a'
+      - 'target/release/libaddons.a'
+
+  test:
+    command: 'cargo test --manifest-path crates/addons/Cargo.toml'
+    inputs:
+      - 'crates/addons/**/*'
+
+  lint:
+    command: 'cargo clippy --manifest-path crates/addons/Cargo.toml -- -D warnings'
+    inputs:
+      - 'crates/addons/**/*'
+
+  format:
+    command: 'cargo fmt --manifest-path crates/addons/Cargo.toml -- --check'
+    inputs:
+      - 'crates/addons/**/*'
+
+  format-fix:
+    command: 'cargo fmt --manifest-path crates/addons/Cargo.toml'
+    inputs:
+      - 'crates/addons/**/*'

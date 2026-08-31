@@ -1,0 +1,13 @@
+# Moon workspace configuration
+# https://moonrepo.dev/docs/config/workspace
+
+versionConstraint: '>=1.0.0'
+
+projects:
+  - '.'
+  - 'crates/ai_core'
+  - 'crates/vcs_core'
+  - 'crates/addons'
+  - 'crates/watcher'
+  - 'crates/config'
+  - 'crates/git_cmd'

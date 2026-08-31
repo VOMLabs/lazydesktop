@@ -1,50 +1,43 @@
 # ─── Variables ───────────────────────────────────────────────────
 project         := "lazydesktop"
 builddir        := "build"
-bindir          := builddir + "/linux/x86_64"
-binary          := bindir + "/debug/" + project
-binary_release  := bindir + "/release/" + project
+binary          := builddir + "/lazydesktop"
+binary_release  := builddir + "/lazydesktop"
 appdir          := "AppDir"
-ai_core_toml    := "crates/ai_core/Cargo.toml"
-vcs_core_toml   := "crates/vcs_core/Cargo.toml"
 
 # ─── Default ─────────────────────────────────────────────────────
-# Alias for `just build`
 default: build
 
 # ─── Setup ───────────────────────────────────────────────────────
-# Configure xmake for a debug build (Qt 6 must be on PATH)
+# Install moon if not present, then run moon setup
 setup:
-    xmake f -m debug
-
-# Configure xmake for a release build
-setup-release:
-    xmake f -m release
-
-# Configure, build, and run the app
-dev: setup build
-    {{ binary }}
+    @command -v moon >/dev/null 2>&1 || cargo install moonrepo
+    moon sync
 
 # ─── Build ───────────────────────────────────────────────────────
-# Build debug (C++ UI + bundled Rust ai_core in one step)
+# Build Rust crates + C++ app (debug)
 build:
-    xmake
+    cargo build --workspace
+    meson setup {{ builddir }} --buildtype=debugoptimized --reconfigure 2>/dev/null || true
+    ninja -C {{ builddir }}
 
-# Build release
+# Build Rust crates + C++ app (release)
 build-release:
-    xmake -m release
+    cargo build --workspace --release
+    meson setup {{ builddir }} --buildtype=release --reconfigure 2>/dev/null || true
+    ninja -C {{ builddir }}
 
-# Build only the Rust ai_core crate
-build-ai-core:
-    cargo build --manifest-path {{ ai_core_toml }}
+# Build only Rust crates
+build-rust:
+    cargo build --workspace
 
-# Build only the Rust vcs_core crate
-build-vcs-core:
-    cargo build --manifest-path {{ vcs_core_toml }}
+# Build only Rust crates (release)
+build-rust-release:
+    cargo build --workspace --release
 
 # Generate compile_commands.json for clangd
 compile-commands:
-    xmake project -k compile_commands --lsp=clangd
+    meson setup {{ builddir }} --reconfigure 2>/dev/null || true
 
 # ─── Test ────────────────────────────────────────────────────────
 # Run all Rust test suites
@@ -54,14 +47,6 @@ test:
 # Run tests for a specific crate
 test-crate crate:
     cargo test -p {{ crate }}
-
-# Run only the ai_core Rust tests
-test-ai-core:
-    cargo test --manifest-path {{ ai_core_toml }}
-
-# Run only the vcs_core Rust tests
-test-vcs-core:
-    cargo test --manifest-path {{ vcs_core_toml }}
 
 # ─── Run ─────────────────────────────────────────────────────────
 # Build and run the debug binary
@@ -150,11 +135,10 @@ release-windows-msi: build-release
     ./install/windows/build-msi.bat
 
 # ─── Clean ───────────────────────────────────────────────────────
-# Remove xmake artifacts and packaging output
+# Remove build artifacts
 clean:
-    xmake clean --all
-    rm -rf {{ builddir }} {{ appdir }} .xmake
+    rm -rf {{ builddir }} {{ appdir }} builddir
 
-# Remove xmake artifacts and all Rust targets
+# Remove all build artifacts including Rust targets
 distclean: clean
-    rm -rf crates/*/target .xmake
+    rm -rf crates/*/target target

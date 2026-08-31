@@ -26,7 +26,7 @@ Core capabilities:
 | Area | Technology |
 |------|------------|
 | UI | Qt 6 Widgets (Core, Gui, Widgets, Network), C++23 |
-| Build | XMake (`xmake.lua`), auto-builds the Rust crates via `before_build` hooks |
+| Build | Meson + Ninja (`meson.build`), links pre-built Rust static libs |
 | Rust crates | `crates/ai_core` (GGUF inference), `crates/vcs_core` (SSH + remotes) — both `staticlib` with C ABI headers consumed by C++ |
 | Persistence | `QSettings` (INI) + YAML (`projects.yaml`, themes) — no database |
 | Git operations | `git` CLI via `QProcess` (no libgit2) |
@@ -43,13 +43,15 @@ Core capabilities:
 - `data/`, `assets/`, `install/`, `debian/`, `scripts/` — packaging and resources
 - `.github/workflows/` — CI (`ci.yml`), release (`release.yml`), CodeQL
 - `.opencode/` — OpenCode agents, skills, context, tools
+- `.moon/` — Moon workspace config (task orchestration)
+- `meson.build` — Meson/Ninja C++ build definition
 - `ROADMAP.md`, `IMPLEMENTATION.md` — project direction and technical deep-dive
 
 ## Build, test, and quality
 
 ```bash
 just setup           # install toolchain via mise
-just build           # xmake build (C++ + Rust crates)
+just build           # cargo build + meson/ninja build (C++ + Rust crates)
 just run             # run the debug binary
 just test            # cargo test --workspace (Rust crates; no C++ test suite yet)
 just format          # clang-format on src/*.{cpp,h}

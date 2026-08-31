@@ -1,0 +1,32 @@
+# watcher Rust crate project
+language: 'rust'
+layer: 'library'
+
+tasks:
+  build:
+    command: 'cargo build --manifest-path crates/watcher/Cargo.toml'
+    inputs:
+      - 'crates/watcher/**/*'
+    outputs:
+      - 'target/debug/libwatcher.a'
+      - 'target/release/libwatcher.a'
+
+  test:
+    command: 'cargo test --manifest-path crates/watcher/Cargo.toml'
+    inputs:
+      - 'crates/watcher/**/*'
+
+  lint:
+    command: 'cargo clippy --manifest-path crates/watcher/Cargo.toml -- -D warnings'
+    inputs:
+      - 'crates/watcher/**/*'
+
+  format:
+    command: 'cargo fmt --manifest-path crates/watcher/Cargo.toml -- --check'
+    inputs:
+      - 'crates/watcher/**/*'
+
+  format-fix:
+    command: 'cargo fmt --manifest-path crates/watcher/Cargo.toml'
+    inputs:
+      - 'crates/watcher/**/*'
