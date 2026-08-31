@@ -1,32 +1,34 @@
-# addons Rust crate project
+# lazydesktop-addons Rust crate project
 language: 'rust'
 layer: 'library'
 
 tasks:
   build:
-    command: 'cargo build --manifest-path crates/addons/Cargo.toml'
+    command: 'cargo'
+    args: ['build', '-p', 'lazydesktop-addons']
     inputs:
       - 'crates/addons/**/*'
-    outputs:
-      - 'target/debug/libaddons.a'
-      - 'target/release/libaddons.a'
 
   test:
-    command: 'cargo test --manifest-path crates/addons/Cargo.toml'
+    command: 'cargo'
+    args: ['test', '-p', 'lazydesktop-addons']
     inputs:
       - 'crates/addons/**/*'
 
   lint:
-    command: 'cargo clippy --manifest-path crates/addons/Cargo.toml -- -D warnings'
+    command: 'cargo'
+    args: ['clippy', '-p', 'lazydesktop-addons', '--', '-D', 'warnings']
     inputs:
       - 'crates/addons/**/*'
 
   format:
-    command: 'cargo fmt --manifest-path crates/addons/Cargo.toml -- --check'
+    command: 'cargo'
+    args: ['fmt', '-p', 'lazydesktop-addons', '--', '--check']
     inputs:
       - 'crates/addons/**/*'
 
   format-fix:
-    command: 'cargo fmt --manifest-path crates/addons/Cargo.toml'
+    command: 'cargo'
+    args: ['fmt', '-p', 'lazydesktop-addons']
     inputs:
       - 'crates/addons/**/*'

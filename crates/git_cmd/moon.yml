@@ -1,32 +1,34 @@
-# git_cmd Rust crate project
+# lazydesktop-git-cmd Rust crate project
 language: 'rust'
 layer: 'library'
 
 tasks:
   build:
-    command: 'cargo build --manifest-path crates/git_cmd/Cargo.toml'
+    command: 'cargo'
+    args: ['build', '-p', 'lazydesktop-git-cmd']
     inputs:
       - 'crates/git_cmd/**/*'
-    outputs:
-      - 'target/debug/libgit_cmd.a'
-      - 'target/release/libgit_cmd.a'
 
   test:
-    command: 'cargo test --manifest-path crates/git_cmd/Cargo.toml'
+    command: 'cargo'
+    args: ['test', '-p', 'lazydesktop-git-cmd']
     inputs:
       - 'crates/git_cmd/**/*'
 
   lint:
-    command: 'cargo clippy --manifest-path crates/git_cmd/Cargo.toml -- -D warnings'
+    command: 'cargo'
+    args: ['clippy', '-p', 'lazydesktop-git-cmd', '--', '-D', 'warnings']
     inputs:
       - 'crates/git_cmd/**/*'
 
   format:
-    command: 'cargo fmt --manifest-path crates/git_cmd/Cargo.toml -- --check'
+    command: 'cargo'
+    args: ['fmt', '-p', 'lazydesktop-git-cmd', '--', '--check']
     inputs:
       - 'crates/git_cmd/**/*'
 
   format-fix:
-    command: 'cargo fmt --manifest-path crates/git_cmd/Cargo.toml'
+    command: 'cargo'
+    args: ['fmt', '-p', 'lazydesktop-git-cmd']
     inputs:
       - 'crates/git_cmd/**/*'
