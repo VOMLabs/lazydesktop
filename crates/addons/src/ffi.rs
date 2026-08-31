@@ -165,7 +165,8 @@ pub(crate) fn emit_log_impl(level: u8, msg: &str) {
     if let Some(sink) = LOG_SINK.get() {
         if let Some(cb) = sink.cb {
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let cmsg = CString::new(msg).unwrap_or_else(|_| CString::new("<bad message>").unwrap());
+                let cmsg =
+                    CString::new(msg).unwrap_or_else(|_| CString::new("<bad message>").unwrap());
                 // SAFETY: the callback was installed by the host; the message
                 // is a valid NUL-terminated C string for the duration of the call.
                 unsafe {
@@ -230,10 +231,8 @@ pub unsafe extern "C" fn lda_free_string(s: *mut c_char) {
 /// (i.e. returned through an `out_bytes` argument) and must not be freed
 /// more than once.
 pub unsafe extern "C" fn lda_free_bytes(p: *mut u8) {
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        unsafe {
-            free_bytes(p);
-        }
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+        free_bytes(p);
     }));
 }
 
@@ -407,10 +406,8 @@ pub unsafe extern "C" fn lda_registry_get(
             match reg.get(id) {
                 Some(d) => write_cstring(out_json, crate::json::single_json(&d)),
                 None => {
-                    let err = AddonError::invalid_addon(
-                        Some(id.to_string()),
-                        "addon is not installed",
-                    );
+                    let err =
+                        AddonError::invalid_addon(Some(id.to_string()), "addon is not installed");
                     write_cstring(out_json, err.to_json())?;
                     Err(result_code(&err))
                 }

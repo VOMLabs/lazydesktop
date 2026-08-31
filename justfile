@@ -47,9 +47,13 @@ compile-commands:
     xmake project -k compile_commands --lsp=clangd
 
 # ─── Test ────────────────────────────────────────────────────────
-# Run the Rust test suites
+# Run all Rust test suites
 test:
     cargo test --workspace
+
+# Run tests for a specific crate
+test-crate crate:
+    cargo test -p {{ crate }}
 
 # Run only the ai_core Rust tests
 test-ai-core:
@@ -73,9 +77,25 @@ run-release: build-release
 format:
     clang-format -i -style=file src/*.cpp src/*.h
 
+# Format Rust sources
+format-rust:
+    cargo fmt --all
+
+# Check Rust formatting
+check-rust-fmt:
+    cargo fmt --all -- --check
+
 # Run clang-tidy static analysis
 tidy:
     clang-tidy src/*.cpp src/*.h -- -std=c++23
+
+# Run Rust clippy lints
+clippy:
+    cargo clippy --workspace --all-targets -- -D warnings
+
+# Run cargo audit for security vulnerabilities
+audit:
+    cargo audit
 
 # Run all pre-commit hooks
 lint:

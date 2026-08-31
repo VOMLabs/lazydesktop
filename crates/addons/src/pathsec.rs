@@ -30,17 +30,29 @@ pub fn normalize_relative(input: &str) -> Result<String, AddonError> {
         return Err(AddonError::path_security(input, "path contains NUL byte"));
     }
     if input.starts_with('/') {
-        return Err(AddonError::path_security(input, "absolute paths are not allowed"));
+        return Err(AddonError::path_security(
+            input,
+            "absolute paths are not allowed",
+        ));
     }
     if input.starts_with('\\') {
-        return Err(AddonError::path_security(input, "backslash paths are not allowed"));
+        return Err(AddonError::path_security(
+            input,
+            "backslash paths are not allowed",
+        ));
     }
     let bytes = input.as_bytes();
     if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
-        return Err(AddonError::path_security(input, "drive-letter paths are not allowed"));
+        return Err(AddonError::path_security(
+            input,
+            "drive-letter paths are not allowed",
+        ));
     }
     if input.contains('\\') {
-        return Err(AddonError::path_security(input, "backslash paths are not allowed"));
+        return Err(AddonError::path_security(
+            input,
+            "backslash paths are not allowed",
+        ));
     }
 
     let mut parts: Vec<&str> = Vec::new();
@@ -52,18 +64,27 @@ pub fn normalize_relative(input: &str) -> Result<String, AddonError> {
             "." => {
                 // A single leading "./" is stripped; anything else is rejected.
                 if idx != 0 {
-                    return Err(AddonError::path_security(input, "path component '.' is not allowed"));
+                    return Err(AddonError::path_security(
+                        input,
+                        "path component '.' is not allowed",
+                    ));
                 }
             }
             ".." => {
-                return Err(AddonError::path_security(input, "path traversal ('..') is not allowed"));
+                return Err(AddonError::path_security(
+                    input,
+                    "path traversal ('..') is not allowed",
+                ));
             }
             _ => parts.push(comp),
         }
     }
 
     if parts.is_empty() {
-        return Err(AddonError::path_security(input, "path normalizes to the package root"));
+        return Err(AddonError::path_security(
+            input,
+            "path normalizes to the package root",
+        ));
     }
     let joined = parts.join("/");
     if joined.len() > MAX_PATH_LEN {
@@ -80,8 +101,7 @@ pub fn normalize_relative(input: &str) -> Result<String, AddonError> {
 pub fn lexical_within(root: &Path, candidate: &Path) -> bool {
     let root_components: Vec<Component<'_>> = root.components().collect();
     let cand_components: Vec<Component<'_>> = candidate.components().collect();
-    cand_components.len() >= root_components.len()
-        && cand_components.starts_with(&root_components)
+    cand_components.len() >= root_components.len() && cand_components.starts_with(&root_components)
 }
 
 /// Filesystem containment check via canonicalization.
@@ -90,20 +110,17 @@ pub fn lexical_within(root: &Path, candidate: &Path) -> bool {
 /// resolved path starts with the canonical `root`. This closes TOCTOU and
 /// symlink-race vectors at read time.
 pub fn canonical_within(root: &Path, candidate: &Path) -> Result<(), AddonError> {
-    let root_canon = std::fs::canonicalize(root).map_err(|e| {
-        AddonError::internal(format!("cannot canonicalize package root: {e}"))
-    })?;
+    let root_canon = std::fs::canonicalize(root)
+        .map_err(|e| AddonError::internal(format!("cannot canonicalize package root: {e}")))?;
 
     let parent = candidate.parent().unwrap_or_else(|| Path::new(""));
     let file_name = candidate.file_name();
     let parent_canon = if parent.as_os_str().is_empty() {
-        std::fs::canonicalize(candidate).map_err(|e| {
-            AddonError::internal(format!("cannot canonicalize path: {e}"))
-        })?
+        std::fs::canonicalize(candidate)
+            .map_err(|e| AddonError::internal(format!("cannot canonicalize path: {e}")))?
     } else {
-        std::fs::canonicalize(parent).map_err(|e| {
-            AddonError::internal(format!("cannot canonicalize path: {e}"))
-        })?
+        std::fs::canonicalize(parent)
+            .map_err(|e| AddonError::internal(format!("cannot canonicalize path: {e}")))?
     };
 
     let resolved = match file_name {
@@ -138,7 +155,10 @@ pub fn validate_symlink_target(
         ));
     }
     if target.contains('\0') {
-        return Err(AddonError::path_security(target, "symlink target contains NUL"));
+        return Err(AddonError::path_security(
+            target,
+            "symlink target contains NUL",
+        ));
     }
     if target.contains('\\') {
         return Err(AddonError::path_security(
@@ -245,7 +265,14 @@ mod tests {
 
     #[test]
     fn rejects_absolute_and_drive_paths() {
-        for p in ["/etc/passwd", "/", "C:\\x", "C:/x", "c:/windows", "\\server\\share"] {
+        for p in [
+            "/etc/passwd",
+            "/",
+            "C:\\x",
+            "C:/x",
+            "c:/windows",
+            "\\server\\share",
+        ] {
             let r = normalize_relative(p);
             assert!(r.is_err(), "{p} should be rejected");
         }

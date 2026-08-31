@@ -87,10 +87,7 @@ pub extern "C" fn vcs_git_status(repo_path: *const c_char) -> *mut c_char {
 
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn vcs_git_log(
-    repo_path: *const c_char,
-    limit: u32,
-) -> *mut c_char {
+pub extern "C" fn vcs_git_log(repo_path: *const c_char, limit: u32) -> *mut c_char {
     unsafe {
         match cstr(repo_path) {
             Ok(p) => match git::log(Path::new(p), limit as usize) {
@@ -154,10 +151,7 @@ pub extern "C" fn vcs_git_current_branch(repo_path: *const c_char) -> *mut c_cha
 
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn vcs_git_diff_file(
-    repo_path: *const c_char,
-    file: *const c_char,
-) -> *mut c_char {
+pub extern "C" fn vcs_git_diff_file(repo_path: *const c_char, file: *const c_char) -> *mut c_char {
     unsafe {
         match (cstr(repo_path), cstr(file)) {
             (Ok(p), Ok(f)) => match git::diff_file(Path::new(p), f) {
@@ -186,10 +180,7 @@ pub extern "C" fn vcs_git_is_dirty(repo_path: *const c_char) -> bool {
 /// Returns 0 on success, -1 on error.
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn vcs_git_add(
-    repo_path: *const c_char,
-    files_json: *const c_char,
-) -> c_int {
+pub extern "C" fn vcs_git_add(repo_path: *const c_char, files_json: *const c_char) -> c_int {
     unsafe {
         match (cstr(repo_path), cstr(files_json)) {
             (Ok(p), Ok(f)) => {
@@ -212,10 +203,7 @@ pub extern "C" fn vcs_git_add(
 /// Returns 0 on success, -1 on error.
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn vcs_git_commit(
-    repo_path: *const c_char,
-    message: *const c_char,
-) -> c_int {
+pub extern "C" fn vcs_git_commit(repo_path: *const c_char, message: *const c_char) -> c_int {
     unsafe {
         match (cstr(repo_path), cstr(message)) {
             (Ok(p), Ok(m)) => match git::commit(Path::new(p), m) {
@@ -279,10 +267,7 @@ pub extern "C" fn vcs_git_pull(repo_path: *const c_char) -> c_int {
 /// Returns 0 on success, -1 on error.
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn vcs_git_checkout(
-    repo_path: *const c_char,
-    branch: *const c_char,
-) -> c_int {
+pub extern "C" fn vcs_git_checkout(repo_path: *const c_char, branch: *const c_char) -> c_int {
     unsafe {
         match (cstr(repo_path), cstr(branch)) {
             (Ok(p), Ok(b)) => match git::checkout(Path::new(p), b) {
@@ -298,10 +283,7 @@ pub extern "C" fn vcs_git_checkout(
 /// Returns 0 on success, -1 on error.
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn vcs_git_create_branch(
-    repo_path: *const c_char,
-    name: *const c_char,
-) -> c_int {
+pub extern "C" fn vcs_git_create_branch(repo_path: *const c_char, name: *const c_char) -> c_int {
     unsafe {
         match (cstr(repo_path), cstr(name)) {
             (Ok(p), Ok(n)) => match git::create_branch(Path::new(p), n) {
@@ -317,10 +299,7 @@ pub extern "C" fn vcs_git_create_branch(
 /// Returns 0 on success, -1 on error.
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn vcs_git_delete_branch(
-    repo_path: *const c_char,
-    name: *const c_char,
-) -> c_int {
+pub extern "C" fn vcs_git_delete_branch(repo_path: *const c_char, name: *const c_char) -> c_int {
     unsafe {
         match (cstr(repo_path), cstr(name)) {
             (Ok(p), Ok(n)) => match git::delete_branch(Path::new(p), n) {
@@ -335,10 +314,7 @@ pub extern "C" fn vcs_git_delete_branch(
 /// Clone a repository. Returns 0 on success, -1 on error.
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn vcs_git_clone(
-    url: *const c_char,
-    dest: *const c_char,
-) -> c_int {
+pub extern "C" fn vcs_git_clone(url: *const c_char, dest: *const c_char) -> c_int {
     unsafe {
         match (cstr(url), cstr(dest)) {
             (Ok(u), Ok(d)) => match git::clone(u, Path::new(d)) {
@@ -399,10 +375,7 @@ pub extern "C" fn vcs_git_commit_files(
 /// Caller frees with vcs_free_string.
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn vcs_git_config_get(
-    repo_path: *const c_char,
-    key: *const c_char,
-) -> *mut c_char {
+pub extern "C" fn vcs_git_config_get(repo_path: *const c_char, key: *const c_char) -> *mut c_char {
     unsafe {
         match (cstr(repo_path), cstr(key)) {
             (Ok(p), Ok(k)) => {
@@ -460,10 +433,7 @@ pub extern "C" fn vcs_git_diff_staged(repo_path: *const c_char) -> *mut c_char {
 /// Restore a file to HEAD state (discard changes). Returns 0 on success.
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn vcs_git_restore_file(
-    repo_path: *const c_char,
-    file: *const c_char,
-) -> c_int {
+pub extern "C" fn vcs_git_restore_file(repo_path: *const c_char, file: *const c_char) -> c_int {
     unsafe {
         match (cstr(repo_path), cstr(file)) {
             (Ok(p), Ok(f)) => {
@@ -512,7 +482,16 @@ pub extern "C" fn vcs_jj_status(repo_path: *const c_char) -> *mut c_char {
     unsafe {
         match cstr(repo_path) {
             Ok(p) => {
-                let result = jj::run_jj(Path::new(p), &["status", "--color", "never", "--config", "ui.pagination=never"]);
+                let result = jj::run_jj(
+                    Path::new(p),
+                    &[
+                        "status",
+                        "--color",
+                        "never",
+                        "--config",
+                        "ui.pagination=never",
+                    ],
+                );
                 match result {
                     Ok(r) => {
                         let statuses = jj::parse_status(&r.stdout);
@@ -537,10 +516,7 @@ pub extern "C" fn vcs_jj_status(repo_path: *const c_char) -> *mut c_char {
 
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn vcs_jj_diff_file(
-    repo_path: *const c_char,
-    file: *const c_char,
-) -> *mut c_char {
+pub extern "C" fn vcs_jj_diff_file(repo_path: *const c_char, file: *const c_char) -> *mut c_char {
     unsafe {
         match (cstr(repo_path), cstr(file)) {
             (Ok(p), Ok(f)) => match jj::diff_file(Path::new(p), f) {

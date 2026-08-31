@@ -152,9 +152,7 @@ pub fn normalize_message(text: &str) -> String {
             t = stripped.trim_end();
         }
     }
-    if (t.starts_with('"') && t.ends_with('"'))
-        || (t.starts_with('\'') && t.ends_with('\''))
-    {
+    if (t.starts_with('"') && t.ends_with('"')) || (t.starts_with('\'') && t.ends_with('\'')) {
         t = &t[1..t.len() - 1];
         t = t.trim();
     }
@@ -191,7 +189,10 @@ pub fn normalize_message(text: &str) -> String {
 /// True if the line looks like a conventional commit header, with or without
 /// a leading bullet (`- feat: ...`).
 fn is_conventional_header(line: &str) -> bool {
-    let l = line.trim().trim_start_matches("- ").trim_start_matches("* ");
+    let l = line
+        .trim()
+        .trim_start_matches("- ")
+        .trim_start_matches("* ");
     if !l.contains(':') {
         return false;
     }
@@ -199,7 +200,8 @@ fn is_conventional_header(line: &str) -> bool {
     let core = header.split('(').next().unwrap_or(header).trim();
     matches!(
         core,
-        "feat" | "fix"
+        "feat"
+            | "fix"
             | "refactor"
             | "chore"
             | "docs"
@@ -214,7 +216,11 @@ fn is_conventional_header(line: &str) -> bool {
 }
 
 fn clean_subject(s: &str) -> String {
-    let mut s = s.trim().trim_start_matches("- ").trim_start_matches("* ").to_string();
+    let mut s = s
+        .trim()
+        .trim_start_matches("- ")
+        .trim_start_matches("* ")
+        .to_string();
     if s.ends_with('.') && !s.ends_with("...") {
         s.pop();
     }

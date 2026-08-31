@@ -93,10 +93,7 @@ pub extern "C" fn config_projects_load(path: *const c_char) -> *mut c_char {
 
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn config_projects_save(
-    path: *const c_char,
-    projects_json: *const c_char,
-) -> c_int {
+pub extern "C" fn config_projects_save(path: *const c_char, projects_json: *const c_char) -> c_int {
     unsafe {
         let path_str = match cstr(path) {
             Ok(s) => s,
@@ -123,10 +120,7 @@ pub extern "C" fn config_projects_save(
 
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn config_projects_add(
-    path: *const c_char,
-    project_path: *const c_char,
-) -> c_int {
+pub extern "C" fn config_projects_add(path: *const c_char, project_path: *const c_char) -> c_int {
     unsafe {
         let path_str = match cstr(path) {
             Ok(s) => s,

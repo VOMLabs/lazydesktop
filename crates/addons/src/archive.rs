@@ -35,7 +35,7 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self {
-            max_archive_size: 1024 * 1024 * 1024,     // 1 GiB
+            max_archive_size: 1024 * 1024 * 1024, // 1 GiB
             max_entries: 4096,
             max_total_uncompressed: 512 * 1024 * 1024, // 512 MiB
             max_entry_uncompressed: 128 * 1024 * 1024, // 128 MiB
@@ -87,14 +87,20 @@ impl<R: Read + Seek> Seek for OffsetReader<R> {
             SeekFrom::End(p) => {
                 let end_i = self.end as i128 + p as i128;
                 if end_i < self.start as i128 || end_i > self.end as i128 {
-                    return Err(io::Error::new(io::ErrorKind::InvalidInput, "seek out of range"));
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "seek out of range",
+                    ));
                 }
                 end_i as u64
             }
             SeekFrom::Current(p) => {
                 let cur = self.pos as i128 + p as i128;
                 if cur < self.start as i128 || cur > self.end as i128 {
-                    return Err(io::Error::new(io::ErrorKind::InvalidInput, "seek out of range"));
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "seek out of range",
+                    ));
                 }
                 cur as u64
             }
@@ -243,8 +249,9 @@ fn read_ignore_from_zip<R: Read + Seek>(
         let mut entry = zip
             .by_index(i)
             .map_err(|e| AddonError::archive("read".to_string(), format!("entry {i}: {e}")))?;
-        let name = String::from_utf8(entry.name_raw().to_vec())
-            .map_err(|_| AddonError::archive("name".to_string(), "entry name is not valid UTF-8"))?;
+        let name = String::from_utf8(entry.name_raw().to_vec()).map_err(|_| {
+            AddonError::archive("name".to_string(), "entry name is not valid UTF-8")
+        })?;
         if pathsec::normalize_relative(&name).as_deref() == Ok(".lzdignore") {
             if entry.size() > MAX_IGNORE_FILE {
                 return Err(AddonError::archive(
@@ -253,9 +260,9 @@ fn read_ignore_from_zip<R: Read + Seek>(
                 ));
             }
             let mut buf = Vec::with_capacity(entry.size() as usize);
-            entry
-                .read_to_end(&mut buf)
-                .map_err(|e| AddonError::archive("read".to_string(), format!("cannot read .lzdignore: {e}")))?;
+            entry.read_to_end(&mut buf).map_err(|e| {
+                AddonError::archive("read".to_string(), format!("cannot read .lzdignore: {e}"))
+            })?;
             return Ok(String::from_utf8_lossy(&buf).into_owned());
         }
     }
@@ -304,7 +311,10 @@ fn validate_lzd_header(file: &mut File) -> Result<(), AddonError> {
         ));
     }
     if hdr[16..24] != [0u8; 8] {
-        return Err(AddonError::invalid_addon(None, "invalid lzd reserved bytes"));
+        return Err(AddonError::invalid_addon(
+            None,
+            "invalid lzd reserved bytes",
+        ));
     }
     Ok(())
 }
@@ -317,7 +327,10 @@ fn validate_zip_tail(file: &mut File, start: u64, end: u64) -> Result<(), AddonE
 
     let total = end - start;
     if total < EOCD_MIN as u64 {
-        return Err(AddonError::archive("layout".to_string(), "archive too small"));
+        return Err(AddonError::archive(
+            "layout".to_string(),
+            "archive too small",
+        ));
     }
     let scan_len = total.min(EOCD_MAX_SCAN) as usize;
     let mut buf = vec![0u8; scan_len];
@@ -337,7 +350,10 @@ fn validate_zip_tail(file: &mut File, start: u64, end: u64) -> Result<(), AddonE
         idx -= 1;
     }
     let Some(eocd_rel) = found else {
-        return Err(AddonError::archive("layout".to_string(), "zip end-of-central-directory not found"));
+        return Err(AddonError::archive(
+            "layout".to_string(),
+            "zip end-of-central-directory not found",
+        ));
     };
     let comment_len = u16::from_le_bytes([buf[eocd_rel + 20], buf[eocd_rel + 21]]) as u64;
     if start + eocd_rel as u64 + EOCD_MIN as u64 + comment_len != end {
@@ -364,8 +380,9 @@ fn read_manifest_from_zip<R: Read + Seek>(
         let mut entry = zip
             .by_index(i)
             .map_err(|e| AddonError::archive("read".to_string(), format!("entry {i}: {e}")))?;
-        let name = String::from_utf8(entry.name_raw().to_vec())
-            .map_err(|_| AddonError::archive("name".to_string(), "entry name is not valid UTF-8"))?;
+        let name = String::from_utf8(entry.name_raw().to_vec()).map_err(|_| {
+            AddonError::archive("name".to_string(), "entry name is not valid UTF-8")
+        })?;
         if pathsec::normalize_relative(&name).as_deref() == Ok("config.toml") {
             if entry.encrypted() {
                 return Err(AddonError::archive(
@@ -380,9 +397,9 @@ fn read_manifest_from_zip<R: Read + Seek>(
                 ));
             }
             let mut buf = Vec::with_capacity(entry.size() as usize);
-            entry
-                .read_to_end(&mut buf)
-                .map_err(|e| AddonError::archive("read".to_string(), format!("cannot read manifest: {e}")))?;
+            entry.read_to_end(&mut buf).map_err(|e| {
+                AddonError::archive("read".to_string(), format!("cannot read manifest: {e}"))
+            })?;
             found = Some(buf);
             break;
         }
@@ -413,7 +430,12 @@ fn extract_entries<R: Read + Seek>(
 
     // Sanity guard: never iterate absurdly many central-directory entries,
     // even if most are ignored (ignore rules must not become a DoS vector).
-    if zip.len() > limits.max_entries.saturating_mul(16).max(limits.max_entries) {
+    if zip.len()
+        > limits
+            .max_entries
+            .saturating_mul(16)
+            .max(limits.max_entries)
+    {
         return Err(AddonError::archive(
             "count".to_string(),
             "archive contains too many entries",
@@ -435,8 +457,9 @@ fn extract_entries<R: Read + Seek>(
         let mut entry = zip
             .by_index(i)
             .map_err(|e| AddonError::archive("read".to_string(), format!("entry {i}: {e}")))?;
-        let name = String::from_utf8(entry.name_raw().to_vec())
-            .map_err(|_| AddonError::archive("name".to_string(), "entry name is not valid UTF-8"))?;
+        let name = String::from_utf8(entry.name_raw().to_vec()).map_err(|_| {
+            AddonError::archive("name".to_string(), "entry name is not valid UTF-8")
+        })?;
         if name.len() > limits.max_name_len {
             return Err(AddonError::archive(
                 "name".to_string(),
@@ -465,7 +488,10 @@ fn extract_entries<R: Read + Seek>(
 
         let target = dest.join(&norm);
         if !pathsec::lexical_within(dest, &target) {
-            return Err(AddonError::path_security(&norm, "entry escapes the package root"));
+            return Err(AddonError::path_security(
+                &norm,
+                "entry escapes the package root",
+            ));
         }
 
         if is_dir {
@@ -554,9 +580,9 @@ fn extract_symlink_entry(
         return Err(AddonError::path_security(norm, "symlink target too long"));
     }
     let mut buf = Vec::new();
-    entry
-        .read_to_end(&mut buf)
-        .map_err(|e| AddonError::archive("read".to_string(), format!("cannot read symlink: {e}")))?;
+    entry.read_to_end(&mut buf).map_err(|e| {
+        AddonError::archive("read".to_string(), format!("cannot read symlink: {e}"))
+    })?;
     if buf.len() > MAX_SYMLINK_TARGET as usize {
         return Err(AddonError::path_security(norm, "symlink target too long"));
     }
@@ -757,13 +783,22 @@ mod tests {
         write_zip(
             &src,
             &[
-                ("config.toml", b"id = \"a.b\"\nname = \"A\"\nversion = \"1.0.0\"\nentry = \"src/main.lua\"\n"),
+                (
+                    "config.toml",
+                    b"id = \"a.b\"\nname = \"A\"\nversion = \"1.0.0\"\nentry = \"src/main.lua\"\n",
+                ),
                 ("src/main.lua", b"return {}"),
                 ("assets/128.ico", b"icon"),
             ],
         );
         let dest = tmp.path().join("out");
-        let stats = extract(&src, &dest, &IgnoreMatcher::from_lines(""), &Limits::default()).unwrap();
+        let stats = extract(
+            &src,
+            &dest,
+            &IgnoreMatcher::from_lines(""),
+            &Limits::default(),
+        )
+        .unwrap();
         assert_eq!(stats.entries, 3);
         assert!(dest.join("config.toml").is_file());
         assert!(dest.join("src/main.lua").is_file());
@@ -776,7 +811,13 @@ mod tests {
         let src = tmp.path().join("evil.zip");
         write_zip(&src, &[("../escape.txt", b"pwn"), ("ok.txt", b"x")]);
         let dest = tmp.path().join("out");
-        let e = extract(&src, &dest, &IgnoreMatcher::from_lines(""), &Limits::default()).unwrap_err();
+        let e = extract(
+            &src,
+            &dest,
+            &IgnoreMatcher::from_lines(""),
+            &Limits::default(),
+        )
+        .unwrap_err();
         assert_eq!(e.code(), "PathSecurityViolation");
         assert!(!tmp.path().join("escape.txt").exists());
     }
@@ -787,7 +828,13 @@ mod tests {
         let src = tmp.path().join("evil.zip");
         write_zip(&src, &[("/etc/passwd", b"x")]);
         let dest = tmp.path().join("out");
-        let e = extract(&src, &dest, &IgnoreMatcher::from_lines(""), &Limits::default()).unwrap_err();
+        let e = extract(
+            &src,
+            &dest,
+            &IgnoreMatcher::from_lines(""),
+            &Limits::default(),
+        )
+        .unwrap_err();
         assert_eq!(e.code(), "PathSecurityViolation");
     }
 
@@ -804,7 +851,13 @@ mod tests {
             ],
         );
         let dest = tmp.path().join("out");
-        extract(&src, &dest, &IgnoreMatcher::from_lines(""), &Limits::default()).unwrap();
+        extract(
+            &src,
+            &dest,
+            &IgnoreMatcher::from_lines(""),
+            &Limits::default(),
+        )
+        .unwrap();
         assert!(dest.join("config.toml").is_file());
         assert!(!dest.join(".git/config").exists());
         assert!(dest.join("keep.txt").is_file());
@@ -819,7 +872,13 @@ mod tests {
         // duplicate-normalized archive.
         write_raw_zip(&src, &[("x.txt", b"a", None), ("./x.txt", b"b", None)]);
         let dest = tmp.path().join("out");
-        let e = extract(&src, &dest, &IgnoreMatcher::from_lines(""), &Limits::default()).unwrap_err();
+        let e = extract(
+            &src,
+            &dest,
+            &IgnoreMatcher::from_lines(""),
+            &Limits::default(),
+        )
+        .unwrap_err();
         assert_eq!(e.code(), "ArchiveError");
         assert!(e.to_string().contains("duplicate"));
     }
@@ -849,10 +908,22 @@ mod tests {
         let data = vec![0u8; 64 * 1024 * 1024]; // highly compressible
         write_zip(&src, &[("big.bin", &data)]);
         let dest = tmp.path().join("out");
-        let e = extract(&src, &dest, &IgnoreMatcher::from_lines(""), &Limits::default()).unwrap_err();
+        let e = extract(
+            &src,
+            &dest,
+            &IgnoreMatcher::from_lines(""),
+            &Limits::default(),
+        )
+        .unwrap_err();
         assert_eq!(e.code(), "ArchiveError");
         assert!(e.to_string().contains("ratio"));
-        assert!(!dest.exists() || dest.read_dir().map(|mut d| d.next().is_none()).unwrap_or(true));
+        assert!(
+            !dest.exists()
+                || dest
+                    .read_dir()
+                    .map(|mut d| d.next().is_none())
+                    .unwrap_or(true)
+        );
     }
 
     #[test]
@@ -864,7 +935,10 @@ mod tests {
         write_zip(
             &payload,
             &[
-                ("config.toml", b"id = \"a.b\"\nname = \"A\"\nversion = \"1.0.0\"\nentry = \"main.lua\"\n"),
+                (
+                    "config.toml",
+                    b"id = \"a.b\"\nname = \"A\"\nversion = \"1.0.0\"\nentry = \"main.lua\"\n",
+                ),
                 ("main.lua", b"return {}"),
             ],
         );
@@ -878,7 +952,13 @@ mod tests {
         out.flush().unwrap();
 
         let dest = tmp.path().join("out");
-        let stats = extract(&src, &dest, &IgnoreMatcher::from_lines(""), &Limits::default()).unwrap();
+        let stats = extract(
+            &src,
+            &dest,
+            &IgnoreMatcher::from_lines(""),
+            &Limits::default(),
+        )
+        .unwrap();
         assert_eq!(stats.entries, 2);
         assert!(dest.join("main.lua").is_file());
     }
@@ -898,7 +978,13 @@ mod tests {
         out.write_all(&pb).unwrap();
         out.flush().unwrap();
         let dest = tmp.path().join("out");
-        let e = extract(&src, &dest, &IgnoreMatcher::from_lines(""), &Limits::default()).unwrap_err();
+        let e = extract(
+            &src,
+            &dest,
+            &IgnoreMatcher::from_lines(""),
+            &Limits::default(),
+        )
+        .unwrap_err();
         assert_eq!(e.code(), "InvalidAddon");
         assert!(e.to_string().contains("signed"));
     }
@@ -919,7 +1005,13 @@ mod tests {
         out.write_all(b"EXTRA").unwrap();
         out.flush().unwrap();
         let dest = tmp.path().join("out");
-        let e = extract(&src, &dest, &IgnoreMatcher::from_lines(""), &Limits::default()).unwrap_err();
+        let e = extract(
+            &src,
+            &dest,
+            &IgnoreMatcher::from_lines(""),
+            &Limits::default(),
+        )
+        .unwrap_err();
         assert_eq!(e.code(), "ArchiveError");
         assert!(e.to_string().contains("trailing"));
     }
@@ -942,7 +1034,13 @@ mod tests {
             );
 
             let dest = tmp.path().join("out");
-            extract(&src, &dest, &IgnoreMatcher::from_lines(""), &Limits::default()).unwrap();
+            extract(
+                &src,
+                &dest,
+                &IgnoreMatcher::from_lines(""),
+                &Limits::default(),
+            )
+            .unwrap();
             let link = dest.join("link");
             let meta = std::fs::symlink_metadata(&link).unwrap();
             assert!(meta.file_type().is_symlink());
@@ -958,7 +1056,13 @@ mod tests {
             let src = tmp.path().join("evillink.zip");
             write_raw_zip(&src, &[("link", b"../../etc/passwd", Some(0o120777))]);
             let dest = tmp.path().join("out");
-            let e = extract(&src, &dest, &IgnoreMatcher::from_lines(""), &Limits::default()).unwrap_err();
+            let e = extract(
+                &src,
+                &dest,
+                &IgnoreMatcher::from_lines(""),
+                &Limits::default(),
+            )
+            .unwrap_err();
             assert_eq!(e.code(), "PathSecurityViolation");
         }
     }
@@ -970,12 +1074,21 @@ mod tests {
         write_zip(
             &src,
             &[
-                ("config.toml", b"id = \"a.b\"\nname = \"A\"\nversion = \"1.0.0\"\nentry = \"main.lua\"\n"),
+                (
+                    "config.toml",
+                    b"id = \"a.b\"\nname = \"A\"\nversion = \"1.0.0\"\nentry = \"main.lua\"\n",
+                ),
                 ("main.lua", b"return {}"),
             ],
         );
         let app = semver::Version::new(0, 3, 0);
-        let m = peek_manifest(&src, &app, crate::manifest::HOST_API_VERSION, &Limits::default()).unwrap();
+        let m = peek_manifest(
+            &src,
+            &app,
+            crate::manifest::HOST_API_VERSION,
+            &Limits::default(),
+        )
+        .unwrap();
         assert_eq!(m.id, "a.b");
         assert_eq!(m.entry, "main.lua");
     }
@@ -986,7 +1099,13 @@ mod tests {
         let src = tmp.path().join("pkg.zip");
         write_zip(&src, &[("main.lua", b"return {}")]);
         let app = semver::Version::new(0, 3, 0);
-        let e = peek_manifest(&src, &app, crate::manifest::HOST_API_VERSION, &Limits::default()).unwrap_err();
+        let e = peek_manifest(
+            &src,
+            &app,
+            crate::manifest::HOST_API_VERSION,
+            &Limits::default(),
+        )
+        .unwrap_err();
         assert_eq!(e.code(), "InvalidManifest");
     }
 
@@ -1009,10 +1128,20 @@ mod tests {
         let src = tmp.path().join("dirs.zip");
         write_dir_zip(
             &src,
-            &[("src/", &[]), ("src/main.lua", b"return {}"), ("assets/128.ico", b"i")],
+            &[
+                ("src/", &[]),
+                ("src/main.lua", b"return {}"),
+                ("assets/128.ico", b"i"),
+            ],
         );
         let dest = tmp.path().join("out");
-        extract(&src, &dest, &IgnoreMatcher::from_lines(""), &Limits::default()).unwrap();
+        extract(
+            &src,
+            &dest,
+            &IgnoreMatcher::from_lines(""),
+            &Limits::default(),
+        )
+        .unwrap();
         assert!(dest.join("src/main.lua").is_file());
         assert!(dest.join("assets/128.ico").is_file());
     }

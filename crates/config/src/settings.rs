@@ -248,7 +248,9 @@ mod tests {
     #[test]
     fn parse_ini_basic() {
         let mut settings = Settings::new();
-        settings.parse_ini("[git]\nuser.name = Alice\nuser.email = alice@example.com\n\n[ai]\nenabled = true\n");
+        settings.parse_ini(
+            "[git]\nuser.name = Alice\nuser.email = alice@example.com\n\n[ai]\nenabled = true\n",
+        );
         assert_eq!(settings.get("git/user.name"), Some("Alice"));
         assert_eq!(settings.get("git/user.email"), Some("alice@example.com"));
         assert_eq!(settings.get("ai/enabled"), Some("true"));

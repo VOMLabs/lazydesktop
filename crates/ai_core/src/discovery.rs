@@ -122,7 +122,10 @@ async fn discover_from_hf_api(models_dir: &str) -> Result<Vec<DiscoveredModel>, 
 
     let mut models = Vec::new();
     for entry in entries {
-        let model_id = entry["modelId"].as_str().or_else(|| entry["id"].as_str()).unwrap_or("unknown");
+        let model_id = entry["modelId"]
+            .as_str()
+            .or_else(|| entry["id"].as_str())
+            .unwrap_or("unknown");
         let hf_id = model_id.to_string();
 
         // Find a GGUF file in the siblings
@@ -130,10 +133,14 @@ async fn discover_from_hf_api(models_dir: &str) -> Result<Vec<DiscoveredModel>, 
             for sib in siblings {
                 let rfilename = sib["rfilename"].as_str().unwrap_or("");
                 if rfilename.ends_with(".gguf") {
-                    let name = rfilename
-                        .trim_end_matches(".gguf")
-                        .replace(|c: char| !c.is_ascii_alphanumeric() && c != '.' && c != '-', "_");
-                    let url = format!("https://huggingface.co/{}/resolve/main/{}", model_id, rfilename);
+                    let name = rfilename.trim_end_matches(".gguf").replace(
+                        |c: char| !c.is_ascii_alphanumeric() && c != '.' && c != '-',
+                        "_",
+                    );
+                    let url = format!(
+                        "https://huggingface.co/{}/resolve/main/{}",
+                        model_id, rfilename
+                    );
                     let size = sib["size"].as_i64().unwrap_or(0);
                     let size_label = if size > 1_000_000_000 {
                         format!("~{:.1} GB", size as f64 / 1_000_000_000.0)

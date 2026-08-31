@@ -23,8 +23,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Candidate default private keys, tried in order (BatchMode semantics).
 const DEFAULT_KEY_NAMES: [&str; 2] = ["id_ed25519", "id_rsa"];
 
-const NO_SSH_KEY_MESSAGE: &str =
-    "No SSH key found in ~/.ssh (looked for id_ed25519, id_rsa).";
+const NO_SSH_KEY_MESSAGE: &str = "No SSH key found in ~/.ssh (looked for id_ed25519, id_rsa).";
 
 /// `client::Handler` for the one-shot probe.
 ///
@@ -66,13 +65,18 @@ pub fn test_ssh_connection(host: &str, port: u16) -> VcsResult<String> {
         .build()?;
 
     let outcome = rt.block_on(async {
-        tokio::time::timeout(CONNECT_TIMEOUT, probe_connection(&user, &host_name, port, &key_path))
-            .await
+        tokio::time::timeout(
+            CONNECT_TIMEOUT,
+            probe_connection(&user, &host_name, port, &key_path),
+        )
+        .await
     });
 
     match outcome {
         Err(_elapsed) => Err(timeout_error()),
-        Ok(Ok(true)) => Ok(format!("Successfully authenticated to {host_name} as {user}.")),
+        Ok(Ok(true)) => Ok(format!(
+            "Successfully authenticated to {host_name} as {user}."
+        )),
         Ok(Ok(false)) => Err(VcsError::Other(format!(
             "Authentication failed for {user}@{host_name}."
         ))),

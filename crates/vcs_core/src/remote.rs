@@ -27,8 +27,8 @@ fn load_config(repo_path: &Path) -> VcsResult<(File, PathBuf)> {
         )));
     }
     let content = std::fs::read_to_string(&config_path)?;
-    let config = File::try_from(content.as_str())
-        .map_err(|err| VcsError::Config(err.to_string()))?;
+    let config =
+        File::try_from(content.as_str()).map_err(|err| VcsError::Config(err.to_string()))?;
     Ok((config, config_path))
 }
 
@@ -51,12 +51,7 @@ fn validate_remote_name(name: &str) -> VcsResult<()> {
 
 /// Upsert `remote.<name>.<key>`, creating the section if necessary and
 /// overwriting the last value of an existing key (mirrors `git config`).
-fn set_remote_value(
-    config: &mut File,
-    name: &str,
-    key: &str,
-    value: impl AsBStr,
-) -> VcsResult<()> {
+fn set_remote_value(config: &mut File, name: &str, key: &str, value: impl AsBStr) -> VcsResult<()> {
     config
         .set_raw_value_by("remote", name, key, value)
         .map_err(|err| VcsError::Config(err.to_string()))?;
@@ -70,7 +65,10 @@ fn rekey_fetch_refspec(refspec: &str, old_name: &str, new_name: &str) -> String 
     let target = format!("refs/remotes/{old_name}/");
     if let Some(pos) = refspec.find(&target) {
         let mut out = refspec.to_string();
-        out.replace_range(pos..pos + target.len(), &format!("refs/remotes/{new_name}/"));
+        out.replace_range(
+            pos..pos + target.len(),
+            &format!("refs/remotes/{new_name}/"),
+        );
         out
     } else {
         refspec.to_string()
@@ -279,7 +277,10 @@ mod tests {
             raw.contains("+refs/heads/*:refs/remotes/upstream/*"),
             "migrated fetch refspec missing from config:\n{raw}"
         );
-        assert!(!raw.contains("origin"), "old remote section still present:\n{raw}");
+        assert!(
+            !raw.contains("origin"),
+            "old remote section still present:\n{raw}"
+        );
     }
 
     #[test]

@@ -17,6 +17,7 @@ pub type ErrorCb = extern "C" fn(*const c_char, *mut std::ffi::c_void);
 pub type FinishCb = extern "C" fn(*const c_char, *mut std::ffi::c_void);
 pub type CancelCb = extern "C" fn(*mut std::ffi::c_void) -> bool;
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "C" fn mm_init(
     models_dir: *const c_char,
@@ -46,6 +47,7 @@ pub extern "C" fn mm_init(
     Box::into_raw(Box::new(mm))
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "C" fn mm_destroy(mm: *mut ModelManager) {
     if mm.is_null() {
@@ -62,6 +64,8 @@ pub extern "C" fn mm_destroy(mm: *mut ModelManager) {
     }
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[allow(clippy::type_complexity)]
 #[no_mangle]
 pub extern "C" fn mm_download_model(
     mm: *mut ModelManager,
@@ -112,21 +116,23 @@ pub extern "C" fn mm_download_model(
         ));
     }
 
-    let progress: Option<Box<dyn Fn(i64, i64) + Send>> = progress_cb.map(|cb| -> Box<dyn Fn(i64, i64) + Send> {
-        let id = download_id;
-        let ud_val = user_data as usize;
-        Box::new(move |rcv, tot| {
-            cb(id, rcv, tot, ud_val as *mut std::ffi::c_void);
-        })
-    });
-    let finished: Option<Box<dyn Fn(i32, &str) + Send>> = finished_cb.map(|cb| -> Box<dyn Fn(i32, &str) + Send> {
-        let id = download_id;
-        let ud_val = user_data as usize;
-        Box::new(move |status, message| {
-            let cmsg = CString::new(message).unwrap_or_default();
-            cb(id, status, cmsg.as_ptr(), ud_val as *mut std::ffi::c_void);
-        })
-    });
+    let progress: Option<Box<dyn Fn(i64, i64) + Send>> =
+        progress_cb.map(|cb| -> Box<dyn Fn(i64, i64) + Send> {
+            let id = download_id;
+            let ud_val = user_data as usize;
+            Box::new(move |rcv, tot| {
+                cb(id, rcv, tot, ud_val as *mut std::ffi::c_void);
+            })
+        });
+    let finished: Option<Box<dyn Fn(i32, &str) + Send>> =
+        finished_cb.map(|cb| -> Box<dyn Fn(i32, &str) + Send> {
+            let id = download_id;
+            let ud_val = user_data as usize;
+            Box::new(move |status, message| {
+                let cmsg = CString::new(message).unwrap_or_default();
+                cb(id, status, cmsg.as_ptr(), ud_val as *mut std::ffi::c_void);
+            })
+        });
 
     mm.runtime.spawn(async move {
         let result = download::download_file(
@@ -154,6 +160,7 @@ pub extern "C" fn mm_download_model(
     download_id
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "C" fn mm_cancel_download(mm: *mut ModelManager, download_id: i32) {
     if mm.is_null() {
@@ -161,12 +168,17 @@ pub extern "C" fn mm_cancel_download(mm: *mut ModelManager, download_id: i32) {
     }
     let mm = unsafe { &*mm };
     let mut inner = mm.inner.lock().unwrap();
-    if let Some(pos) = inner.downloads.iter().position(|(id, _)| *id == download_id) {
+    if let Some(pos) = inner
+        .downloads
+        .iter()
+        .position(|(id, _)| *id == download_id)
+    {
         let (_, handle) = inner.downloads.remove(pos);
         handle.cancel_flag.store(true, Ordering::Relaxed);
     }
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "C" fn mm_list_local_models(mm: *mut ModelManager) -> *mut c_char {
     if mm.is_null() {
@@ -177,9 +189,7 @@ pub extern "C" fn mm_list_local_models(mm: *mut ModelManager) -> *mut c_char {
     let models_raw = crate::discovery::discover_models(mm.models_dir.to_str().unwrap_or(""))
         .unwrap_or_else(|_| "[]".to_string());
 
-    let models = if let Ok(mut parsed) =
-        serde_json::from_str::<serde_json::Value>(&models_raw)
-    {
+    let models = if let Ok(mut parsed) = serde_json::from_str::<serde_json::Value>(&models_raw) {
         if let Some(arr) = parsed.as_array_mut() {
             for item in arr.iter_mut() {
                 let path = item["path"].as_str().unwrap_or("");
@@ -192,19 +202,16 @@ pub extern "C" fn mm_list_local_models(mm: *mut ModelManager) -> *mut c_char {
         models_raw
     };
 
-    CString::new(models)
-        .unwrap_or_default()
-        .into_raw()
+    CString::new(models).unwrap_or_default().into_raw()
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "C" fn mm_delete_model(mm: *mut ModelManager, path: *const c_char) -> bool {
     if mm.is_null() || path.is_null() {
         return false;
     }
-    let p = unsafe { CStr::from_ptr(path) }
-        .to_str()
-        .unwrap_or("");
+    let p = unsafe { CStr::from_ptr(path) }.to_str().unwrap_or("");
     let p_path = std::path::Path::new(p);
     if p_path.exists() {
         std::fs::remove_file(p_path).is_ok()
@@ -220,6 +227,7 @@ pub extern "C" fn mm_delete_model(mm: *mut ModelManager, path: *const c_char) ->
 /// The worker receives the shared cancel flag and a token sink and must return
 /// the full generated text. The worker thread only touches `Arc` flags (never
 /// the manager), so it is safe to destroy the manager while it runs.
+#[allow(clippy::type_complexity)]
 fn start_inference<F>(
     mm: *mut ModelManager,
     on_token: Option<TokenCb>,
@@ -335,6 +343,8 @@ where
     }
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[allow(clippy::type_complexity)]
 #[no_mangle]
 pub extern "C" fn mm_stream_inference(
     mm: *mut ModelManager,
@@ -360,14 +370,24 @@ pub extern "C" fn mm_stream_inference(
         .unwrap_or("")
         .to_string();
 
-    start_inference(mm, on_token, on_error, on_cancelled, on_finish, user_data, move |cancel, on_token| {
-        run_inference_blocking(&path, &prompt_str, n_gpu_layers, &cancel, on_token)
-    })
+    start_inference(
+        mm,
+        on_token,
+        on_error,
+        on_cancelled,
+        on_finish,
+        user_data,
+        move |cancel, on_token| {
+            run_inference_blocking(&path, &prompt_str, n_gpu_layers, cancel, on_token)
+        },
+    )
 }
 
 /// Generates a Conventional Commits message for the changes described in
 /// `context_json` (see `ai_core.h` for the schema). Streams raw tokens through
 /// `on_token` and delivers the normalized message through `on_finish`.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[allow(clippy::type_complexity)]
 #[no_mangle]
 pub extern "C" fn mm_generate_commit_message(
     mm: *mut ModelManager,
@@ -413,13 +433,14 @@ pub extern "C" fn mm_generate_commit_message(
                 &ctx,
                 &path,
                 n_gpu_layers,
-                &cancel,
+                cancel,
                 on_token,
             )
         },
     )
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "C" fn mm_free_string(s: *mut c_char) {
     if s.is_null() {
@@ -430,6 +451,7 @@ pub extern "C" fn mm_free_string(s: *mut c_char) {
     }
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "C" fn mm_discover_models(mm: *mut ModelManager) -> *mut c_char {
     if mm.is_null() {
@@ -439,7 +461,5 @@ pub extern "C" fn mm_discover_models(mm: *mut ModelManager) -> *mut c_char {
     let result = crate::discovery::discover_models(mm.models_dir.to_str().unwrap_or(""))
         .unwrap_or_else(|_| "[]".to_string());
 
-    CString::new(result)
-        .unwrap_or_default()
-        .into_raw()
+    CString::new(result).unwrap_or_default().into_raw()
 }

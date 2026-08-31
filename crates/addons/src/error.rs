@@ -14,10 +14,7 @@ use serde::Serialize;
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AddonError {
     #[error("{message}")]
-    InvalidAddon {
-        id: Option<String>,
-        message: String,
-    },
+    InvalidAddon { id: Option<String>, message: String },
     #[error("{message}")]
     InvalidManifest {
         id: Option<String>,
@@ -38,15 +35,9 @@ pub enum AddonError {
         message: String,
     },
     #[error("{message}")]
-    LuaRuntimeError {
-        addon_id: String,
-        message: String,
-    },
+    LuaRuntimeError { addon_id: String, message: String },
     #[error("{message}")]
-    ProviderError {
-        provider: String,
-        message: String,
-    },
+    ProviderError { provider: String, message: String },
     #[error("{message}")]
     FfiError { message: String },
     #[error("{message}")]
@@ -92,8 +83,9 @@ impl AddonError {
                 field,
             },
         };
-        serde_json::to_string(&payload)
-            .unwrap_or_else(|_| r#"{"error":{"code":"Internal","message":"serialization error"}}"#.to_string())
+        serde_json::to_string(&payload).unwrap_or_else(|_| {
+            r#"{"error":{"code":"Internal","message":"serialization error"}}"#.to_string()
+        })
     }
 
     // ─── Constructors ───────────────────────────────────
@@ -178,9 +170,7 @@ pub fn sanitize_message(input: &str) -> String {
     let chars: Vec<char> = input.chars().collect();
     let mut out = String::with_capacity(input.len());
     let mut i = 0;
-    let at_token_start = |idx: usize| {
-        idx == 0 || chars[idx - 1].is_whitespace()
-    };
+    let at_token_start = |idx: usize| idx == 0 || chars[idx - 1].is_whitespace();
     while i < chars.len() {
         let c = chars[i];
 
@@ -232,8 +222,7 @@ pub fn sanitize_message(input: &str) -> String {
 }
 
 fn is_path_char(c: char) -> bool {
-    c.is_alphanumeric()
-        || matches!(c, '/' | '\\' | '.' | '_' | '-' | '~' | '+' | ':' | '@')
+    c.is_alphanumeric() || matches!(c, '/' | '\\' | '.' | '_' | '-' | '~' | '+' | ':' | '@')
 }
 
 #[cfg(test)]
@@ -317,10 +306,19 @@ mod tests {
             "InvalidManifest"
         );
         assert_eq!(AddonError::archive("a", "b").code(), "ArchiveError");
-        assert_eq!(AddonError::path_security("x", "y").code(), "PathSecurityViolation");
+        assert_eq!(
+            AddonError::path_security("x", "y").code(),
+            "PathSecurityViolation"
+        );
         assert_eq!(AddonError::lua("id", "m").code(), "LuaRuntimeError");
         assert_eq!(AddonError::provider("p", "m").code(), "ProviderError");
-        assert_eq!(AddonError::FfiError { message: "m".into() }.code(), "FfiError");
+        assert_eq!(
+            AddonError::FfiError {
+                message: "m".into()
+            }
+            .code(),
+            "FfiError"
+        );
         assert_eq!(AddonError::internal("m").code(), "Internal");
     }
 }

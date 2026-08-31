@@ -39,8 +39,8 @@ fn list_public_keys_in(dir: &Path) -> VcsResult<Vec<PathBuf>> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
-        let is_pub_file =
-            entry.file_type()?.is_file() && path.extension().and_then(|e| e.to_str()) == Some("pub");
+        let is_pub_file = entry.file_type()?.is_file()
+            && path.extension().and_then(|e| e.to_str()) == Some("pub");
         if is_pub_file {
             keys.push(path);
         }
@@ -129,7 +129,10 @@ mod tests {
 
     #[test]
     fn ssh_keys_dir_points_at_dot_ssh() {
-        assert_eq!(ssh_keys_dir().file_name().and_then(|n| n.to_str()), Some(".ssh"));
+        assert_eq!(
+            ssh_keys_dir().file_name().and_then(|n| n.to_str()),
+            Some(".ssh")
+        );
     }
 
     #[test]
@@ -200,7 +203,10 @@ mod tests {
     fn generate_key_rejects_unknown_type() {
         let dir = tempfile::tempdir().unwrap();
         let err = generate_key("ecdsa", &dir.path().join("id_bad"), "c", None).unwrap_err();
-        assert!(err.to_string().contains("unsupported key type"), "got: {err}");
+        assert!(
+            err.to_string().contains("unsupported key type"),
+            "got: {err}"
+        );
     }
 
     #[test]
@@ -228,7 +234,10 @@ mod tests {
         generate_key("ed25519", &priv_path, "user@example.com", Some("")).unwrap();
 
         let key = PrivateKey::from_openssh(fs::read_to_string(&priv_path).unwrap()).unwrap();
-        assert!(!key.is_encrypted(), "empty passphrase must not encrypt the key");
+        assert!(
+            !key.is_encrypted(),
+            "empty passphrase must not encrypt the key"
+        );
     }
 
     #[test]

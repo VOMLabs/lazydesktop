@@ -244,8 +244,7 @@ mod tests {
 
     /// Run `jj <args>` in `repo` and return stdout as a lossy string.
     fn jj_stdout(repo: &std::path::Path, args: &[&str]) -> String {
-        let output = run_jj_blocking(repo, args, DEFAULT_TIMEOUT)
-            .expect("jj command must succeed");
+        let output = run_jj_blocking(repo, args, DEFAULT_TIMEOUT).expect("jj command must succeed");
         String::from_utf8_lossy(&output.stdout).into_owned()
     }
 
@@ -296,7 +295,13 @@ mod tests {
         let files = parse_status_output(sample);
         let rows: Vec<_> = files
             .iter()
-            .map(|f| (f.status.as_str(), f.path.as_str(), f.original_path.as_deref()))
+            .map(|f| {
+                (
+                    f.status.as_str(),
+                    f.path.as_str(),
+                    f.original_path.as_deref(),
+                )
+            })
             .collect();
         assert_eq!(
             rows,
@@ -379,7 +384,11 @@ mod tests {
 
         let stdout = jj_stdout(&repo, &["log", "--no-graph", "-T", log_template()]);
         let commits = parse_commits_jsonl(&stdout);
-        assert_eq!(commits.len(), 3, "expected root + first + second, got:\n{stdout}");
+        assert_eq!(
+            commits.len(),
+            3,
+            "expected root + first + second, got:\n{stdout}"
+        );
 
         let second = commits
             .iter()
@@ -418,10 +427,20 @@ mod tests {
         let files = parse_status_output(&stdout);
         let mut rows: Vec<_> = files
             .iter()
-            .map(|f| (f.status.as_str(), f.path.as_str(), f.original_path.as_deref()))
+            .map(|f| {
+                (
+                    f.status.as_str(),
+                    f.path.as_str(),
+                    f.original_path.as_deref(),
+                )
+            })
             .collect();
         rows.sort();
-        assert_eq!(rows, vec![("A", "c.txt", None), ("D", "a.txt", None)], "got:\n{stdout}");
+        assert_eq!(
+            rows,
+            vec![("A", "c.txt", None), ("D", "a.txt", None)],
+            "got:\n{stdout}"
+        );
     }
 
     #[test]

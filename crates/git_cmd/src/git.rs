@@ -132,10 +132,7 @@ pub fn status(repo_path: &Path) -> Result<Vec<FileStatus>, VcsError> {
 /// Get the commit log.
 pub fn log(repo_path: &Path, limit: usize) -> Result<Vec<CommitEntry>, VcsError> {
     let limit_str = format!("{}", limit);
-    let result = run_git(
-        repo_path,
-        &["log", "--oneline", "-n", &limit_str],
-    )?;
+    let result = run_git(repo_path, &["log", "--oneline", "-n", &limit_str])?;
     if result.success() {
         Ok(parse_oneline_log(&result.stdout))
     } else {
@@ -206,7 +203,10 @@ pub fn is_dirty(repo_path: &Path) -> bool {
 
 /// Get the list of files changed in a commit.
 pub fn commit_files(repo_path: &Path, hash: &str) -> Result<Vec<FileStatus>, VcsError> {
-    let result = run_git(repo_path, &["diff-tree", "--no-commit-id", "-r", "--name-status", hash])?;
+    let result = run_git(
+        repo_path,
+        &["diff-tree", "--no-commit-id", "-r", "--name-status", hash],
+    )?;
     if result.success() {
         Ok(parse_status(&result.stdout))
     } else {
@@ -231,10 +231,7 @@ pub fn clone(url: &str, dest: &Path) -> Result<CommandResult, VcsError> {
 
 /// Initialize a new repository.
 pub fn init(path: &Path) -> Result<CommandResult, VcsError> {
-    let output = Command::new("git")
-        .arg("init")
-        .current_dir(path)
-        .output()?;
+    let output = Command::new("git").arg("init").current_dir(path).output()?;
 
     Ok(CommandResult {
         exit_code: output.status.code().unwrap_or(-1),

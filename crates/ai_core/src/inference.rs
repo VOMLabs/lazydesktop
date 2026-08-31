@@ -71,7 +71,8 @@ pub fn run_inference_blocking(
                 .add(tok, j as i32, &[0], j == batch_tokens.len() - 1)
                 .map_err(|e| format!("Batch add error: {e}"))?;
         }
-        ctx.decode(&mut batch).map_err(|e| format!("Decode error: {e}"))?;
+        ctx.decode(&mut batch)
+            .map_err(|e| format!("Decode error: {e}"))?;
     }
 
     // Sampler chain
@@ -106,7 +107,8 @@ pub fn run_inference_blocking(
         batch
             .add(token, 0, &[0], true)
             .map_err(|e| format!("Batch add error: {e}"))?;
-        ctx.decode(&mut batch).map_err(|e| format!("Decode error: {e}"))?;
+        ctx.decode(&mut batch)
+            .map_err(|e| format!("Decode error: {e}"))?;
 
         generated += 1;
     }
