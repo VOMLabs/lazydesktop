@@ -1,0 +1,32 @@
+# config Rust crate project
+language: 'rust'
+layer: 'library'
+
+tasks:
+  build:
+    command: 'cargo build --manifest-path crates/config/Cargo.toml'
+    inputs:
+      - 'crates/config/**/*'
+    outputs:
+      - 'target/debug/libconfig.a'
+      - 'target/release/libconfig.a'
+
+  test:
+    command: 'cargo test --manifest-path crates/config/Cargo.toml'
+    inputs:
+      - 'crates/config/**/*'
+
+  lint:
+    command: 'cargo clippy --manifest-path crates/config/Cargo.toml -- -D warnings'
+    inputs:
+      - 'crates/config/**/*'
+
+  format:
+    command: 'cargo fmt --manifest-path crates/config/Cargo.toml -- --check'
+    inputs:
+      - 'crates/config/**/*'
+
+  format-fix:
+    command: 'cargo fmt --manifest-path crates/config/Cargo.toml'
+    inputs:
+      - 'crates/config/**/*'

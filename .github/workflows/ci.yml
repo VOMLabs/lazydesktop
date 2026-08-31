@@ -85,12 +85,8 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Install xmake
-        uses: xmake-io/github-action-setup-xmake@v1
-        with:
-          xmake-version: latest
-          package-cache: true
-          build-cache: true
+      - name: Install Meson and Ninja
+        run: pip install meson ninja
 
       - name: Install Qt (Linux)
         if: runner.os == 'Linux'
@@ -122,16 +118,19 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install yaml-cpp
 
+      - name: Build Rust crates
+        run: cargo build --workspace
+
       - name: Configure (debug)
-        run: xmake f -m debug -y
+        run: meson setup build --buildtype=debugoptimized
 
       - name: Build
-        run: xmake
+        run: ninja -C build
 
       - name: Smoke test (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
-          QT_QPA_PLATFORM=offscreen xmake run &
+          QT_QPA_PLATFORM=offscreen build/lazydesktop &
           APP_PID=$!
           sleep 5
           kill "$APP_PID" 2>/dev/null || true
@@ -142,7 +141,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: lazydesktop-${{ matrix.os }}
-          path: build/*/*/debug/lazydesktop*
+          path: build/lazydesktop*
           if-no-files-found: error
           retention-days: 7
 

@@ -1,0 +1,32 @@
+# vcs_core Rust crate project
+language: 'rust'
+layer: 'library'
+
+tasks:
+  build:
+    command: 'cargo build --manifest-path crates/vcs_core/Cargo.toml'
+    inputs:
+      - 'crates/vcs_core/**/*'
+    outputs:
+      - 'target/debug/libvcs_core.a'
+      - 'target/release/libvcs_core.a'
+
+  test:
+    command: 'cargo test --manifest-path crates/vcs_core/Cargo.toml'
+    inputs:
+      - 'crates/vcs_core/**/*'
+
+  lint:
+    command: 'cargo clippy --manifest-path crates/vcs_core/Cargo.toml -- -D warnings'
+    inputs:
+      - 'crates/vcs_core/**/*'
+
+  format:
+    command: 'cargo fmt --manifest-path crates/vcs_core/Cargo.toml -- --check'
+    inputs:
+      - 'crates/vcs_core/**/*'
+
+  format-fix:
+    command: 'cargo fmt --manifest-path crates/vcs_core/Cargo.toml'
+    inputs:
+      - 'crates/vcs_core/**/*'

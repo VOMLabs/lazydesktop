@@ -1,0 +1,7 @@
+[wrap-file]
+url = https://github.com/jbeder/yaml-cpp/archive/refs/tags/0.8.0.tar.gz
+filename = yaml-cpp-0.8.0.tar.gz
+directory = yaml-cpp-0.8.0
+
+[provide]
+yaml-cpp = yaml-cpp_dep

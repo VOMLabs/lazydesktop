@@ -1,0 +1,50 @@
+# Shared tasks inherited by all projects
+# https://moonrepo.dev/docs/config/tasks
+
+tasks:
+  build:
+    command: 'cargo build --workspace'
+    inputs:
+      - 'crates/**/*'
+      - 'Cargo.toml'
+    outputs:
+      - 'target/debug'
+      - 'target/release'
+
+  build-release:
+    command: 'cargo build --workspace --release'
+    inputs:
+      - 'crates/**/*'
+      - 'Cargo.toml'
+    outputs:
+      - 'target/release'
+
+  test:
+    command: 'cargo test --workspace'
+    inputs:
+      - 'crates/**/*'
+      - 'Cargo.toml'
+
+  lint:
+    command: 'cargo clippy --workspace --all-targets -- -D warnings'
+    inputs:
+      - 'crates/**/*'
+      - 'Cargo.toml'
+
+  format:
+    command: 'cargo fmt --all -- --check'
+    inputs:
+      - 'crates/**/*'
+      - 'Cargo.toml'
+
+  format-fix:
+    command: 'cargo fmt --all'
+    inputs:
+      - 'crates/**/*'
+      - 'Cargo.toml'
+
+  audit:
+    command: 'cargo audit'
+    inputs:
+      - 'crates/**/*'
+      - 'Cargo.toml'

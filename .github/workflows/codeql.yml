@@ -46,12 +46,8 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Install xmake
-        uses: xmake-io/github-action-setup-xmake@v1
-        with:
-          xmake-version: latest
-          package-cache: true
-          build-cache: true
+      - name: Install Meson and Ninja
+        run: pip install meson ninja
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
@@ -68,10 +64,13 @@ jobs:
           languages: ${{ matrix.language }}
           queries: +security-extended
 
-      - name: Build
+      - name: Build Rust crates
+        run: cargo build --workspace
+
+      - name: Configure and build
         run: |
-          xmake f -m debug -y
-          xmake
+          meson setup build --buildtype=debugoptimized
+          ninja -C build
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
