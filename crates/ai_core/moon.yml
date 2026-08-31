@@ -4,29 +4,31 @@ layer: 'library'
 
 tasks:
   build:
-    command: 'cargo build --manifest-path crates/ai_core/Cargo.toml'
+    command: 'cargo'
+    args: ['build', '-p', 'ai_core']
     inputs:
       - 'crates/ai_core/**/*'
-    outputs:
-      - 'target/debug/libai_core.a'
-      - 'target/release/libai_core.a'
 
   test:
-    command: 'cargo test --manifest-path crates/ai_core/Cargo.toml'
+    command: 'cargo'
+    args: ['test', '-p', 'ai_core']
     inputs:
       - 'crates/ai_core/**/*'
 
   lint:
-    command: 'cargo clippy --manifest-path crates/ai_core/Cargo.toml -- -D warnings'
+    command: 'cargo'
+    args: ['clippy', '-p', 'ai_core', '--', '-D', 'warnings']
     inputs:
       - 'crates/ai_core/**/*'
 
   format:
-    command: 'cargo fmt --manifest-path crates/ai_core/Cargo.toml -- --check'
+    command: 'cargo'
+    args: ['fmt', '-p', 'ai_core', '--', '--check']
     inputs:
       - 'crates/ai_core/**/*'
 
   format-fix:
-    command: 'cargo fmt --manifest-path crates/ai_core/Cargo.toml'
+    command: 'cargo'
+    args: ['fmt', '-p', 'ai_core']
     inputs:
       - 'crates/ai_core/**/*'

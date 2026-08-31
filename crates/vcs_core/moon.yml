@@ -4,29 +4,31 @@ layer: 'library'
 
 tasks:
   build:
-    command: 'cargo build --manifest-path crates/vcs_core/Cargo.toml'
+    command: 'cargo'
+    args: ['build', '-p', 'vcs_core']
     inputs:
       - 'crates/vcs_core/**/*'
-    outputs:
-      - 'target/debug/libvcs_core.a'
-      - 'target/release/libvcs_core.a'
 
   test:
-    command: 'cargo test --manifest-path crates/vcs_core/Cargo.toml'
+    command: 'cargo'
+    args: ['test', '-p', 'vcs_core']
     inputs:
       - 'crates/vcs_core/**/*'
 
   lint:
-    command: 'cargo clippy --manifest-path crates/vcs_core/Cargo.toml -- -D warnings'
+    command: 'cargo'
+    args: ['clippy', '-p', 'vcs_core', '--', '-D', 'warnings']
     inputs:
       - 'crates/vcs_core/**/*'
 
   format:
-    command: 'cargo fmt --manifest-path crates/vcs_core/Cargo.toml -- --check'
+    command: 'cargo'
+    args: ['fmt', '-p', 'vcs_core', '--', '--check']
     inputs:
       - 'crates/vcs_core/**/*'
 
   format-fix:
-    command: 'cargo fmt --manifest-path crates/vcs_core/Cargo.toml'
+    command: 'cargo'
+    args: ['fmt', '-p', 'vcs_core']
     inputs:
       - 'crates/vcs_core/**/*'

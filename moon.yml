@@ -10,35 +10,33 @@ project:
 
 tasks:
   build:
-    command: 'meson setup build --buildtype=debugoptimized --reconfigure 2>/dev/null; ninja -C build'
+    script: 'meson setup build --buildtype=debugoptimized --reconfigure 2>/dev/null && ninja -C build'
     inputs:
       - 'src/**/*'
       - 'meson.build'
       - 'crates/*/include/*.h'
       - 'crates/ai_core/*.h'
       - 'crates/vcs_core/*.h'
-    outputs:
-      - 'build/lazydesktop'
 
   build-release:
-    command: 'meson setup build --buildtype=release --reconfigure 2>/dev/null; ninja -C build'
+    script: 'meson setup build --buildtype=release --reconfigure 2>/dev/null && ninja -C build'
     inputs:
       - 'src/**/*'
       - 'meson.build'
-    outputs:
-      - 'build/lazydesktop'
 
   run:
     command: 'build/lazydesktop'
     deps:
-      - ':build'
+      - '~:build'
 
   format:
-    command: 'clang-format -i -style=file src/*.cpp src/*.h'
+    command: 'clang-format'
+    args: ['-i', '-style=file', 'src/*.cpp', 'src/*.h']
     inputs:
       - 'src/**/*'
 
   lint:
-    command: 'clang-tidy src/*.cpp src/*.h -- -std=c++23'
+    command: 'clang-tidy'
+    args: ['src/*.cpp', 'src/*.h', '--', '-std=c++23']
     inputs:
       - 'src/**/*'

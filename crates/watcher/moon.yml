@@ -1,32 +1,34 @@
-# watcher Rust crate project
+# lazydesktop-watcher Rust crate project
 language: 'rust'
 layer: 'library'
 
 tasks:
   build:
-    command: 'cargo build --manifest-path crates/watcher/Cargo.toml'
+    command: 'cargo'
+    args: ['build', '-p', 'lazydesktop-watcher']
     inputs:
       - 'crates/watcher/**/*'
-    outputs:
-      - 'target/debug/libwatcher.a'
-      - 'target/release/libwatcher.a'
 
   test:
-    command: 'cargo test --manifest-path crates/watcher/Cargo.toml'
+    command: 'cargo'
+    args: ['test', '-p', 'lazydesktop-watcher']
     inputs:
       - 'crates/watcher/**/*'
 
   lint:
-    command: 'cargo clippy --manifest-path crates/watcher/Cargo.toml -- -D warnings'
+    command: 'cargo'
+    args: ['clippy', '-p', 'lazydesktop-watcher', '--', '-D', 'warnings']
     inputs:
       - 'crates/watcher/**/*'
 
   format:
-    command: 'cargo fmt --manifest-path crates/watcher/Cargo.toml -- --check'
+    command: 'cargo'
+    args: ['fmt', '-p', 'lazydesktop-watcher', '--', '--check']
     inputs:
       - 'crates/watcher/**/*'
 
   format-fix:
-    command: 'cargo fmt --manifest-path crates/watcher/Cargo.toml'
+    command: 'cargo'
+    args: ['fmt', '-p', 'lazydesktop-watcher']
     inputs:
       - 'crates/watcher/**/*'

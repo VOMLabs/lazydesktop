@@ -1,32 +1,34 @@
-# config Rust crate project
+# lazydesktop-config Rust crate project
 language: 'rust'
 layer: 'library'
 
 tasks:
   build:
-    command: 'cargo build --manifest-path crates/config/Cargo.toml'
+    command: 'cargo'
+    args: ['build', '-p', 'lazydesktop-config']
     inputs:
       - 'crates/config/**/*'
-    outputs:
-      - 'target/debug/libconfig.a'
-      - 'target/release/libconfig.a'
 
   test:
-    command: 'cargo test --manifest-path crates/config/Cargo.toml'
+    command: 'cargo'
+    args: ['test', '-p', 'lazydesktop-config']
     inputs:
       - 'crates/config/**/*'
 
   lint:
-    command: 'cargo clippy --manifest-path crates/config/Cargo.toml -- -D warnings'
+    command: 'cargo'
+    args: ['clippy', '-p', 'lazydesktop-config', '--', '-D', 'warnings']
     inputs:
       - 'crates/config/**/*'
 
   format:
-    command: 'cargo fmt --manifest-path crates/config/Cargo.toml -- --check'
+    command: 'cargo'
+    args: ['fmt', '-p', 'lazydesktop-config', '--', '--check']
     inputs:
       - 'crates/config/**/*'
 
   format-fix:
-    command: 'cargo fmt --manifest-path crates/config/Cargo.toml'
+    command: 'cargo'
+    args: ['fmt', '-p', 'lazydesktop-config']
     inputs:
       - 'crates/config/**/*'

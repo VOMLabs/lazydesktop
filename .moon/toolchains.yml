@@ -5,9 +5,5 @@ rust:
   version: 'stable'
   bins:
     - 'cargo'
-    - 'clippy'
-    - 'rustfmt'
-
-# System tools managed by mise
-node:
-  version: ''
+  # clippy and rustfmt are rustup components, not standalone binaries
+  # They ship with the stable toolchain automatically
