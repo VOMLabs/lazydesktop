@@ -4,6 +4,7 @@
 
 mod app;
 mod commit_panel;
+mod diff_view;
 mod file_tree;
 mod git_service;
 mod sidebar;

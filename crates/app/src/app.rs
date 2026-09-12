@@ -1,4 +1,4 @@
-//! Main application view — sidebar + content split layout.
+//! Main application view — toolbar + sidebar + content split layout.
 
 use gpui::prelude::*;
 use gpui::*;
@@ -6,6 +6,7 @@ use gpui_component::button::Button;
 use gpui_component::*;
 
 use crate::commit_panel::CommitPanel;
+use crate::diff_view::DiffView;
 use crate::file_tree::FileTree;
 use crate::git_service::GitService;
 use crate::sidebar::Sidebar;
@@ -13,6 +14,7 @@ use crate::sidebar::Sidebar;
 pub struct LazyDesktopApp {
     sidebar: Entity<Sidebar>,
     file_tree: Entity<FileTree>,
+    diff_view: Entity<DiffView>,
     commit_panel: Entity<CommitPanel>,
     git_service: Entity<GitService>,
 }
@@ -22,11 +24,13 @@ impl LazyDesktopApp {
         let git_service = cx.new(|_| GitService::new(std::path::PathBuf::new()));
         let sidebar = cx.new(|cx| Sidebar::new(git_service.clone(), cx));
         let file_tree = cx.new(|cx| FileTree::new(git_service.clone(), cx));
+        let diff_view = cx.new(DiffView::new);
         let commit_panel = cx.new(|cx| CommitPanel::new(window, git_service.clone(), cx));
 
         Self {
             sidebar,
             file_tree,
+            diff_view,
             commit_panel,
             git_service,
         }
@@ -47,42 +51,48 @@ impl Render for LazyDesktopApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .flex()
+            .flex_col()
             .size_full()
+            .child(self.render_toolbar(cx))
             .child(
-                // Sidebar
                 div()
-                    .w(px(280.0))
-                    .h_full()
-                    .border_r_1()
-                    .child(self.sidebar.clone()),
-            )
-            .child(
-                // Main content area
-                div()
-                    .flex_1()
-                    .h_full()
                     .flex()
-                    .flex_col()
+                    .flex_1()
                     .child(
-                        // Top toolbar
-                        self.render_toolbar(cx),
+                        // Sidebar
+                        div()
+                            .w(px(260.0))
+                            .h_full()
+                            .border_r_1()
+                            .child(self.sidebar.clone()),
                     )
                     .child(
-                        // Content: file tree + commit panel
+                        // Main content: file tree + diff view on top,
+                        // commit panel at the bottom
                         div()
                             .flex_1()
                             .flex()
+                            .flex_col()
                             .child(
-                                // File tree (left)
                                 div()
-                                    .w(px(320.0))
-                                    .h_full()
-                                    .border_r_1()
-                                    .child(self.file_tree.clone()),
+                                    .flex()
+                                    .flex_1()
+                                    .child(
+                                        // File tree (left)
+                                        div()
+                                            .w(px(320.0))
+                                            .h_full()
+                                            .border_r_1()
+                                            .child(self.file_tree.clone()),
+                                    )
+                                    .child(
+                                        // Diff view (center)
+                                        div().flex_1().h_full().child(self.diff_view.clone()),
+                                    ),
                             )
                             .child(
-                                // Commit panel (right)
-                                div().flex_1().h_full().child(self.commit_panel.clone()),
+                                // Commit panel (bottom)
+                                div().border_t_1().child(self.commit_panel.clone()),
                             ),
                     ),
             )
@@ -105,10 +115,11 @@ impl LazyDesktopApp {
             .py_2()
             .border_b_1()
             .child(
+                // Left: repo actions
                 div()
                     .flex()
                     .items_center()
-                    .gap_2()
+                    .gap_3()
                     .child(
                         Button::new("open-folder")
                             .label("Open Folder")
@@ -116,12 +127,24 @@ impl LazyDesktopApp {
                                 // TODO: file dialog
                             })),
                     )
-                    .child(div().text_sm().child(branch.clone()))
-                    .when(is_dirty, |this| {
-                        this.child(div().w_2().h_2().rounded_full().bg(gpui::rgb(0xcf222e)))
-                    }),
+                    .child(
+                        // Branch badge
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .px_3()
+                            .py_1()
+                            .rounded_md()
+                            .bg(gpui::rgb(0x2d333b))
+                            .child(div().text_sm().font_bold().child(branch.clone()))
+                            .when(is_dirty, |this| {
+                                this.child(div().w_2().h_2().rounded_full().bg(gpui::rgb(0xcf222e)))
+                            }),
+                    ),
             )
             .child(
+                // Right: git actions
                 div()
                     .flex()
                     .items_center()
