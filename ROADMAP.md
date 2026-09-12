@@ -42,7 +42,7 @@
 - [x] Credential helper dialog
 - [x] Auto-refresh via file system watcher
 - [x] Git bootstrapping (install missing Git)
-- [x] XMake build system (replaces Meson)
+- [x] Meson/Ninja + Moon build system (with Cargo for the Rust crates)
 - [x] Docker packaging (X11 or VNC/noVNC)
 - [x] AI editor skills (`commit`, `create-branch`)
 - [x] AI description generation with its own configurable prompt
@@ -118,9 +118,9 @@
 
 ### Packaging & Build
 
-- [ ] **Fix packaging build-system drift** — Migrate `debian/rules`,
-      `PKGBUILD`, and `install/windows/build-msi.bat` from the legacy
-      Meson/Ninja build to XMake (currently only CI builds with XMake)
+- [x] **Unify packaging on the Meson build** — `debian/rules`, `PKGBUILD`,
+      and `install/windows/build-msi.bat` all build with Meson/Ninja + Cargo
+      (no build-system drift)
 
 ## v0.4 — Medium Term
 
@@ -192,7 +192,7 @@
 
 > **Status:** Replace the Qt Widgets C++23 UI entirely with a native Rust
 > frontend built on GPUI (the editor framework from Zed). Reuses all six
-> existing Rust backend crates directly — no FFI needed. Drops the XMake
+> existing Rust backend crates directly — no FFI needed. Drops the C++/Meson
 > build chain so the entire application builds with a single Cargo workspace.
 
 ### Why GPUI over Slint
@@ -246,8 +246,8 @@ reusing battle-tested primitives for everything else.
 - [ ] Convert repository to a unified Cargo workspace (`crates/app`,
       `crates/ai_core`, `crates/vcs_core`, `crates/watcher`,
       `crates/config`, `crates/git_cmd`, `crates/addons`)
-- [ ] Remove `xmake` build system, GCC/Clang dependencies, and C++23 source
-      directories (`src/`)
+- [ ] Remove the Meson/Ninja C++ build, GCC/Clang dependencies, and C++23
+      source directories (`src/`)
 - [ ] Remove C-FFI layers (`cbindgen`, `mm_generate_commit_message`, raw C
       pointer marshalling, all `*_bridge.cpp` files)
 
@@ -255,7 +255,7 @@ reusing battle-tested primitives for everything else.
 
 - [ ] Implement main window layout in GPUI using `gpui-component`
       panels: sidebar, changes tree, diff viewer, and commit panel
-- [ ] Build custom `.theme.yaml` parser mapping directly to GPUI theme
+- [ ] Build custom `.theme.lua` parser mapping directly to GPUI theme
       tokens
 - [ ] Implement settings view using `gpui-component` forms: Appearance,
       Git config, SSH Key Manager, AI configuration

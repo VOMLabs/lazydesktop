@@ -2,12 +2,16 @@
 
 **A fast, native Git GUI for the KDE Plasma desktop.**
 
-LazyDesktop is a lightweight alternative to GitHub Desktop built on the same
-technology stack KDE itself uses — Qt 6 and C++23. No Electron, no web runtime,
-no bloat: it fits straight into your desktop, respects your system theme, and
-gives you a clean, keyboard-friendly interface for everyday Git work.
+LazyDesktop is a lightweight alternative to GitHub Desktop — no Electron, no
+web runtime, no bloat. It fits straight into your desktop, respects your
+system theme, and gives you a clean, keyboard-friendly interface for everyday
+Git work.
 
 > Think GitHub Desktop, but native, fast, and built for the KDE ecosystem.
+
+> **Status:** the current UI is built with **Qt 6 Widgets and C++23**. A
+> pure-Rust frontend built on **GPUI** is in active development in
+> [`crates/app`](crates/app) and will replace the Qt UI once feature-complete.
 
 ---
 
@@ -108,6 +112,11 @@ colors:
 The theme appears in Settings → Appearance after a restart or reopening the
 settings dialog. See [themes](docs/user-guide/themes.md).
 
+> **Note:** the bundled Rust `config` crate (used by the in-development GPUI
+> frontend) persists projects and themes as Lua (`projects.lua`,
+> `*.theme.lua`). The Qt UI still reads YAML directly; the migration is
+> tracked in the [roadmap](ROADMAP.md).
+
 ### Settings
 
 A categorized settings dialog covers:
@@ -139,24 +148,24 @@ A categorized settings dialog covers:
 ## Quick start (build and run)
 
 ```bash
-xmake f -m debug          # configure (release: xmake f -m release)
-xmake                     # builds C++ and the Rust ai_core crate
-./build/linux/x86_64/debug/lazydesktop
+just setup           # install the pinned toolchain via mise
+just build           # cargo build + meson/ninja build (C++ + Rust crates)
+just run             # run the debug binary
 ```
 
 The binary runs directly from the build directory — no `make install`
-needed. The `xmake` build automatically runs `cargo build` for the bundled
-Rust crates (`ai_core`, and `vcs_core` for SSH/remote operations) and links
-them in. Your data survives rebuilds:
+needed. The build compiles the Rust crates (`ai_core`, `vcs_core`, and the
+backend crates) and links them into the C++ binary. Your data survives
+rebuilds:
 
 - Projects: `~/.config/lazydesktop/projects.yaml`
 - Settings (API key, theme, model, system prompt): `~/.config/lazydesktop/lazydesktop.conf`
 - Custom themes: `~/.config/lazydesktop/themes/*.theme.yaml`
 - Local AI models: `~/.config/lazydesktop/models/`
 
-> **Note on Qt versions:** if both Qt 5 and Qt 6 are installed, xmake may pick
+> **Note on Qt versions:** if both Qt 5 and Qt 6 are installed, meson may pick
 > Qt 5 from your `PATH`. Point it at Qt 6 before configuring, for example
-> `PATH=/usr/lib/qt6/bin:$PATH xmake f -c -m debug`.
+> `PATH=/usr/lib/qt6/bin:$PATH meson setup build --reconfigure`.
 
 See [build from source](docs/getting-started/build-from-source.md) for the
 full guide, or use the included [`justfile`](justfile) recipes
@@ -228,12 +237,10 @@ See the [AI documentation](docs/ai/overview.md) for details.
 ## Requirements
 
 - Qt 6 (Core, Gui, Widgets, Network) — Qt 6.7+ recommended
-- xmake (build system)
-- Rust stable toolchain (builds the bundled `ai_core` and `vcs_core` crates
-  automatically)
-- yaml-cpp
+- Rust stable toolchain (builds the bundled crates)
+- moon, meson, ninja (build orchestration)
 - Git
-- A C++23 compiler (GCC 14+ or Clang 18+)
+- A C++23 compiler (GCC 14+ or Clang 18+) — only needed while the Qt UI ships
 
 ## Documentation
 

@@ -1,16 +1,21 @@
 # Build from Source
 
-LazyDesktop builds with **XMake**, which automatically compiles the bundled
-Rust `ai_core` crate and links it into the C++ binary.
+LazyDesktop builds with **Meson + Ninja** for the C++ application and
+**Cargo** for the bundled Rust crates (`ai_core`, `vcs_core`, `config`,
+`git_cmd`, `watcher`). [Moon](https://moonrepo.dev) orchestrates the
+workspace tasks.
 
 ## Requirements
 
 - **Qt 6** (Core, Gui, Widgets, Network) — Qt 6.7+ recommended
-- **xmake** — the build system
-- **Rust stable toolchain** — builds `crates/ai_core` automatically
-- **yaml-cpp** — YAML parsing for projects and themes
+- **Rust stable toolchain** — builds the bundled crates
+- **meson + ninja** — the C++ build system
+- **moon** — task orchestration (`just setup` installs it via `cargo install
+  moonrepo` if missing)
+- **yaml-cpp** — YAML parsing for projects and themes (Qt UI)
 - **Git** — required at runtime (all Git operations use the CLI)
-- **C++23 compiler** — GCC 14+ or Clang 18+
+- **C++23 compiler** — GCC 14+ or Clang 18+ (only needed while the Qt UI
+  ships)
 
 A convenient way to provision the toolchain is [`mise`](https://mise.jdx.dev)
 with the pinned versions in [`mise.toml`](../../mise.toml):
@@ -22,26 +27,20 @@ mise install
 ## Configure and build
 
 ```bash
-xmake f -m debug          # configure (release: xmake f -m release)
-xmake                     # builds C++ and the Rust ai_core crate
+just setup           # install moon if needed, then moon sync
+just build           # cargo build --workspace + meson setup + ninja
 ```
 
-The binary is written to:
+Or run the steps directly:
 
 ```bash
-./build/linux/x86_64/debug/lazydesktop      # debug
-./build/linux/x86_64/release/lazydesktop    # release
+cargo build --workspace
+meson setup build --buildtype=debugoptimized --reconfigure
+ninja -C build
 ```
 
-Run it directly from the build directory — no `make install` needed.
-
-> **Note on Qt versions:** if both Qt 5 and Qt 6 are installed, xmake may
-> pick Qt 5 from your `PATH`. Point it at Qt 6 before configuring, for
-> example:
->
-> ```bash
-> PATH=/usr/lib/qt6/bin:$PATH xmake f -c -m debug
-> ```
+The binary is written to `./build/lazydesktop`. Run it directly from the
+build directory — no `make install` needed.
 
 ## Using the justfile
 
@@ -50,18 +49,21 @@ A [`justfile`](../../justfile) wraps the common workflows. With
 
 | Command | What it does |
 |---------|--------------|
-| `just setup` | Configure xmake for a debug build |
-| `just setup-release` | Configure xmake for a release build |
-| `just build` | Build debug (C++ + Rust) |
+| `just setup` | Install moon if needed, then `moon sync` |
+| `just build` | Build debug (Rust crates + C++ app) |
 | `just build-release` | Build release |
+| `just build-rust` | Build only the Rust crates |
 | `just run` / `just run-release` | Build and run |
-| `just dev` | Configure, build, and run |
-| `just test` | Run the Rust `ai_core` test suite (`cargo test`) |
+| `just test` | Run the Rust test suites (`cargo test --workspace`) |
+| `just test-crate <crate>` | Run tests for one crate |
 | `just format` | Run clang-format on `src/*.cpp` and `src/*.h` |
+| `just format-rust` | Run `cargo fmt --all` |
 | `just tidy` | Run clang-tidy static analysis |
+| `just clippy` | Run `cargo clippy --workspace -- -D warnings` |
+| `just audit` | Run `cargo audit` for security vulnerabilities |
 | `just lint` | Run all pre-commit hooks |
 | `just compile-commands` | Generate `compile_commands.json` for clangd |
-| `just clean` | Remove xmake artifacts and packaging output |
+| `just clean` | Remove build artifacts and packaging output |
 | `just distclean` | Clean everything including Rust targets |
 
 ## Where your data lives
@@ -75,11 +77,15 @@ Your projects and settings survive rebuilds:
 
 See [configuration](configuration.md) for the full reference.
 
+> **Note:** the bundled Rust `config` crate (used by the in-development GPUI
+> frontend) persists projects and themes as Lua (`projects.lua`,
+> `*.theme.lua`). The Qt UI still reads YAML directly.
+
 ## Troubleshooting
 
 | Symptom | Fix |
 |---------|-----|
-| xmake picked the wrong Qt | Point `PATH` at the Qt 6 bin dir and reconfigure (`xmake f -c`) |
+| meson picked the wrong Qt | Point `PATH` at the Qt 6 bin dir and reconfigure (`meson setup build --reconfigure`) |
 | `cargo` is not found during build | Install the Rust stable toolchain and ensure it is on `PATH` |
 | Missing `yaml-cpp` headers | Install `libyaml-cpp-dev` (Debian/Ubuntu), `yaml-cpp` (Arch), or the equivalent |
-| Link errors about `ai_core` | Run `just clean` and rebuild; the crate is rebuilt by the `before_build` hook |
+| Link errors about the Rust crates | Run `just clean` and rebuild; the crates are rebuilt by `cargo build --workspace` |

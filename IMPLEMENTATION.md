@@ -48,8 +48,8 @@ backend for core services.
 │  └─────────────┘ └─────────────┘ └────────────────────┘ │
 ├─────────────────────────────────────────────────────────┤
 │  Persistence Layer  │  Build System                     │
-│  - QSettings (INI)  │  - XMake (builds Rust + C++)     │
-│  - YAML (projects,  │  - Cargo workspace               │
+│  - QSettings (INI)  │  - Meson/Ninja (C++ app)         │
+│  - YAML (projects,  │  - Cargo workspace (Rust crates) │
 │    themes)          │  - justfile recipes               │
 └─────────────────────┴───────────────────────────────────┘
 ```
@@ -61,8 +61,8 @@ backend for core services.
 | UI Framework | Qt 6 (Core, Gui, Widgets, Network) | All UI rendering |
 | Language (UI) | C++23 | Application logic and UI |
 | Language (Backend) | Rust | Core services, security, VCS |
-| Build System | XMake + Cargo | Compilation and linking |
-| Config Storage | Rust `config` crate | INI settings, YAML projects/themes |
+| Build System | Meson/Ninja + Cargo | Compilation and linking |
+| Config Storage | Rust `config` crate | INI settings, Lua projects/themes |
 | Local AI | Rust `ai_core` crate | GGUF model inference |
 | Native VCS/SSH | Rust `vcs_core` crate | SSH keys, git remotes |
 | Addon System | Rust `addons` crate | Security core, package parsing |
@@ -308,12 +308,12 @@ without any C++ dependency for core services.
 
 ## Part 5: Build System
 
-### XMake + Cargo
+### Meson/Ninja + Cargo
 
 The build process:
-1. XMake runs `cargo build --lib` for each Rust crate in `before_build`
-2. XMake links the resulting static libraries
-3. XMake compiles the C++ application with Qt
+1. `cargo build --workspace` builds each Rust crate (staticlib + rlib)
+2. Meson configures the C++ application with Qt
+3. Ninja compiles the C++ application and links the Rust static libraries
 4. The C++ app links against all Rust static libraries
 
 ### Workspace Configuration
@@ -406,9 +406,8 @@ just build                       # Full build (C++ + Rust)
 
 ## Known Notes / Caveats
 
-- **Packaging build system drift** — The Debian rules and Arch PKGBUILD
-  still reference the Meson/Ninja build from before the XMake migration.
-  CI and release workflows use XMake.
+- **Packaging build system** — The Debian rules and Arch PKGBUILD build with
+  Meson/Ninja + Cargo, matching CI and the release workflows.
 - **AI quality depends on the model/provider** — Small local models produce
   usable but terse commit messages; larger models and cloud providers
   generally produce better summaries.

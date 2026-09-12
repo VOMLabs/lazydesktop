@@ -5,8 +5,8 @@
 ### What is LazyDesktop?
 
 A fast, native Git GUI client for KDE Plasma, built with Qt 6 and C++23 — a
-lightweight alternative to GitHub Desktop without Electron. See the
-[README](../README.md).
+lightweight alternative to GitHub Desktop without Electron. A pure-Rust
+frontend built on GPUI is in development. See the [README](../README.md).
 
 ### Is it only for KDE?
 
@@ -67,15 +67,15 @@ the GUI app's AI feature. See [editor skills](ai/editor-skills.md).
 
 A C++23 compiler — GCC 14+ or Clang 18+.
 
-### xmake picked Qt 5 instead of Qt 6!
+### meson picked Qt 5 instead of Qt 6!
 
 Point `PATH` at your Qt 6 bin directory before configuring, e.g.
-`PATH=/usr/lib/qt6/bin:$PATH xmake f -c -m debug`.
+`PATH=/usr/lib/qt6/bin:$PATH meson setup build --reconfigure`.
 
 ### The Rust build fails with "cargo not found"
 
-Install the Rust stable toolchain and ensure it is on `PATH`. The xmake build
-invokes `cargo build --lib` automatically.
+Install the Rust stable toolchain and ensure it is on `PATH`. The build
+invokes `cargo build --workspace` automatically.
 
 ### Can I run it without installing?
 
