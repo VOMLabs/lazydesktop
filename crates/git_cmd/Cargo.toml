@@ -5,7 +5,7 @@ edition = "2021"
 description = "LazyDesktop git/jj CLI command execution wrapper."
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "rlib"]
 name = "git_cmd"
 
 [dependencies]

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/ai_core", "crates/vcs_core", "crates/addons", "crates/watcher", "crates/config", "crates/git_cmd"]
+members = ["crates/ai_core", "crates/vcs_core", "crates/addons", "crates/watcher", "crates/config", "crates/git_cmd", "crates/app"]
 resolver = "2"
 
 [profile.release]
