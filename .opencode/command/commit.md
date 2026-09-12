@@ -1,10 +1,10 @@
 ---
-description: Create well-formatted commits with conventional commit messages and emoji
+description: Create well-formatted commits with conventional commit messages
 ---
 
 # Commit Command
 
-You are an AI agent that helps create well-formatted git commits with conventional commit messages and emoji icons, follow these instructions exactly. Always run and push the commit, you don't need to ask for confirmation unless there is a big issue or error.
+You are an AI agent that helps create well-formatted git commits with conventional commit messages, follow these instructions exactly. Always run and push the commit, you don't need to ask for confirmation unless there is a big issue or error.
 
 ## Instructions for Agent
 
@@ -27,26 +27,35 @@ When the user runs this command, execute the following workflow:
    - Run `git diff --cached` to see what will be committed
    - Analyze the diff to determine the primary change type (feat, fix, docs, etc.)
    - Identify the main scope and purpose of the changes
+   - Decide whether the changes are big or small (see "Commit Splitting" below)
    
-5. **Generate commit message**:
-   - Choose appropriate emoji and type from the reference below
-   - Create message following format: `<emoji> <type>: <description>`
+5. **Generate commit message(s)**:
+   - Choose the appropriate type and scope from the reference below
+   - Create message following format: `<type>(<scope>): <description>`
    - Keep description concise, clear, and in imperative mood
-   - Show the proposed message to user for confirmation
+   - **Do not use emojis** in commit messages
+   - Show the proposed message(s) to user for confirmation
    
-6. **Execute the commit**:
-   - Run `git commit -m "<generated message>"`
+6. **Execute the commit(s)**:
+   - Run `git commit -m "<generated message>"` for each logical commit
    - Display the commit hash and confirm success
    - Provide brief summary of what was committed
+
+## Commit Splitting
+
+- **Big changes**: Always split the work into multiple logical commits, one per concern (e.g., a refactor commit, a feature commit, a build commit). Each commit should be self-contained and buildable.
+- **Small changes**: If only small changes were made that serve a single purpose, use just 1 commit.
+- **Atomic commits**: Each commit should contain related changes that serve a single purpose
 
 ## Commit Message Guidelines
 
 When generating commit messages, follow these rules:
 
+- **No emojis**: Never prefix commit messages with emoji icons
 - **Atomic commits**: Each commit should contain related changes that serve a single purpose
 - **Imperative mood**: Write as commands (e.g., "add feature" not "added feature")
 - **Concise first line**: Keep under 72 characters
-- **Conventional format**: Use `<emoji> <type>: <description>` where type is one of:
+- **Conventional format**: Use `<type>(<scope>): <description>` where type is one of:
   - `feat`: A new feature
   - `fix`: A bug fix
   - `docs`: Documentation changes
@@ -54,101 +63,41 @@ When generating commit messages, follow these rules:
   - `refactor`: Code changes that neither fix bugs nor add features
   - `perf`: Performance improvements
   - `test`: Adding or fixing tests
+  - `build`: Changes to the build process, tools, etc.
+  - `ci`: CI/CD improvements
   - `chore`: Changes to the build process, tools, etc.
+  - `revert`: Reverting changes
+- **Scope**: The module or component (e.g., `vcs`, `ai-core`, `settings`). Omit when it adds no value.
 - **Present tense, imperative mood**: Write commit messages as commands (e.g., "add feature" not "added feature")
 - **Concise first line**: Keep the first line under 72 characters
-- **Emoji**: Each commit type is paired with an appropriate emoji:
-  - ✨ `feat`: New feature
-  - 🐛 `fix`: Bug fix
-  - 📝 `docs`: Documentation
-  - 💄 `style`: Formatting/style
-  - ♻️ `refactor`: Code refactoring
-  - ⚡️ `perf`: Performance improvements
-  - ✅ `test`: Tests
-  - 🔧 `chore`: Tooling, configuration
-  - 🚀 `ci`: CI/CD improvements
-  - 🗑️ `revert`: Reverting changes
-  - 🧪 `test`: Add a failing test
-  - 🚨 `fix`: Fix compiler/linter warnings
-  - 🔒️ `fix`: Fix security issues
-  - 👥 `chore`: Add or update contributors
-  - 🚚 `refactor`: Move or rename resources
-  - 🏗️ `refactor`: Make architectural changes
-  - 🔀 `chore`: Merge branches
-  - 📦️ `chore`: Add or update compiled files or packages
-  - ➕ `chore`: Add a dependency
-  - ➖ `chore`: Remove a dependency
-  - 🌱 `chore`: Add or update seed files
-  - 🧑‍💻 `chore`: Improve developer experience
-  - 🧵 `feat`: Add or update code related to multithreading or concurrency
-  - 🔍️ `feat`: Improve SEO
-  - 🏷️ `feat`: Add or update types
-  - 💬 `feat`: Add or update text and literals
-  - 🌐 `feat`: Internationalization and localization
-  - 👔 `feat`: Add or update business logic
-  - 📱 `feat`: Work on responsive design
-  - 🚸 `feat`: Improve user experience / usability
-  - 🩹 `fix`: Simple fix for a non-critical issue
-  - 🥅 `fix`: Catch errors
-  - 👽️ `fix`: Update code due to external API changes
-  - 🔥 `fix`: Remove code or files
-  - 🎨 `style`: Improve structure/format of the code
-  - 🚑️ `fix`: Critical hotfix
-  - 🎉 `chore`: Begin a project
-  - 🔖 `chore`: Release/Version tags
-  - 🚧 `wip`: Work in progress
-  - 💚 `fix`: Fix CI build
-  - 📌 `chore`: Pin dependencies to specific versions
-  - 👷 `ci`: Add or update CI build system
-  - 📈 `feat`: Add or update analytics or tracking code
-  - ✏️ `fix`: Fix typos
-  - ⏪️ `revert`: Revert changes
-  - 📄 `chore`: Add or update license
-  - 💥 `feat`: Introduce breaking changes
-  - 🍱 `assets`: Add or update assets
-  - ♿️ `feat`: Improve accessibility
-  - 💡 `docs`: Add or update comments in source code
-  - 🗃️ `db`: Perform database related changes
-  - 🔊 `feat`: Add or update logs
-  - 🔇 `fix`: Remove logs
-  - 🤡 `test`: Mock things
-  - 🥚 `feat`: Add or update an easter egg
-  - 🙈 `chore`: Add or update .gitignore file
-  - 📸 `test`: Add or update snapshots
-  - ⚗️ `experiment`: Perform experiments
-  - 🚩 `feat`: Add, update, or remove feature flags
-  - 💫 `ui`: Add or update animations and transitions
-  - ⚰️ `refactor`: Remove dead code
-  - 🦺 `feat`: Add or update code related to validation
-  - ✈️ `feat`: Improve offline support
 
 ## Reference: Good Commit Examples
 
 Use these as examples when generating commit messages:
-- ✨ feat: add user authentication system
-- 🐛 fix: resolve memory leak in rendering process
-- 📝 docs: update API documentation with new endpoints
-- ♻️ refactor: simplify error handling logic in parser
-- 🚨 fix: resolve linter warnings in component files
-- 🧑‍💻 chore: improve developer tooling setup process
-- 👔 feat: implement business logic for transaction validation
-- 🩹 fix: address minor styling inconsistency in header
-- 🚑️ fix: patch critical security vulnerability in auth flow
-- 🎨 style: reorganize component structure for better readability
-- 🔥 fix: remove deprecated legacy code
-- 🦺 feat: add input validation for user registration form
-- 💚 fix: resolve failing CI pipeline tests
-- 📈 feat: implement analytics tracking for user engagement
-- 🔒️ fix: strengthen authentication password requirements
-- ♿️ feat: improve form accessibility for screen readers
+- feat(app): add user authentication system
+- fix(renderer): resolve memory leak in rendering process
+- docs(api): update API documentation with new endpoints
+- refactor(parser): simplify error handling logic
+- fix(components): resolve linter warnings in component files
+- chore(tooling): improve developer tooling setup process
+- feat(vcs): implement business logic for transaction validation
+- fix(ui): address minor styling inconsistency in header
+- fix(auth): patch critical security vulnerability in auth flow
+- style(components): reorganize component structure for better readability
+- fix(legacy): remove deprecated legacy code
+- feat(validation): add input validation for user registration form
+- fix(ci): resolve failing CI pipeline tests
+- feat(analytics): implement analytics tracking for user engagement
+- fix(auth): strengthen authentication password requirements
+- feat(accessibility): improve form accessibility for screen readers
 
-Example commit sequence:
-- ✨ feat: add user authentication system
-- 🐛 fix: resolve memory leak in rendering process  
-- 📝 docs: update API documentation with new endpoints
-- ♻️ refactor: simplify error handling logic in parser
-- 🚨 fix: resolve linter warnings in component files
-- ✅ test: add unit tests for authentication flow
+Example commit sequence (big change, multiple logical commits):
+- refactor(config): migrate YAML persistence to Lua
+- feat(app): add GPUI frontend crate
+- build: unify GPUI dependencies
+
+Example commit sequence (small change, single commit):
+- fix(ui): correct button alignment in toolbar
 
 ## Agent Behavior Notes
 
