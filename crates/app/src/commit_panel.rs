@@ -1,4 +1,6 @@
 //! Commit panel — summary input, description, commit button.
+//!
+//! Rendered as a compact bottom strip below the file list and diff view.
 
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
@@ -50,74 +52,33 @@ impl Render for CommitPanel {
             .p_4()
             .gap_3()
             .child(
-                // Header
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(div().text_lg().font_bold().child("Commit"))
-                    .child(
-                        div()
-                            .text_sm()
-                            .child(format!("{} files changed", file_count)),
-                    ),
-            )
-            .child(
-                // Summary input
-                Input::new(&self.summary_input),
-            )
-            .child(
-                // Description textarea
-                div()
-                    .flex_1()
-                    .min_h(px(100.0))
-                    .rounded_md()
-                    .border_1()
-                    .p_2()
-                    .child(div().text_sm().child(if self.description.is_empty() {
-                        "Description (optional)".to_string()
-                    } else {
-                        self.description.clone()
-                    })),
-            )
-            .child(
-                // Options row
+                // Row 1: summary + description + commit
                 div()
                     .flex()
                     .items_center()
                     .gap_3()
                     .child(
-                        Checkbox::new("skip-hooks")
-                            .label("Skip hooks")
-                            .checked(self.skip_hooks)
-                            .on_change(cx.listener(|this, value, _, cx| {
-                                this.skip_hooks = *value;
-                                cx.notify();
-                            })),
+                        // Summary input
+                        div().flex_1().child(Input::new(&self.summary_input)),
                     )
                     .child(
-                        Button::new("co-authors")
-                            .ghost()
-                            .label("Co-authors")
-                            .disabled(true), // TODO
-                    ),
-            )
-            .child(
-                // Action buttons
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        Button::new("ai-generate")
-                            .ghost()
-                            .label("AI Generate")
-                            .disabled(!is_dirty)
-                            .on_click(cx.listener(|_this, _, _, _cx| {
-                                // TODO: AI generation
-                            })),
+                        // Description input (placeholder until Textarea is wired up)
+                        div()
+                            .flex_1()
+                            .h(px(32.0))
+                            .rounded_md()
+                            .border_1()
+                            .px_2()
+                            .flex()
+                            .items_center()
+                            .child(div().text_sm().text_color(gpui::rgb(0x8c959f)).child(
+                                if self.description.is_empty() {
+                                    "Description (optional)".to_string()
+                                } else {
+                                    self.description.clone()
+                                },
+                            )),
                     )
-                    .child(div().flex_1())
                     .child(
                         Button::new("commit-btn")
                             .primary()
@@ -142,6 +103,44 @@ impl Render for CommitPanel {
                                 });
                                 cx.notify();
                             })),
+                    ),
+            )
+            .child(
+                // Row 2: options + file count
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .child(
+                        Checkbox::new("skip-hooks")
+                            .label("Skip hooks")
+                            .checked(self.skip_hooks)
+                            .on_change(cx.listener(|this, value, _, cx| {
+                                this.skip_hooks = *value;
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Button::new("co-authors")
+                            .ghost()
+                            .label("Co-authors")
+                            .disabled(true), // TODO
+                    )
+                    .child(
+                        Button::new("ai-generate")
+                            .ghost()
+                            .label("AI Generate")
+                            .disabled(!is_dirty)
+                            .on_click(cx.listener(|_this, _, _, _cx| {
+                                // TODO: AI generation
+                            })),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(gpui::rgb(0x8c959f))
+                            .child(format!("{} files changed", file_count)),
                     ),
             )
     }

@@ -61,7 +61,7 @@ impl Render for FileTree {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .px_3()
+                    .px_4()
                     .py_2()
                     .border_b_1()
                     .child(
@@ -82,7 +82,7 @@ impl Render for FileTree {
                     .child(
                         div()
                             .text_sm()
-                            .font_bold()
+                            .text_color(gpui::rgb(0x8c959f))
                             .child(format!("{} files", file_count)),
                     ),
             )
@@ -103,7 +103,7 @@ impl Render for FileTree {
                             .items_center()
                             .gap_2()
                             .px_3()
-                            .py_1()
+                            .py_1_5()
                             .id(format!("file-row-{}", f.path))
                             .cursor_pointer()
                             .hover(|this| this.bg(gpui::rgb(0x8c959f)))
@@ -155,7 +155,7 @@ impl Render for FileTree {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .px_3()
+                    .px_4()
                     .py_2()
                     .border_t_1()
                     .child(

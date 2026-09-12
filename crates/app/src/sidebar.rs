@@ -39,33 +39,48 @@ impl Render for Sidebar {
             .flex_col()
             .size_full()
             .p_3()
-            .gap_3()
+            .gap_4()
             .overflow_hidden()
             .child(
                 // App title
-                div().text_lg().font_bold().child("LazyDesktop"),
+                div()
+                    .px_1()
+                    .py_1()
+                    .text_lg()
+                    .font_bold()
+                    .child("LazyDesktop"),
             )
             .child(
                 // Branches section
                 div()
                     .flex()
                     .flex_col()
+                    .gap_2()
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .justify_between()
+                            .px_2()
+                            .py_1()
+                            .rounded_md()
                             .id("branches-header")
                             .cursor_pointer()
+                            .hover(|this| this.bg(gpui::rgb(0x8c959f)))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.expanded_section = SidebarSection::Branches;
                                 cx.notify();
                             }))
                             .child(div().text_sm().font_bold().child("Branches"))
-                            .child(div().text_xs().child(format!("{}", branches.len()))),
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(gpui::rgb(0x8c959f))
+                                    .child(format!("{}", branches.len())),
+                            ),
                     )
                     .when(self.expanded_section == SidebarSection::Branches, |this| {
-                        this.child(div().flex().flex_col().gap_1().mt_2().children(
+                        this.child(div().flex().flex_col().gap_0p5().children(
                             branches.into_iter().map(|b| {
                                 let is_current = b.name == current;
                                 let branch_name = b.name.clone();
@@ -74,7 +89,7 @@ impl Render for Sidebar {
                                     .items_center()
                                     .gap_2()
                                     .px_2()
-                                    .py_1()
+                                    .py_1_5()
                                     .rounded_md()
                                     .id(format!("branch-{}", b.name))
                                     .when(is_current, |this| this.bg(gpui::rgb(0x0969da)))
@@ -94,27 +109,36 @@ impl Render for Sidebar {
                 div()
                     .flex()
                     .flex_col()
+                    .gap_2()
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .justify_between()
+                            .px_2()
+                            .py_1()
+                            .rounded_md()
                             .id("history-header")
                             .cursor_pointer()
+                            .hover(|this| this.bg(gpui::rgb(0x8c959f)))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.expanded_section = SidebarSection::History;
                                 cx.notify();
                             }))
                             .child(div().text_sm().font_bold().child("History"))
-                            .child(div().text_xs().child(format!("{}", history.len()))),
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(gpui::rgb(0x8c959f))
+                                    .child(format!("{}", history.len())),
+                            ),
                     )
                     .when(self.expanded_section == SidebarSection::History, |this| {
                         this.child(
                             div()
                                 .flex()
                                 .flex_col()
-                                .gap_1()
-                                .mt_2()
+                                .gap_0p5()
                                 .id("history-list")
                                 .overflow_y_scroll()
                                 .children(history.into_iter().map(|c| {
@@ -131,6 +155,7 @@ impl Render for Sidebar {
                                             div()
                                                 .text_xs()
                                                 .font_family("monospace")
+                                                .text_color(gpui::rgb(0x8c959f))
                                                 .child(c.hash.clone()),
                                         )
                                         .child(
