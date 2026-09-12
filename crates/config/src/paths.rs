@@ -38,7 +38,7 @@ pub fn data_dir() -> PathBuf {
 
 /// Resolve the default projects file path.
 pub fn projects_path() -> PathBuf {
-    config_dir().join("projects.yaml")
+    config_dir().join("projects.lua")
 }
 
 /// Resolve the default settings file path.
@@ -80,9 +80,9 @@ mod tests {
     }
 
     #[test]
-    fn projects_path_ends_with_yaml() {
+    fn projects_path_ends_with_lua() {
         let path = projects_path();
-        assert_eq!(path.extension().unwrap(), "yaml");
+        assert_eq!(path.extension().unwrap(), "lua");
     }
 
     #[test]
