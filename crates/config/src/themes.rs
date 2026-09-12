@@ -1,16 +1,28 @@
-//! Theme management: YAML-based theme definitions.
+//! Theme management: Lua-based theme definitions.
 //!
-//! Themes are YAML files in the themes directory with a `.theme.yaml`
+//! Themes are Lua files in the themes directory with a `.theme.lua`
 //! extension. Each theme defines a set of named colors.
+//!
+//! Example (`my-theme.theme.lua`):
+//! ```lua
+//! return {
+//!   name = "Dark",
+//!   colors = {
+//!     background = "#1e1e1e",
+//!     foreground = "#d4d4d4",
+//!     selection = "#264f78",
+//!   }
+//! }
+//! ```
 
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use mlua::Lua;
 
 /// A color theme for the application.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Theme {
     /// Display name of the theme.
     pub name: String,
@@ -19,17 +31,34 @@ pub struct Theme {
 }
 
 impl Theme {
-    /// Load a theme from a YAML file.
+    /// Load a theme from a Lua file.
     pub fn load(path: &Path) -> Result<Self, ThemeError> {
         let content = fs::read_to_string(path).map_err(|e| ThemeError::Io {
             path: path.display().to_string(),
             source: e,
         })?;
 
-        serde_yaml::from_str(&content).map_err(|e| ThemeError::Parse(e.to_string()))
+        Self::parse_lua(&content).map_err(|e| ThemeError::Parse(e.to_string()))
     }
 
-    /// Save a theme to a YAML file.
+    /// Parse a Lua string into a Theme.
+    fn parse_lua(lua_src: &str) -> Result<Self, mlua::Error> {
+        let lua = Lua::new();
+        let table: mlua::Table = lua.load(lua_src).eval()?;
+
+        let name = table.get::<String>("name")?;
+        let colors_table = table.get::<mlua::Table>("colors")?;
+
+        let mut colors = HashMap::new();
+        for pair in colors_table.pairs::<String, String>() {
+            let (key, value) = pair?;
+            colors.insert(key, value);
+        }
+
+        Ok(Self { name, colors })
+    }
+
+    /// Save a theme to a Lua file.
     pub fn save(&self, path: &Path) -> Result<(), ThemeError> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| ThemeError::Io {
@@ -38,12 +67,27 @@ impl Theme {
             })?;
         }
 
-        let content = serde_yaml::to_string(self).map_err(|e| ThemeError::Parse(e.to_string()))?;
+        let content = self.to_lua();
 
         fs::write(path, content).map_err(|e| ThemeError::Io {
             path: path.display().to_string(),
             source: e,
         })
+    }
+
+    /// Serialize to a Lua return statement.
+    fn to_lua(&self) -> String {
+        let entries: Vec<String> = self
+            .colors
+            .iter()
+            .map(|(k, v)| format!("  {} = \"{}\"", k, v))
+            .collect();
+
+        format!(
+            "return {{\n  name = \"{}\",\n  colors = {{\n{}\n  }}\n}}\n",
+            self.name.replace('\\', "\\\\").replace('"', "\\\""),
+            entries.join(",\n")
+        )
     }
 
     /// Get a color value by name.
@@ -68,7 +112,7 @@ pub fn scan_themes(dir: &Path) -> Vec<ThemeEntry> {
     if let Ok(read_dir) = fs::read_dir(dir) {
         for entry in read_dir.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("yaml")
+            if path.extension().and_then(|e| e.to_str()) == Some("lua")
                 && path
                     .file_stem()
                     .and_then(|s| s.to_str())
@@ -125,7 +169,7 @@ pub enum ThemeError {
         #[source]
         source: std::io::Error,
     },
-    #[error("parse error: {0}")]
+    #[error("lua parse error: {0}")]
     Parse(String),
 }
 
@@ -146,7 +190,7 @@ mod tests {
     #[test]
     fn save_and_load_roundtrip() {
         let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join("test.theme.yaml");
+        let path = tmp.path().join("test.theme.lua");
 
         let mut colors = HashMap::new();
         colors.insert("background".to_string(), "#000000".to_string());
@@ -162,6 +206,19 @@ mod tests {
     }
 
     #[test]
+    fn save_produces_valid_lua() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("test.theme.lua");
+
+        let theme = builtin_dark_theme();
+        theme.save(&path).unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.starts_with("return {"));
+        assert!(content.contains("name = \"Dark\""));
+    }
+
+    #[test]
     fn scan_themes_empty_dir() {
         let tmp = TempDir::new().unwrap();
         let entries = scan_themes(tmp.path());
@@ -171,7 +228,7 @@ mod tests {
     #[test]
     fn scan_themes_finds_valid_themes() {
         let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join("My Theme.theme.yaml");
+        let path = tmp.path().join("My Theme.theme.lua");
 
         let theme = builtin_dark_theme();
         theme.save(&path).unwrap();
@@ -184,8 +241,16 @@ mod tests {
     #[test]
     fn scan_themes_ignores_non_theme_files() {
         let tmp = TempDir::new().unwrap();
-        fs::write(tmp.path().join("not-a-theme.yaml"), "name: test\n").unwrap();
-        fs::write(tmp.path().join("also-not.theme.txt"), "name: test\n").unwrap();
+        fs::write(
+            tmp.path().join("not-a-theme.lua"),
+            "return { name = \"test\", colors = {} }\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.path().join("also-not.theme.txt"),
+            "return { name = \"test\", colors = {} }\n",
+        )
+        .unwrap();
 
         let entries = scan_themes(tmp.path());
         assert!(entries.is_empty());

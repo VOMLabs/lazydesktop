@@ -1,24 +1,34 @@
-//! Project management: recent projects list stored as YAML.
+//! Project management: recent projects list stored as Lua.
 //!
-//! The projects file is a YAML document with a `projects` key containing
-//! a sequence of absolute paths.
+//! The projects file is a Lua script returning a table with a `projects` key
+//! containing an array of absolute paths.
+//!
+//! Example (`projects.lua`):
+//! ```lua
+//! return {
+//!   projects = {
+//!     "/home/user/project1",
+//!     "/home/user/project2",
+//!   }
+//! }
+//! ```
 
 use std::fs;
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use mlua::Lua;
 
 /// Maximum number of recent projects to retain.
 pub const MAX_RECENT_PROJECTS: usize = 100;
 
 /// A persisted list of recent project paths.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct ProjectsFile {
     pub projects: Vec<String>,
 }
 
 impl ProjectsFile {
-    /// Load projects from a YAML file. Missing or corrupt files return an
+    /// Load projects from a Lua file. Missing or corrupt files return an
     /// empty list.
     pub fn load(path: &Path) -> Self {
         if !path.exists() {
@@ -30,10 +40,24 @@ impl ProjectsFile {
             Err(_) => return Self::default(),
         };
 
-        serde_yaml::from_str(&content).unwrap_or_default()
+        Self::parse_lua(&content).unwrap_or_default()
     }
 
-    /// Save projects to a YAML file.
+    /// Parse a Lua string into a ProjectsFile.
+    fn parse_lua(lua_src: &str) -> Result<Self, mlua::Error> {
+        let lua = Lua::new();
+        let table: mlua::Table = lua.load(lua_src).eval()?;
+
+        let projects = table
+            .get::<mlua::Table>("projects")?
+            .sequence_values::<String>()
+            .filter_map(Result::ok)
+            .collect();
+
+        Ok(Self { projects })
+    }
+
+    /// Save projects to a Lua file.
     pub fn save(&self, path: &Path) -> Result<(), ProjectError> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| ProjectError::Io {
@@ -42,13 +66,26 @@ impl ProjectsFile {
             })?;
         }
 
-        let content =
-            serde_yaml::to_string(self).map_err(|e| ProjectError::Serialize(e.to_string()))?;
+        let content = self.to_lua();
 
         fs::write(path, content).map_err(|e| ProjectError::Io {
             path: path.display().to_string(),
             source: e,
         })
+    }
+
+    /// Serialize to a Lua return statement.
+    fn to_lua(&self) -> String {
+        let entries: Vec<String> = self
+            .projects
+            .iter()
+            .map(|p| format!("  \"{}\"", p.replace('\\', "\\\\").replace('"', "\\\"")))
+            .collect();
+
+        format!(
+            "return {{\n  projects = {{\n{}\n  }}\n}}\n",
+            entries.join(",\n")
+        )
     }
 }
 
@@ -64,14 +101,14 @@ impl RecentProjects {
         Self { paths: Vec::new() }
     }
 
-    /// Load from a YAML file.
+    /// Load from a Lua file.
     pub fn load(path: &Path) -> Self {
         Self {
             paths: ProjectsFile::load(path).projects,
         }
     }
 
-    /// Save to a YAML file.
+    /// Save to a Lua file.
     pub fn save(&self, path: &Path) -> Result<(), ProjectError> {
         let file = ProjectsFile {
             projects: self.paths.clone(),
@@ -132,8 +169,8 @@ pub enum ProjectError {
         #[source]
         source: std::io::Error,
     },
-    #[error("serialization error: {0}")]
-    Serialize(String),
+    #[error("lua parse error: {0}")]
+    Parse(String),
 }
 
 #[cfg(test)]
@@ -143,14 +180,14 @@ mod tests {
 
     #[test]
     fn load_missing_file() {
-        let projects = RecentProjects::load(Path::new("/nonexistent/projects.yaml"));
+        let projects = RecentProjects::load(Path::new("/nonexistent/projects.lua"));
         assert!(projects.is_empty());
     }
 
     #[test]
     fn save_and_load_roundtrip() {
         let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join("projects.yaml");
+        let path = tmp.path().join("projects.lua");
 
         let mut projects = RecentProjects::new();
         projects.add("/home/user/project1");
@@ -161,6 +198,20 @@ mod tests {
         assert_eq!(loaded.len(), 2);
         assert_eq!(loaded.paths()[0], "/home/user/project2");
         assert_eq!(loaded.paths()[1], "/home/user/project1");
+    }
+
+    #[test]
+    fn save_produces_valid_lua() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("projects.lua");
+
+        let mut projects = RecentProjects::new();
+        projects.add("/a/path");
+        projects.save(&path).unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.starts_with("return {"));
+        assert!(content.contains("\"/a/path\""));
     }
 
     #[test]
