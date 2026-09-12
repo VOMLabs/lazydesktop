@@ -3,6 +3,10 @@
 LazyDesktop tracks the repositories you work on in a recent-projects list,
 stored in `~/.config/lazydesktop/projects.yaml`.
 
+> **Note:** the bundled Rust `config` crate (used by the in-development GPUI
+> frontend) persists the list as `projects.lua` instead. The Qt UI still uses
+> YAML.
+
 ## The Add Project dropdown
 
 The drawer button in the top-left opens the recent-projects drawer with an

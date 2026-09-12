@@ -3,6 +3,11 @@
 This page describes how LazyDesktop is put together at a high level. For a
 file-by-file tour, see [source layout](source-layout.md).
 
+> **Note:** the shipped UI is the Qt 6 Widgets application described below. A
+> pure-Rust frontend built on GPUI (`crates/app`) is in development and will
+> replace the Qt UI; see [GPUI frontend](#gpui-frontend-cratesapp) at the end
+> of this page.
+
 ## Overview
 
 ```
@@ -74,8 +79,12 @@ tracked through JSON sidecar files.
 ### Persistence layer
 
 - `QSettings` (INI) for application settings
-- yaml-cpp for `projects.yaml` and custom themes
+- yaml-cpp for `projects.yaml` and custom themes (Qt UI)
 - Raw GGUF files for local models
+
+The bundled Rust `config` crate (used by the GPUI frontend) persists projects
+and themes as Lua (`projects.lua`, `*.theme.lua`) via `mlua` and exposes the
+same data over a C ABI (`config.h`).
 
 ## Key design decisions
 
@@ -115,3 +124,37 @@ checked files → diff
 
 See the [implementation details](../../IMPLEMENTATION.md) for the full
 technical deep-dive.
+
+## GPUI frontend (`crates/app`)
+
+The in-development frontend replaces the Qt UI with a pure-Rust application
+built on **GPUI** (Zed's UI framework, via the `gpui-pre` crate). It shares
+the same layered design:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     App (root view)                     │
+│  ┌──────────┐  ┌──────────────┐  ┌───────────────────┐  │
+│  │ Toolbar  │  │  Sidebar     │  │  Main content     │  │
+│  │ - Branch │  │  - Changes   │  │  - File tree      │  │
+│  │ - Push   │  │  - History   │  │  - Diff view      │  │
+│  └──────────┘  └──────────────┘  └───────────────────┘  │
+│  Commit panel (bottom strip)                            │
+├─────────────────────────────────────────────────────────┤
+│  Backend crates (Rust)                                  │
+│  - git_cmd (git CLI)   - config (Lua persistence)       │
+│  - watcher (fs watch)  - ai_core (local inference)      │
+│  - vcs_core (SSH/remotes)                               │
+└─────────────────────────────────────────────────────────┘
+```
+
+Key differences from the Qt UI:
+
+- **No C ABI boundary** — the frontend consumes the backend crates
+  (`config`, `git_cmd`, `watcher`, `ai_core`, `vcs_core`) directly as Rust
+  libraries instead of through staticlib FFI.
+- **GPUI idioms** — views are `Entity<T>` with `cx.notify()`-driven
+  re-renders; inputs use the `InputState` pattern; styling follows a 4px
+  spacing scale (`gap_1` … `gap_6`).
+- **Same Git model** — Git operations still shell out to the `git` CLI
+  (via `git_cmd`), with SSH/remote handling native in `vcs_core`.

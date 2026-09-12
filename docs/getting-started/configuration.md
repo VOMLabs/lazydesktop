@@ -11,6 +11,10 @@ All persistent data lives under `~/.config/lazydesktop/`.
 | `~/.config/lazydesktop/themes/*.theme.yaml` | YAML | Custom theme definitions |
 | `~/.config/lazydesktop/models/` | GGUF | Downloaded local AI models |
 
+> **Note:** the bundled Rust `config` crate (used by the in-development GPUI
+> frontend) persists projects and themes as Lua (`projects.lua`,
+> `*.theme.lua`). The Qt UI still reads YAML directly.
+
 The data paths themselves can be changed in **Settings → General**.
 
 ## Settings reference

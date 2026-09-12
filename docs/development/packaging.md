@@ -44,10 +44,10 @@ appimagetool.
 The script runs `dpkg-buildpackage -us -uc -b` using the `debian/` directory.
 Install with `sudo dpkg -i lazydesktop_*.deb`.
 
-> **Caveat:** `debian/rules` still uses the Meson build system
-> (`--buildsystem=meson`), and no `meson.build` is currently in the tree.
-> The XMake migration (see the [roadmap](../../ROADMAP.md)) should update the
-> packaging scripts before they are used to build source packages.
+> **Caveat:** `debian/rules` uses the Meson build system
+> (`--buildsystem=meson`) against the `meson.build` in the tree root. The
+> packaging scripts build the C++ app and the bundled Rust crates via
+> `cargo build --workspace` + `meson setup` + `ninja`.
 
 ## Arch Linux .pkg.tar.zst
 
@@ -79,7 +79,7 @@ See the [Docker guide](../getting-started/docker.md) for running instructions.
 ## CI / release automation
 
 Tagging the repository with `v*` triggers `.github/workflows/release.yml`,
-which builds the release binary with XMake and packages:
+which builds the release binary with Cargo + Meson/Ninja and packages:
 
 - **Linux**: `.deb` + `.AppImage` (ubuntu-24.04)
 - **Arch**: `.pkg.tar.zst` (archlinux container)
@@ -91,10 +91,10 @@ as **prereleases** when the tag contains a pre-release segment (for example
 `v0.2.0-beta.1`); stable tags (e.g. `v0.2.0`) are published as full
 releases. See [release process](../release-process.md).
 
-> **Note:** the release workflow builds with XMake and does not use the
-> Meson-based local packaging scripts. The Windows `.msi` packages the
-> executable and base Qt plugins; bundling all Qt runtime DLLs via
-> `windeployqt` is planned.
+> **Note:** the release workflow builds with Cargo + Meson/Ninja, matching
+> the local packaging scripts. The Windows `.msi` packages the executable
+> and base Qt plugins; bundling all Qt runtime DLLs via `windeployqt` is
+> planned.
 
 ## Requirements for local release builds
 

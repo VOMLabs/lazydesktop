@@ -18,6 +18,10 @@ Drop a `.theme.yaml` file into `~/.config/lazydesktop/themes/` to add a new
 theme option. The theme appears in Settings → Appearance after you restart
 the app or reopen the settings dialog.
 
+> **Note:** the bundled Rust `config` crate (used by the in-development GPUI
+> frontend) reads themes from `*.theme.lua` files instead. The Qt UI still
+> uses YAML.
+
 ### Format
 
 ```yaml
