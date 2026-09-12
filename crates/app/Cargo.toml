@@ -1,0 +1,30 @@
+[package]
+name = "lazydesktop-app"
+version = "0.3.0"
+edition = "2021"
+description = "LazyDesktop GPUI frontend — native Git GUI for KDE Plasma"
+
+[[bin]]
+name = "lazydesktop"
+path = "src/main.rs"
+
+[dependencies]
+# GPUI component kit (re-exports gpui types we need)
+gpui-component = { git = "https://github.com/longbridge/gpui-component", branch = "main" }
+
+# Backend crates (direct calls, no FFI)
+lazydesktop-git-cmd = { path = "../git_cmd" }
+lazydesktop-config = { path = "../config" }
+lazydesktop-watcher = { path = "../watcher" }
+
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+
+# Utilities
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# GPUI (gpui-pre fork, same distribution gpui-component uses)
+gpui = { package = "gpui-pre", version = "0.3" }
+# GPUI platform backend (entry point for native apps)
+gpui_platform = { package = "gpui-pre-platform", version = "0.3", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }

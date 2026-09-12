@@ -5,7 +5,7 @@ edition = "2021"
 description = "LazyDesktop file watcher: typed VCS-aware filesystem events with debouncing."
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "rlib"]
 name = "watcher"
 
 [dependencies]
