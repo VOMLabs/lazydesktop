@@ -45,3 +45,5 @@ ui_*.h
 # ── Temporary / session files ──────────────────────────────────────
 .tmp/
 .moon/cache/
+#_______________
+/.vscode/
