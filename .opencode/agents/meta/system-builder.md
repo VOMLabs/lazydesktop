@@ -237,7 +237,7 @@ temperature: 0.2
           - validation_report (quality scores for each agent)
         </expected_return>
         <integration>
-          Write agent files to .opencode/agent/ directory structure
+          Write agent files to .opencode/agents/ directory structure
         </integration>
       </route>
     </routing>
@@ -326,7 +326,7 @@ temperature: 0.2
           - command_usage_guide (how to use each command)
         </expected_return>
         <integration>
-          Write command files to .opencode/command/ directory
+          Write command files to .opencode/commands/ directory
         </integration>
       </route>
     </routing>
@@ -542,7 +542,7 @@ temperature: 0.2
       cat .opencode/README.md
       
       # Review your orchestrator
-      cat .opencode/agent/{domain}-orchestrator.md
+      cat .opencode/agents/{domain}-orchestrator.md
       ```
       
       **2. Test Your First Command**:

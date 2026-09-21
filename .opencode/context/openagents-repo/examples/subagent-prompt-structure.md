@@ -270,8 +270,8 @@ Before deploying optimized prompt:
 - **Result**: Test passed (was failing with 0 tool calls)
 
 **Files**:
-- Optimized: `.opencode/agent/subagents/core/contextscout.md`
-- Backup: (example: `.opencode/agent/ContextScout-original-backup.md`)
+- Optimized: `.opencode/agents/subagents/core/contextscout.md`
+- Backup: (example: `.opencode/agents/ContextScout-original-backup.md`)
 
 ---
 
@@ -281,4 +281,4 @@ Before deploying optimized prompt:
 - `guides/testing-subagents.md` - Verify tool usage works
 - `errors/tool-permission-errors.md` - Fix tool issues
 
-**Reference**: `.opencode/command/prompt-engineering/prompt-optimizer.md` (optimization principles)
+**Reference**: `.opencode/commands/prompt-engineering/prompt-optimizer.md` (optimization principles)

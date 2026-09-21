@@ -269,7 +269,7 @@ cat .tmp/sessions/{session-id}/events.json | jq
 
 ```bash
 # 1. Create agent file
-touch .opencode/agent/{category}/{agent-name}.md
+touch .opencode/agents/{category}/{agent-name}.md
 # (Add frontmatter and content)
 
 # 2. Create test structure

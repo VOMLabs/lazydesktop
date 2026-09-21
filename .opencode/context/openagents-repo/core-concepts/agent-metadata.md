@@ -48,7 +48,7 @@ Extra inputs are not permitted, field: 'type', value: 'core'
 
 ### After (Clean Separation)
 
-**Agent frontmatter** (`.opencode/agent/core/opencoder.md`):
+**Agent frontmatter** (`.opencode/agents/core/opencoder.md`):
 ```yaml
 ---
 # Metadata stored in: .opencode/config/agent-metadata.json
@@ -196,7 +196,7 @@ When creating a new agent:
 
 ```bash
 # Create agent file
-touch .opencode/agent/category/my-agent.md
+touch .opencode/agents/category/my-agent.md
 ```
 
 ```yaml
@@ -277,7 +277,7 @@ The registry.json entry contains merged data:
   "id": "opencoder",
   "name": "OpenCoder",
   "type": "agent",
-  "path": ".opencode/agent/core/opencoder.md",
+  "path": ".opencode/agents/core/opencoder.md",
   "description": "Orchestration agent for complex coding...",
   "category": "core",
   "tags": ["development", "coding", "implementation"],
@@ -297,7 +297,7 @@ The registry.json entry contains merged data:
 
 ```bash
 # 1. Create agent file (OpenCode-compliant frontmatter only)
-vim .opencode/agent/category/my-agent.md
+vim .opencode/agents/category/my-agent.md
 
 # 2. Add metadata entry
 vim .opencode/config/agent-metadata.json
@@ -314,7 +314,7 @@ vim .opencode/config/agent-metadata.json
 **To update OpenCode configuration** (tools, permissions, temperature):
 ```bash
 # Edit agent file frontmatter
-vim .opencode/agent/category/my-agent.md
+vim .opencode/agents/category/my-agent.md
 ```
 
 **To update registry metadata** (tags, dependencies, version):
@@ -403,7 +403,7 @@ permission:
 **Migration Steps**:
 1. Find all agents using `permissions:` (plural)
    ```bash
-   grep -r "^permissions:" .opencode/agent/
+   grep -r "^permissions:" .opencode/agents/
    ```
 
 2. Replace with `permission:` (singular) in each file
@@ -419,7 +419,7 @@ permission:
 
 ```bash
 # Find agents with invalid OpenCode fields
-grep -r "^id:\|^name:\|^category:\|^type:\|^version:\|^author:\|^tags:\|^dependencies:" .opencode/agent/
+grep -r "^id:\|^name:\|^category:\|^type:\|^version:\|^author:\|^tags:\|^dependencies:" .opencode/agents/
 ```
 
 **Step 2**: Extract metadata to `agent-metadata.json`
@@ -498,7 +498,7 @@ jq 'del(.components.agents[] | select(.id == "agent-id"))' registry.json > tmp.j
 
 ```bash
 # 1. Edit agent file - remove id, name, category, type, version, author, tags, dependencies
-vim .opencode/agent/category/agent.md
+vim .opencode/agents/category/agent.md
 
 # 2. Add to metadata file
 vim .opencode/config/agent-metadata.json

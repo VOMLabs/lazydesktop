@@ -798,7 +798,7 @@ task(
     <stage_4_execute>
       Decision: Simple task → Execute directly (Step 4C)
       
-      1. Create .opencode/agent/data/data-analyst.md:
+      1. Create .opencode/agents/data/data-analyst.md:
          - Add proper frontmatter
          - Write agent prompt
          - Follow modular patterns
