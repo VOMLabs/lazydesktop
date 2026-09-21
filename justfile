@@ -49,12 +49,20 @@ test-crate crate:
     cargo test -p {{ crate }}
 
 # ─── Run ─────────────────────────────────────────────────────────
-# Build and run the debug binary
-run: build
+# Build and run the GPUI app (debug)
+run:
+    cargo run -p lazydesktop-app
+
+# Build and run the GPUI app (release)
+run-release:
+    cargo run -p lazydesktop-app --release
+
+# Build and run the Qt/C++ app (legacy, debug)
+run-qt: build
     {{ binary }}
 
-# Build and run the release binary
-run-release: build-release
+# Build and run the Qt/C++ app (legacy, release)
+run-qt-release: build-release
     {{ binary_release }}
 
 # ─── Quality ─────────────────────────────────────────────────────
