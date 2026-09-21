@@ -18,7 +18,7 @@ OpenCode plugins are JavaScript or TypeScript modules that hook into **25+ event
 ## Plugin Registration
 
 OpenCode looks for plugins in:
-1. **Project-level**: `.opencode/plugin/` (project root)
+1. **Project-level**: `.opencode/plugins/` (project root)
 2. **Global**: `~/.config/opencode/plugin/` (home directory)
 
 ## Basic Structure

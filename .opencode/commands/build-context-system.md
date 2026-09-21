@@ -640,7 +640,7 @@ description: "Interactive system builder that creates complete context-aware AI 
       ```
       
       **3. Review Your Orchestrator**:
-      - Open: `.opencode/agent/{domain}-orchestrator.md`
+      - Open: `.opencode/agents/{domain}-orchestrator.md`
       - Review routing logic and workflows
       - Understand context allocation strategy
       

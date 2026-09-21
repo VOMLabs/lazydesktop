@@ -14,8 +14,8 @@ When the user runs this command, execute the following workflow:
    - If user provides $ARGUMENTS (a simple message), skip to step 3
 
 2. **Run pre-commit validation**:
-   - Execute `pnpm lint` and report any issues
-   - Execute `pnpm build` and ensure it succeeds
+   - Execute `just lint` and report any issues
+   - Execute `just build` and ensure it succeeds
    - If either fails, ask user if they want to proceed anyway or fix issues first
    
 3. **Analyze git status**:

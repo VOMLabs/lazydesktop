@@ -63,9 +63,9 @@ Before working on this repo, understand these 4 systems:
 ## Essential Paths (Top 15)
 
 ```
-.opencode/agent/core/                    # Core agents (openagent, opencoder)
-.opencode/agent/{category}/              # Category agents
-.opencode/agent/subagents/               # Subagents
+.opencode/agents/core/                    # Core agents (openagent, opencoder)
+.opencode/agents/{category}/              # Category agents
+.opencode/agents/subagents/               # Subagents
 evals/agents/{category}/{agent}/         # Agent tests
 evals/framework/src/                     # Eval framework code
 registry.json                            # Component catalog
@@ -74,7 +74,7 @@ scripts/registry/validate-registry.sh    # Validate registry
 scripts/registry/auto-detect-components.sh # Auto-detect components
 scripts/validation/validate-test-suites.sh # Validate tests
 .opencode/context/                       # Context files
-.opencode/command/                       # Slash commands
+.opencode/commands/                       # Slash commands
 docs/                                    # Documentation
 VERSION                                  # Current version
 package.json                             # Node dependencies

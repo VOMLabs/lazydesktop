@@ -66,8 +66,8 @@ Validates consistency between:
     - `context:` (dependency declarations in frontmatter)
     
     **Locations**:
-    - `.opencode/agent/**/*.md` (all agents and subagents)
-    - `.opencode/command/**/*.md` (commands that use context)
+    - `.opencode/agents/**/*.md` (all agents and subagents)
+    - `.opencode/commands/**/*.md` (commands that use context)
     
     **Extract**:
     - Agent/command ID
@@ -229,17 +229,17 @@ Validates consistency between:
 
 **Find direct path references**:
 ```bash
-grep -rn "\.opencode/context/" .opencode/agent/ .opencode/command/
+grep -rn "\.opencode/context/" .opencode/agents/ .opencode/commands/
 ```
 
 **Find @ references**:
 ```bash
-grep -rn "@\.opencode/context/" .opencode/agent/ .opencode/command/
+grep -rn "@\.opencode/context/" .opencode/agents/ .opencode/commands/
 ```
 
 **Find dependency declarations**:
 ```bash
-grep -rn "^\s*-\s*context:" .opencode/agent/ .opencode/command/
+grep -rn "^\s*-\s*context:" .opencode/agents/ .opencode/commands/
 ```
 
 ### Path Normalization
@@ -281,8 +281,8 @@ task(
     
     TASK:
     1. Use grep to find all references to context files in:
-       - .opencode/agent/**/*.md
-       - .opencode/command/**/*.md
+       - .opencode/agents/**/*.md
+       - .opencode/commands/**/*.md
     
     2. Search for these patterns:
        - ".opencode/context/core/" (direct paths)

@@ -1,3 +1,18 @@
+> **OpenCode V2 status (2026-09)**
+>
+> This `.opencode/` directory is validated for **OpenCode V2** and uses the
+> V2-preferred layout: `agents/`, `commands/`, `skills/`, `plugins/`, `context/`.
+>
+> - **Plugins** (`plugins/notify.ts`, `plugins/gemini/`) are ported to the V2
+>   plugin API (`Plugin.define` + `setup(ctx)` + `ctx.tool.transform()`).
+> - **Local plugin config** lives in `.opencode/opencode.json`.
+> - **API keys**: copy `env.example` to `.env` (`GEMINI_API_KEY` for the Gemini
+>   image tools).
+>
+> The binder content below documents the vendored **OpenAgents Control (OAC)**
+> framework this directory is based on; the file-based agents, commands, and
+> context it ships remain compatible with OpenCode V2.
+
 <div align="center">
 
 ![OpenAgents Control Hero](docs/images/hero-image.png)
@@ -336,7 +351,7 @@ Before generating code, ContextScout discovers relevant patterns from your conte
 **2. Editable Agents - Full Control**  
 Unlike Cursor/Copilot where behavior is baked into plugins, OAC agents are markdown files. Edit them directly:
 ```bash
-nano .opencode/agent/core/opencoder.md  # local project install
+nano .opencode/agents/core/opencoder.md  # local project install
 # Or: nano ~/.config/opencode/agent/core/opencoder.md  # global install
 # Add project rules, change workflows, customize behavior
 ```
@@ -586,7 +601,7 @@ Approve? [y/n]
 
 Edit agent files directly:
 ```bash
-nano .opencode/agent/core/opencoder.md  # local project install
+nano .opencode/agents/core/opencoder.md  # local project install
 # Or: nano ~/.config/opencode/agent/core/opencoder.md  # global install
 ```
 
@@ -715,7 +730,7 @@ A: MVI principle: Only load what's needed, when it's needed. Context files <200 
 A: Smart pattern discovery agent. Finds relevant context files before code generation. Ranks by priority. Prevents wasted work.
 
 **Q: Can I edit agent behavior?**  
-A: Yes! Agents are markdown files. Edit them directly: `nano .opencode/agent/core/opencoder.md` (local) or `nano ~/.config/opencode/agent/core/opencoder.md` (global)
+A: Yes! Agents are markdown files. Edit them directly: `nano .opencode/agents/core/opencoder.md` (local) or `nano ~/.config/opencode/agent/core/opencoder.md` (global)
 
 **Q: How do approval gates work?**  
 A: Agents ALWAYS request approval before execution (write/edit/bash). You review plans before implementation. No surprises.

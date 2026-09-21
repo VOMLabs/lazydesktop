@@ -1,0 +1,8 @@
+{
+  "name": "lazydesktop-opencode",
+  "private": true,
+  "description": "Local OpenCode V2 plugins for the LazyDesktop repo (.opencode/plugins).",
+  "dependencies": {
+    "@opencode/plugin": "2.0.12"
+  }
+}

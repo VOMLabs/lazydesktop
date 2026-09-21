@@ -13,7 +13,6 @@
       "tags": ["universal", "coordination", "primary"],
       "dependencies": [
         "subagent:task-manager",
-        "subagent:batch-executor",
         "subagent:documentation",
         "subagent:contextscout",
         "subagent:externalscout",
@@ -36,9 +35,8 @@
       "dependencies": [
         "subagent:documentation",
         "subagent:task-manager",
-        "subagent:batch-executor",
         "subagent:coder-agent",
-        "subagent:tester",
+        "subagent:test-engineer",
         "subagent:reviewer",
         "subagent:build-agent",
         "subagent:contextscout",
@@ -62,7 +60,7 @@
         "subagent:contextscout",
         "subagent:documentation",
         "subagent:coder-agent",
-        "subagent:tester",
+        "subagent:test-engineer",
         "subagent:reviewer",
         "subagent:build-agent"
       ]
@@ -141,19 +139,6 @@
         "context:task-delegation-basics"
       ]
     },
-    "batch-executor": {
-      "id": "batch-executor",
-      "name": "BatchExecutor",
-      "category": "subagents/core",
-      "type": "subagent",
-      "version": "1.0.0",
-      "author": "opencode",
-      "tags": ["parallel-execution", "batch-management", "coordination"],
-      "dependencies": [
-        "subagent:coder-agent",
-        "subagent:task-manager"
-      ]
-    },
     "documentation": {
       "id": "documentation",
       "name": "DocWriter",
@@ -186,16 +171,6 @@
       "tags": ["external", "documentation", "search"],
       "dependencies": []
     },
-    "context-manager": {
-      "id": "context-manager",
-      "name": "ContextManager",
-      "category": "subagents/core",
-      "type": "subagent",
-      "version": "1.0.0",
-      "author": "opencode",
-      "tags": ["context", "management", "organization"],
-      "dependencies": []
-    },
     "context-retriever": {
       "id": "context-retriever",
       "name": "Context Retriever",
@@ -218,9 +193,9 @@
         "context:standards-code"
       ]
     },
-    "tester": {
-      "id": "tester",
-      "name": "TestEngineer",
+    "test-engineer": {
+      "id": "test-engineer",
+      "name": "Test Engineer",
       "category": "subagents/code",
       "type": "subagent",
       "version": "1.0.0",
@@ -333,16 +308,6 @@
       "version": "1.0.0",
       "author": "opencode",
       "tags": ["images", "editing", "generation"],
-      "dependencies": []
-    },
-    "simple-responder": {
-      "id": "simple-responder",
-      "name": "Simple Responder",
-      "category": "subagents/test",
-      "type": "subagent",
-      "version": "1.0.0",
-      "author": "opencode",
-      "tags": ["testing", "evaluation"],
       "dependencies": []
     }
   },
