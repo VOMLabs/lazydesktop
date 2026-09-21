@@ -7,7 +7,7 @@ use gpui_component::*;
 
 use crate::commit_panel::CommitPanel;
 use crate::diff_view::DiffView;
-use crate::file_tree::FileTree;
+use crate::file_tree::{FileTree, FileTreeEvent};
 use crate::git_service::GitService;
 use crate::sidebar::Sidebar;
 
@@ -24,8 +24,16 @@ impl LazyDesktopApp {
         let git_service = cx.new(|_| GitService::new(std::path::PathBuf::new()));
         let sidebar = cx.new(|cx| Sidebar::new(git_service.clone(), cx));
         let file_tree = cx.new(|cx| FileTree::new(git_service.clone(), cx));
-        let diff_view = cx.new(DiffView::new);
+        let diff_view = cx.new(|cx| DiffView::new(git_service.clone(), cx));
         let commit_panel = cx.new(|cx| CommitPanel::new(window, git_service.clone(), cx));
+
+        // Selecting a file in the tree shows its diff.
+        cx.subscribe(&file_tree, |this, _emitter, event: &FileTreeEvent, cx| {
+            let FileTreeEvent::FileSelected(path) = event;
+            this.diff_view
+                .update(cx, |view, cx| view.set_file(path.clone(), cx));
+        })
+        .detach();
 
         Self {
             sidebar,
