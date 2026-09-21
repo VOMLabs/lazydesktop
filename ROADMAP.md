@@ -1,12 +1,13 @@
 # Roadmap
 
 > **Current status (v0.3 era):** v0.2 is **tagged and released**. The backend
-> is now mostly Rust — six crates form a single Cargo workspace: `ai_core`
+> is now entirely Rust — seven crates form a single Cargo workspace: `ai_core`
 > (GGUF inference), `vcs_core` (SSH + remotes), `addons` (security core),
-> `watcher` (VCS-aware file monitoring), `config` (settings/projects/themes),
-> and `git_cmd` (Git/Jujutsu CLI execution). The C++/Qt layer is thinning —
-> only the UI shell and signal routing remain in `mainwindow.cpp`. **The active
-> milestone is v0.3 (Short Term).**
+> `watcher` (VCS-aware file monitoring), `config` (settings/projects/themes,
+> now Lua-backed), `git_cmd` (Git/Jujutsu CLI execution), and `app` (the new
+> GPUI frontend, in development). The C++/Qt app in `src/` remains the shipped
+> UI while `crates/app` reaches feature parity. **The active milestone is v0.3
+> (Short Term), with the v1.0 GPUI migration under way.**
 
 ---
 
@@ -72,20 +73,25 @@
 
 - [x] **File watcher crate** (`watcher`) — VCS-aware filesystem monitoring
       with typed events and debouncing (10 tests passing)
-- [x] **Configuration crate** (`config`) — INI settings, YAML projects/themes
-      without Qt dependency (30 tests passing)
+- [x] **Configuration crate** (`config`) — INI settings plus Lua
+      projects/themes/settings, no Qt dependency (32 tests passing; YAML
+      persistence migrated to Lua in `484b683`)
 - [x] **Git/Jujutsu CLI crate** (`git_cmd`) — Typed wrappers for `git status`,
       `git log`, `git branches`, `git diff`, and Jujutsu equivalents
       (7 tests passing)
 - [x] **Addons security core** (`addons`) — Archive parsing, manifest
       validation, path security enforcement (77 tests passing)
-- [x] **Cargo workspace** — All 6 Rust crates unified in a single workspace
-- [ ] **Switch C++ bridges to new crates** — Replace QProcess calls in
-      `mainwindow.cpp` with `git_cmd` FFI, replace QFileSystemWatcher with
-      `watcher` FFI, replace settings load/save with `config` FFI
+- [x] **Cargo workspace** — All 7 Rust crates unified in a single workspace
+- [x] **GPUI frontend crate** (`app`) — first native Rust UI port using
+      `gpui-component` (window, sidebar, file tree with staging checkboxes,
+      commit panel, diff placeholder); calls `git_cmd` directly
+- [ ] **Switch C++ bridges to new crates** — superseded by the GPUI
+      migration: `crates/app` already calls `git_cmd` (plus `config` and
+      `watcher` deps), so the Qt app is retired rather than bridged
 - [ ] **Remove obsolete C++ code** — Delete inline git/status parsing from
       `mainwindow.cpp`, remove QFileSystemWatcher setup, simplify
-      `model_manager_bridge` / `vcs_bridge` / `addon_bridge`
+      `model_manager_bridge` / `vcs_bridge` / `addon_bridge` (do this once
+      the GPUI frontend reaches feature parity)
 
 ### Git Features
 
@@ -121,6 +127,17 @@
 - [x] **Unify packaging on the Meson build** — `debian/rules`, `PKGBUILD`,
       and `install/windows/build-msi.bat` all build with Meson/Ninja + Cargo
       (no build-system drift)
+
+### Tooling & Developer Experience
+
+- [x] **`.opencode/` validated for OpenCode V2** — agents/commands moved to
+      the V2-preferred `agents/` + `commands/` dirs, plugins ported to the V2
+      plugin API (`notify`, `gemini` image tools) with `@opencode/plugin`
+      added to `.opencode/package.json`, `opencode.json(c)` config added, and
+      stale OAC metadata repaired (verified: both plugins load cleanly)
+- [ ] **Refresh OpenCode skills for GPUI** — replace the Qt/QML-era `qt-*`
+      skills with GPUI/Rust equivalents as `crates/app` becomes the shipped
+      UI
 
 ## v0.4 — Medium Term
 
@@ -191,9 +208,10 @@
 ## v1.0 — Pure Rust + GPUI Frontend
 
 > **Status:** Replace the Qt Widgets C++23 UI entirely with a native Rust
-> frontend built on GPUI (the editor framework from Zed). Reuses all six
-> existing Rust backend crates directly — no FFI needed. Drops the C++/Meson
-> build chain so the entire application builds with a single Cargo workspace.
+> frontend built on GPUI (the editor framework from Zed). The `crates/app`
+> port is **in development** and already reuses the seven existing Rust
+> crates directly — no FFI needed. Drops the C++/Meson build chain so the
+> entire application builds with a single Cargo workspace.
 
 ### Why GPUI over Slint
 
@@ -243,7 +261,7 @@ reusing battle-tested primitives for everything else.
 
 ### Workspace & Toolchain Consolidation
 
-- [ ] Convert repository to a unified Cargo workspace (`crates/app`,
+- [x] Convert repository to a unified Cargo workspace (`crates/app`,
       `crates/ai_core`, `crates/vcs_core`, `crates/watcher`,
       `crates/config`, `crates/git_cmd`, `crates/addons`)
 - [ ] Remove the Meson/Ninja C++ build, GCC/Clang dependencies, and C++23
@@ -253,26 +271,65 @@ reusing battle-tested primitives for everything else.
 
 ### Frontend & UI Layer (GPUI)
 
-- [ ] Implement main window layout in GPUI using `gpui-component`
-      panels: sidebar, changes tree, diff viewer, and commit panel
+- [x] Implement main window layout in GPUI using `gpui-component`
+      panels: sidebar, changes tree, diff viewer (placeholder), and
+      commit panel
 - [ ] Build custom `.theme.lua` parser mapping directly to GPUI theme
-      tokens
+      tokens — `.theme.lua` parsing already exists in the `config` crate;
+      mapping to GPUI/`gpui-component` theme tokens is pending
 - [ ] Implement settings view using `gpui-component` forms: Appearance,
-      Git config, SSH Key Manager, AI configuration
+      Git config, SSH Key Manager, AI configuration (no settings view in
+      `crates/app` yet)
 - [ ] Implement syntax-highlighted diff viewer with inline media
-      placeholders (custom component)
-- [ ] Implement file status tree with checkboxes (custom component)
+      placeholders (custom component) — current `diff_view.rs` is a
+      placeholder
+- [x] Implement file status tree with checkboxes (custom component)
 
 ### Core Engine & Async Pipeline
 
-- [ ] Replace `QProcess` Git CLI calls with direct `git_cmd` crate calls
-      (already built)
+- [x] Replace `QProcess` Git CLI calls with direct `git_cmd` crate calls
+      (done in the GPUI frontend via `crates/app/src/git_service.rs`)
 - [ ] Replace `QFileSystemWatcher` with the `watcher` crate events
-      (already built)
+      (dep declared in `crates/app`; event wiring pending)
 - [ ] Wire `ai_core`, `vcs_core`, `config`, and `git_cmd` directly into
-      GPUI event loops via `tokio::mpsc` channels
+      GPUI event loops via `tokio::mpsc` channels (`git_cmd`/`config` are
+      deps; `ai_core`/`vcs_core` are not wired yet)
 - [ ] Remove all Qt bridges (`model_manager_bridge`, `vcs_bridge`,
       `addon_bridge`)
+
+### GPUI Frontend — Remaining Feature Work
+
+Feature-parity items to port from the Qt app into `crates/app`:
+
+- [ ] Real diff viewer — syntax highlighting and inline image rendering
+      (port the Qt `diffviewer` behavior into a custom GPUI component)
+- [ ] Hunk-level staging — stage/unstage individual hunks from the diff view
+- [ ] Settings view — `gpui-component` forms for Appearance, Git config, AI
+      providers, and SSH key manager (`vcs_core`)
+- [ ] History view — commit list with file-level drill-down
+- [ ] Branch management UI — create / switch / delete / rename
+- [ ] Push / fetch / pull toolbar actions wired to `git_cmd`
+- [ ] Projects UI — recent-projects list, clone / init / load, folder
+      scanning (port from the Qt app)
+- [ ] AI commit messages in GPUI — wire `ai_core` (local GGUF) and the cloud
+      providers (OpenRouter / OpenAI / Anthropic / Google AI Studio)
+- [ ] Commit panel extras — co-author selector, amend toggle, skip-commit-
+      hooks toggle
+- [ ] Stash / reset / revert UI
+- [ ] Full Jujutsu (jj) UI support in the GPUI status/commit flows
+- [ ] Theming — map `.theme.lua` tokens from the `config` crate to GPUI /
+      `gpui-component` theme tokens
+- [ ] **Data migration** — migrate Qt-era persisted files (`projects.yaml`,
+      `*.theme.yaml`) to the Lua files (`projects.lua`, `*.theme.lua`) that
+      the `config` crate writes
+- [ ] Auto-refresh — subscribe to `watcher` crate events (dep already
+      declared)
+- [ ] UX polish — keyboard shortcuts, multi-select staging, status filter,
+      history search, tabbed multi-repo
+- [ ] GPUI test coverage — unit + snapshot tests for `crates/app` (no tests
+      today; only the backend crates are tested)
+- [ ] Update `docs/` to describe the GPUI app as the shipped UI once the C++
+      app is removed
 
 ### Packaging & CI Overhaul
 
