@@ -76,13 +76,17 @@ impl GitService {
     }
 
     /// Get diff for a file.
-    #[allow(dead_code)] // Planned: diff viewer
     pub fn diff_file(&self, file: &str) -> Result<String, VcsError> {
         git::diff_file(&self.repo_path, file)
     }
 
+    /// Get the full diff introduced by a commit.
+    pub fn show_commit(&self, hash: &str) -> Result<String, VcsError> {
+        git::show_commit(&self.repo_path, hash)
+    }
+
     /// Get files changed in a commit.
-    #[allow(dead_code)] // Planned: commit detail view
+    #[allow(dead_code)] // Planned: affected-files list in commit detail
     pub fn commit_files(&self, hash: &str) -> Result<Vec<FileStatus>, VcsError> {
         git::commit_files(&self.repo_path, hash)
     }

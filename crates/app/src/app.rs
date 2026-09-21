@@ -9,14 +9,29 @@ use crate::commit_panel::CommitPanel;
 use crate::diff_view::DiffView;
 use crate::file_tree::{FileTree, FileTreeEvent};
 use crate::git_service::GitService;
-use crate::sidebar::Sidebar;
+use crate::settings_view::{SettingsEvent, SettingsView};
+use crate::sidebar::{Sidebar, SidebarEvent};
+
+/// Which main content area is shown in the right pane.
+#[derive(Clone, Copy, PartialEq)]
+enum MainView {
+    /// Working tree: file tree + diff viewer + commit panel.
+    WorkingTree,
+    /// Application settings.
+    Settings,
+}
 
 pub struct LazyDesktopApp {
     sidebar: Entity<Sidebar>,
     file_tree: Entity<FileTree>,
     diff_view: Entity<DiffView>,
     commit_panel: Entity<CommitPanel>,
+    settings_view: Entity<SettingsView>,
     git_service: Entity<GitService>,
+    view: MainView,
+    /// Parsed colors from the selected theme (None = system default).
+    theme_bg: Option<Rgba>,
+    theme_fg: Option<Rgba>,
 }
 
 impl LazyDesktopApp {
@@ -26,6 +41,7 @@ impl LazyDesktopApp {
         let file_tree = cx.new(|cx| FileTree::new(git_service.clone(), cx));
         let diff_view = cx.new(|cx| DiffView::new(git_service.clone(), cx));
         let commit_panel = cx.new(|cx| CommitPanel::new(window, git_service.clone(), cx));
+        let settings_view = cx.new(|cx| SettingsView::new(window, cx));
 
         // Selecting a file in the tree shows its diff.
         cx.subscribe(&file_tree, |this, _emitter, event: &FileTreeEvent, cx| {
@@ -35,12 +51,44 @@ impl LazyDesktopApp {
         })
         .detach();
 
+        // Sidebar: history click → commit diff; settings row → settings view.
+        cx.subscribe(&sidebar, |this, _emitter, event: &SidebarEvent, cx| {
+            match event {
+                SidebarEvent::CommitSelected(hash) => {
+                    this.view = MainView::WorkingTree;
+                    this.diff_view
+                        .update(cx, |view, cx| view.set_commit(hash.clone(), cx));
+                }
+                SidebarEvent::SettingsRequested => {
+                    this.view = MainView::Settings;
+                }
+            }
+            cx.notify();
+        })
+        .detach();
+
+        // Settings: apply the selected theme colors to the app root.
+        cx.subscribe(
+            &settings_view,
+            |this, _emitter, event: &SettingsEvent, cx| {
+                let SettingsEvent::ThemeChanged(colors) = event;
+                this.theme_bg = colors.map(|(bg, _)| bg);
+                this.theme_fg = colors.map(|(_, fg)| fg);
+                cx.notify();
+            },
+        )
+        .detach();
+
         Self {
             sidebar,
             file_tree,
             diff_view,
             commit_panel,
+            settings_view,
             git_service,
+            view: MainView::WorkingTree,
+            theme_bg: None,
+            theme_fg: None,
         }
     }
 
@@ -61,6 +109,8 @@ impl Render for LazyDesktopApp {
             .flex()
             .flex_col()
             .size_full()
+            .when_some(self.theme_bg, |this, bg| this.bg(bg))
+            .when_some(self.theme_fg, |this, fg| this.text_color(fg))
             .child(self.render_toolbar(cx))
             .child(
                 div()
@@ -74,35 +124,42 @@ impl Render for LazyDesktopApp {
                             .border_r_1()
                             .child(self.sidebar.clone()),
                     )
-                    .child(
-                        // Main content: file tree + diff view on top,
-                        // commit panel at the bottom
-                        div()
+                    .child(match self.view {
+                        MainView::WorkingTree => {
+                            let content: AnyElement = div()
+                                .flex_1()
+                                .flex()
+                                .flex_col()
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_1()
+                                        .child(
+                                            // File tree (left)
+                                            div()
+                                                .w(px(320.0))
+                                                .h_full()
+                                                .border_r_1()
+                                                .child(self.file_tree.clone()),
+                                        )
+                                        .child(
+                                            // Diff view (center)
+                                            div().flex_1().h_full().child(self.diff_view.clone()),
+                                        ),
+                                )
+                                .child(
+                                    // Commit panel (bottom)
+                                    div().border_t_1().child(self.commit_panel.clone()),
+                                )
+                                .into_any();
+                            content
+                        }
+                        MainView::Settings => div()
                             .flex_1()
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_1()
-                                    .child(
-                                        // File tree (left)
-                                        div()
-                                            .w(px(320.0))
-                                            .h_full()
-                                            .border_r_1()
-                                            .child(self.file_tree.clone()),
-                                    )
-                                    .child(
-                                        // Diff view (center)
-                                        div().flex_1().h_full().child(self.diff_view.clone()),
-                                    ),
-                            )
-                            .child(
-                                // Commit panel (bottom)
-                                div().border_t_1().child(self.commit_panel.clone()),
-                            ),
-                    ),
+                            .h_full()
+                            .child(self.settings_view.clone())
+                            .into_any(),
+                    }),
             )
             .children(Root::render_dialog_layer(_window, cx))
             .children(Root::render_sheet_layer(_window, cx))

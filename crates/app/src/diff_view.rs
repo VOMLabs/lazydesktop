@@ -29,9 +29,18 @@ fn kind_bg(kind: DiffLineKind) -> Option<Rgba> {
     }
 }
 
+/// What the diff view is currently showing.
+#[derive(Clone, Debug, PartialEq)]
+enum DiffSource {
+    /// Working-tree diff of a single file.
+    File(String),
+    /// Diff introduced by a commit (`git show <hash>`).
+    Commit(String),
+}
+
 pub struct DiffView {
     git_service: Entity<GitService>,
-    file: Option<String>,
+    source: Option<DiffSource>,
     lines: Vec<DiffLine>,
     error: Option<String>,
 }
@@ -40,19 +49,39 @@ impl DiffView {
     pub fn new(git_service: Entity<GitService>, _cx: &mut Context<Self>) -> Self {
         Self {
             git_service,
-            file: None,
+            source: None,
             lines: Vec::new(),
             error: None,
         }
     }
 
-    /// Show the diff for a file. Reloads on every call so staging changes
-    /// are reflected immediately.
+    /// Show the working-tree diff for a file. Reloads on every call so
+    /// staging changes are reflected immediately.
     pub fn set_file(&mut self, path: String, cx: &mut Context<Self>) {
-        self.file = Some(path.clone());
-        self.error = None;
+        self.source = Some(DiffSource::File(path));
+        self.reload(cx);
+    }
 
-        match self.git_service.read(cx).diff_file(&path) {
+    /// Show the diff introduced by a commit.
+    pub fn set_commit(&mut self, hash: String, cx: &mut Context<Self>) {
+        self.source = Some(DiffSource::Commit(hash));
+        self.reload(cx);
+    }
+
+    /// Reload the diff for the current source.
+    fn reload(&mut self, cx: &mut Context<Self>) {
+        self.error = None;
+        let Some(source) = self.source.clone() else {
+            self.lines.clear();
+            return;
+        };
+
+        let result = match &source {
+            DiffSource::File(path) => self.git_service.read(cx).diff_file(path),
+            DiffSource::Commit(hash) => self.git_service.read(cx).show_commit(hash),
+        };
+
+        match result {
             Ok(raw) => self.lines = parse_diff(&raw),
             Err(err) => {
                 self.lines.clear();
@@ -65,21 +94,29 @@ impl DiffView {
     /// Clear the current diff (mirrors Qt `DiffViewer::clear`).
     #[allow(dead_code)] // Planned: file deselection
     pub fn clear(&mut self, cx: &mut Context<Self>) {
-        self.file = None;
+        self.source = None;
         self.lines.clear();
         self.error = None;
         cx.notify();
     }
 }
 
+fn source_title(source: &DiffSource) -> String {
+    match source {
+        DiffSource::File(path) => path.clone(),
+        DiffSource::Commit(hash) => format!("commit {hash}"),
+    }
+}
+
 impl Render for DiffView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        let file = self.file.clone();
+        let source = self.source.clone();
         let error = self.error.clone();
         let lines = self.lines.clone();
 
-        let body = match (&file, error, lines.is_empty()) {
-            (None, _, _) => placeholder("Select a file to view its diff"),
+        let title = source.as_ref().map(source_title);
+        let body = match (&source, error, lines.is_empty()) {
+            (None, _, _) => placeholder("Select a file or commit to view changes"),
             (_, Some(err), _) => placeholder(&format!("Could not load diff: {err}")),
             (_, None, true) => placeholder("No changes to display"),
             (_, None, false) => diff_scroll(&lines),
@@ -102,7 +139,7 @@ impl Render for DiffView {
                         div()
                             .text_sm()
                             .font_bold()
-                            .child(file.unwrap_or_else(|| "Diff".to_string())),
+                            .child(title.unwrap_or_else(|| "Diff".to_string())),
                     )
                     .child(div().flex_1())
                     .child(

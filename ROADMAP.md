@@ -277,12 +277,15 @@ reusing battle-tested primitives for everything else.
 - [ ] Build custom `.theme.lua` parser mapping directly to GPUI theme
       tokens — `.theme.lua` parsing already exists in the `config` crate;
       mapping to GPUI/`gpui-component` theme tokens is pending
-- [ ] Implement settings view using `gpui-component` forms: Appearance,
-      Git config, SSH Key Manager, AI configuration (no settings view in
-      `crates/app` yet)
-- [ ] Implement syntax-highlighted diff viewer with inline media
-      placeholders (custom component) — current `diff_view.rs` is a
-      placeholder
+- [x] Implement settings view (Appearance theme picker, Git identity,
+      data locations) — hand-rolled on `gpui-component` elements; the
+      `config` crate persists `appearance/theme`
+- [ ] Settings view: SSH Key Manager (`vcs_core`) and AI configuration
+      panels
+- [x] Implement colorized diff viewer with line-number gutter, hunk
+      coloring, and no-wrap monospace scroll — `diff_view.rs` (replaces
+      the placeholder)
+- [ ] Diff viewer: word-level syntax highlighting + inline image rendering
 - [x] Implement file status tree with checkboxes (custom component)
 
 ### Core Engine & Async Pipeline
@@ -301,12 +304,16 @@ reusing battle-tested primitives for everything else.
 
 Feature-parity items to port from the Qt app into `crates/app`:
 
-- [ ] Real diff viewer — syntax highlighting and inline image rendering
-      (port the Qt `diffviewer` behavior into a custom GPUI component)
+- [x] Real diff viewer — colorized unified diffs with line-number gutter
+      (port the Qt `diffviewer`; word-level syntax highlighting and inline
+      images remain)
+- [ ] Diff viewer: word-level syntax highlighting + inline image rendering
 - [ ] Hunk-level staging — stage/unstage individual hunks from the diff view
-- [ ] Settings view — `gpui-component` forms for Appearance, Git config, AI
-      providers, and SSH key manager (`vcs_core`)
-- [ ] History view — commit list with file-level drill-down
+- [x] Settings view — Appearance (theme picker, persisted to `config`
+      INI), Git identity (`git config --global`), data locations
+- [ ] Settings view — AI providers config, SSH key manager (`vcs_core`)
+- [x] History view — commit list with per-commit diff (`git show`)
+- [ ] History view — affected-files list with per-file drill-down
 - [ ] Branch management UI — create / switch / delete / rename
 - [ ] Push / fetch / pull toolbar actions wired to `git_cmd`
 - [ ] Projects UI — recent-projects list, clone / init / load, folder
