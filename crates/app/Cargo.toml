@@ -7,6 +7,11 @@ description = "LazyDesktop GPUI frontend — native Git GUI for KDE Plasma"
 [[bin]]
 name = "lazydesktop"
 path = "src/main.rs"
+# Unit tests live in the lib target (`src/lib.rs`). Compiling a test harness
+# over the bin's deeply-nested GPUI element types overflows rustc's stack, so
+# we opt out of bin test-target generation (`cargo test --workspace` still
+# runs the lib tests).
+test = false
 
 [dependencies]
 # GPUI component kit (re-exports gpui types we need)

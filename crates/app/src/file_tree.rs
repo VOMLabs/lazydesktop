@@ -7,6 +7,15 @@ use gpui_component::*;
 
 use crate::git_service::GitService;
 
+/// Events emitted by the file tree.
+#[derive(Clone, Debug)]
+pub enum FileTreeEvent {
+    /// User clicked a file row — the diff view should show this file.
+    FileSelected(String),
+}
+
+impl EventEmitter<FileTreeEvent> for FileTree {}
+
 pub struct FileTree {
     git_service: Entity<GitService>,
     selected_files: Vec<String>,
@@ -113,6 +122,7 @@ impl Render for FileTree {
                                 } else {
                                     this.selected_files.push(path.clone());
                                 }
+                                cx.emit(FileTreeEvent::FileSelected(path.clone()));
                                 cx.notify();
                             }))
                             .child(
