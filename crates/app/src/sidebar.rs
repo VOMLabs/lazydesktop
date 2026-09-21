@@ -6,6 +6,17 @@ use gpui_component::*;
 
 use crate::git_service::GitService;
 
+/// Events emitted by the sidebar.
+#[derive(Clone, Debug)]
+pub enum SidebarEvent {
+    /// User clicked a commit in the history — show its diff.
+    CommitSelected(String),
+    /// User clicked the Settings row.
+    SettingsRequested,
+}
+
+impl EventEmitter<SidebarEvent> for Sidebar {}
+
 pub struct Sidebar {
     git_service: Entity<GitService>,
     expanded_section: SidebarSection,
@@ -142,6 +153,7 @@ impl Render for Sidebar {
                                 .id("history-list")
                                 .overflow_y_scroll()
                                 .children(history.into_iter().map(|c| {
+                                    let hash = c.hash.clone();
                                     div()
                                         .flex()
                                         .flex_col()
@@ -149,7 +161,13 @@ impl Render for Sidebar {
                                         .px_2()
                                         .py_1_5()
                                         .rounded_md()
+                                        .id(format!("commit-{hash}"))
+                                        .cursor_pointer()
                                         .hover(|this| this.bg(gpui::rgb(0x8c959f)))
+                                        .on_click(cx.listener(move |_this, _, _, cx| {
+                                            cx.emit(SidebarEvent::CommitSelected(hash.clone()));
+                                            cx.notify();
+                                        }))
                                         .child(
                                             // Hash — monospace, small
                                             div()
@@ -165,6 +183,25 @@ impl Render for Sidebar {
                                 })),
                         )
                     }),
+            )
+            .child(
+                // Settings (pinned to the bottom of the sidebar)
+                div()
+                    .mt_auto()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_2()
+                    .py_1_5()
+                    .rounded_md()
+                    .id("settings-row")
+                    .cursor_pointer()
+                    .hover(|this| this.bg(gpui::rgb(0x8c959f)))
+                    .on_click(cx.listener(|_this, _, _, cx| {
+                        cx.emit(SidebarEvent::SettingsRequested);
+                        cx.notify();
+                    }))
+                    .child(div().text_sm().font_bold().child("Settings")),
             )
     }
 }

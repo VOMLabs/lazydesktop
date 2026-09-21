@@ -214,6 +214,38 @@ pub fn commit_files(repo_path: &Path, hash: &str) -> Result<Vec<FileStatus>, Vcs
     }
 }
 
+/// Get the full diff introduced by a commit (`git show`).
+///
+/// Uses `--format=fuller` so the raw output starts with the commit header and
+/// message (rendered as context by the diff view) followed by the unified
+/// diff. `--no-ext-diff` keeps output deterministic.
+pub fn show_commit(repo_path: &Path, hash: &str) -> Result<String, VcsError> {
+    let result = run_git(
+        repo_path,
+        &["show", "--format=fuller", "--no-ext-diff", hash],
+    )?;
+    if result.success() {
+        Ok(result.stdout)
+    } else {
+        Err(VcsError::CommandFailed(result.stderr))
+    }
+}
+
+/// Read a global git config value. Unset keys return an empty string.
+///
+/// The working directory is irrelevant for `--global` lookups.
+pub fn config_get_global(name: &str) -> Result<String, VcsError> {
+    let result = run_git(Path::new("."), &["config", "--global", "--get", name])?;
+    // Exit code 1 means the key is not set; any other failure is surfaced
+    // through the error, and callers treat the value as empty when unset.
+    Ok(result.stdout.trim().to_string())
+}
+
+/// Set a global git config value.
+pub fn config_set_global(name: &str, value: &str) -> Result<CommandResult, VcsError> {
+    run_git(Path::new("."), &["config", "--global", name, value])
+}
+
 /// Clone a repository.
 pub fn clone(url: &str, dest: &Path) -> Result<CommandResult, VcsError> {
     let output = Command::new("git")
@@ -295,5 +327,42 @@ mod tests {
 
         let statuses = status(tmp.path()).unwrap();
         assert!(statuses.is_empty());
+    }
+
+    #[test]
+    fn show_commit_returns_unified_diff() {
+        use std::process::Command;
+
+        let tmp = TempDir::new().unwrap();
+        init(tmp.path()).unwrap();
+
+        // Configure an author locally so `git commit` succeeds in CI.
+        Command::new("git")
+            .current_dir(tmp.path())
+            .args(["config", "user.name", "LazyDesktop Test"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .current_dir(tmp.path())
+            .args(["config", "user.email", "test@example.com"])
+            .output()
+            .unwrap();
+
+        std::fs::write(tmp.path().join("f.txt"), "hello\n").unwrap();
+        Command::new("git")
+            .current_dir(tmp.path())
+            .args(["add", "f.txt"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .current_dir(tmp.path())
+            .args(["commit", "-m", "Add f"])
+            .output()
+            .unwrap();
+
+        let out = show_commit(tmp.path(), "HEAD").unwrap();
+        assert!(out.contains("commit "), "missing commit header: {out}");
+        assert!(out.contains("diff --git"), "missing diff header: {out}");
+        assert!(out.contains("+hello"), "missing added line: {out}");
     }
 }
