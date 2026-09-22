@@ -1,7 +1,7 @@
 //! Jujutsu (jj) CLI command execution.
 //!
-//! Provides typed wrappers around jj commands that were previously
-//! executed via QProcess in mainwindow.cpp.
+//! Provides typed wrappers around jj commands. Used by the GPUI app on
+//! `tokio::task::spawn_blocking` workers.
 
 use std::path::Path;
 use std::process::Command;

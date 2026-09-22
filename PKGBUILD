@@ -2,22 +2,21 @@
 # Contributor: Your Name <you@example.com>
 
 pkgname=lazydesktop
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
-pkgdesc='A KDE-native Git GUI alternative'
+pkgdesc='A native Git GUI for the KDE Plasma desktop'
 arch=('x86_64' 'aarch64')
 url='https://lazydesktop.dev'
 license=('MIT')
 depends=(
-  'qt6-base'
-  'yaml-cpp'
   'git'
   'shared-mime-info'
 )
 makedepends=(
-  'meson'
+  'rust'
+  'cargo'
+  'cmake'
   'ninja'
-  'gcc'   # or clang
 )
 
 source=("${pkgname}-${pkgver}.tar.gz::https://github.com/itzzmateo/lazydesktop/archive/v${pkgver}.tar.gz")
@@ -25,18 +24,17 @@ sha256sums=('SKIP')
 validpgpkeys=()
 
 build() {
-  arch-meson "${pkgname}-${pkgver}" build \
-    -Dbuildtype=release \
-    -Dwarning_level=0
-  ninja -C build
+  cargo build --release --workspace
 }
 
 check() {
-  echo "No test suite configured."
+  cargo test --workspace
 }
 
 package() {
-  DESTDIR="${pkgdir}" ninja -C build install
+  install -Dm755 "${srcdir}/${pkgname}-${pkgver}/target/release/lazydesktop" "${pkgdir}/usr/bin/lazydesktop"
+  install -Dm644 "${srcdir}/${pkgname}-${pkgver}/data/lazydesktop.desktop" "${pkgdir}/usr/share/applications/lazydesktop.desktop"
+  install -Dm644 "${srcdir}/${pkgname}-${pkgver}/data/icons/hicolor/scalable/apps/lazydesktop.svg" "${pkgdir}/usr/share/icons/hicolor/scalable/apps/lazydesktop.svg"
 
   # Install SVG icon in additional sizes via symlinks
   install -dm755 "${pkgdir}/usr/share/icons/hicolor/48x48/apps"

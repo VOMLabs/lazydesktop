@@ -2,7 +2,7 @@
 //!
 //! Provides spawn-based async execution so git operations don't block the UI.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use git_cmd::{git, types::*};
 
@@ -14,6 +14,8 @@ pub struct GitService {
     pub current_branch: String,
     pub commit_history: Vec<CommitEntry>,
     pub is_dirty: bool,
+    /// Number of stashes, cached during `refresh_all`.
+    pub stash_count: usize,
 }
 
 impl GitService {
@@ -25,6 +27,7 @@ impl GitService {
             current_branch: String::new(),
             commit_history: Vec::new(),
             is_dirty: false,
+            stash_count: 0,
         }
     }
 
@@ -35,6 +38,7 @@ impl GitService {
         self.current_branch = git::current_branch(&self.repo_path).unwrap_or_default();
         self.commit_history = git::log(&self.repo_path, 50).unwrap_or_default();
         self.is_dirty = git::is_dirty(&self.repo_path);
+        self.stash_count = git::stash_list(&self.repo_path).len();
     }
 
     /// Stage files by path.
@@ -50,8 +54,22 @@ impl GitService {
     }
 
     /// Commit with message.
+    #[allow(dead_code)] // Convenience wrapper; UI uses `commit_with_hooks`.
     pub fn commit(&self, message: &str) -> Result<CommandResult, VcsError> {
         git::commit(&self.repo_path, message)
+    }
+
+    /// Commit with message, honoring the skip-hooks toggle.
+    pub fn commit_with_hooks(
+        &self,
+        message: &str,
+        verify: bool,
+    ) -> Result<CommandResult, VcsError> {
+        if verify {
+            git::commit(&self.repo_path, message)
+        } else {
+            git::run_git(&self.repo_path, &["commit", "--no-verify", "-m", message])
+        }
     }
 
     /// Checkout a branch.
@@ -89,5 +107,79 @@ impl GitService {
     #[allow(dead_code)] // Planned: affected-files list in commit detail
     pub fn commit_files(&self, hash: &str) -> Result<Vec<FileStatus>, VcsError> {
         git::commit_files(&self.repo_path, hash)
+    }
+
+    /// Create a new branch and switch to it.
+    pub fn create_branch(&self, name: &str) -> Result<CommandResult, VcsError> {
+        git::create_branch(&self.repo_path, name)
+    }
+
+    /// Delete a branch.
+    pub fn delete_branch(&self, name: &str) -> Result<CommandResult, VcsError> {
+        git::delete_branch(&self.repo_path, name)
+    }
+
+    /// Rename the current branch.
+    pub fn rename_branch(&self, name: &str) -> Result<CommandResult, VcsError> {
+        git::rename_branch(&self.repo_path, name)
+    }
+
+    /// Stash all working-tree changes.
+    pub fn stash_push(&self) -> Result<CommandResult, VcsError> {
+        git::stash_push(&self.repo_path)
+    }
+
+    /// List stashes.
+    #[allow(dead_code)] // CLI parity; UI shows the cached `stash_count`.
+    pub fn stash_list(&self) -> Vec<String> {
+        git::stash_list(&self.repo_path)
+    }
+
+    /// Restore the most recent stash.
+    pub fn stash_pop(&self) -> Result<CommandResult, VcsError> {
+        git::stash_pop(&self.repo_path)
+    }
+
+    /// Reset the index to HEAD (keeps working-tree changes).
+    pub fn reset_mixed(&self) -> Result<CommandResult, VcsError> {
+        git::reset_mixed(&self.repo_path)
+    }
+
+    /// Recent commit subjects for AI style reference.
+    pub fn recent_subjects(&self, limit: usize) -> Vec<String> {
+        git::recent_subjects(&self.repo_path, limit)
+    }
+
+    /// Clone a repository into `dest`.
+    pub fn clone_repo(&self, url: &str, dest: &Path) -> Result<CommandResult, VcsError> {
+        git::clone(url, dest)
+    }
+
+    /// Initialize a git repository at `path`.
+    pub fn init_repo(&self, path: &Path) -> Result<CommandResult, VcsError> {
+        git::init(path)
+    }
+
+    /// Whether the repository is jujutsu-backed (used for AI context).
+    pub fn vcs_kind(&self) -> &'static str {
+        if self.repo_path.join(".jj").is_dir() && !git::is_git_repo(&self.repo_path) {
+            "jujutsu"
+        } else {
+            "git"
+        }
+    }
+
+    /// Build the diff used for AI commit-message generation: per changed file,
+    /// `git diff HEAD -- <file>` with a `--- <file>` header (mirrors Qt).
+    pub fn ai_diff_text(&self) -> String {
+        let mut parts = Vec::new();
+        for file in &self.file_statuses {
+            if let Ok(d) = git::diff_file(&self.repo_path, &file.path) {
+                if !d.trim().is_empty() {
+                    parts.push(format!("--- {}\n{}", file.path, d.trim_end()));
+                }
+            }
+        }
+        parts.join("\n\n")
     }
 }

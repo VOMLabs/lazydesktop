@@ -342,7 +342,7 @@ pub extern "C" fn vcs_git_init(path: *const c_char) -> c_int {
 }
 
 /// List files changed in a commit as JSON array of {status, path}.
-/// Caller frees with vcs_free_string.
+/// Caller frees with git_cmd_free_string.
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn vcs_git_commit_files(
@@ -372,7 +372,7 @@ pub extern "C" fn vcs_git_commit_files(
 }
 
 /// Read a git config value. Returns the value string or null.
-/// Caller frees with vcs_free_string.
+/// Caller frees with git_cmd_free_string.
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn vcs_git_config_get(repo_path: *const c_char, key: *const c_char) -> *mut c_char {
@@ -412,7 +412,7 @@ pub extern "C" fn vcs_git_config_set(
     }
 }
 
-/// Get staged diff (cached). Caller frees with vcs_free_string.
+/// Get staged diff (cached). Caller frees with git_cmd_free_string. Returns null on error.
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn vcs_git_diff_staged(repo_path: *const c_char) -> *mut c_char {
@@ -449,7 +449,7 @@ pub extern "C" fn vcs_git_restore_file(repo_path: *const c_char, file: *const c_
 }
 
 /// Run an arbitrary git command and return raw stdout.
-/// Caller frees with vcs_free_string. Returns null on error.
+/// Caller frees with git_cmd_free_string. Returns null on error.
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn vcs_git_run_raw(
@@ -532,7 +532,7 @@ pub extern "C" fn vcs_jj_diff_file(repo_path: *const c_char, file: *const c_char
 
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn vcs_free_string(s: *mut c_char) {
+pub extern "C" fn git_cmd_free_string(s: *mut c_char) {
     if !s.is_null() {
         unsafe {
             drop(CString::from_raw(s));

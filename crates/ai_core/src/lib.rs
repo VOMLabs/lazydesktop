@@ -1,3 +1,4 @@
+pub mod cloud;
 pub mod commit_message;
 pub mod discovery;
 pub mod download;

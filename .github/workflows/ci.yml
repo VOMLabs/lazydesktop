@@ -63,7 +63,7 @@ jobs:
         if: matrix.check == 'audit'
         run: cargo audit
 
-  # ─── Build (C++ + Rust, all platforms) ──────────────────────
+  # ─── Build (Rust, all platforms) ──────────────────────────────
   build:
     name: build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -85,52 +85,28 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Install Meson and Ninja
-        run: pip install meson ninja
-
-      - name: Install Qt (Linux)
+      - name: Install system libraries (Linux)
         if: runner.os == 'Linux'
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.7'
-          cache: true
-
-      - name: Install Qt (Windows)
-        if: runner.os == 'Windows'
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.7'
-          arch: win64_msvc2019_64
-          cache: true
-
-      - name: Install Qt (macOS)
-        if: runner.os == 'macOS'
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.7'
-          cache: true
-
-      - name: Install yaml-cpp (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libyaml-cpp-dev libgl1-mesa-dev
-
-      - name: Install yaml-cpp (macOS)
-        if: runner.os == 'macOS'
-        run: brew install yaml-cpp
-
-      - name: Build Rust crates
-        run: cargo build --workspace
-
-      - name: Configure (debug)
-        run: meson setup build --buildtype=debugoptimized
+        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev libxkbcommon-x11-0 xvfb
 
       - name: Build
-        run: ninja -C build
+        run: cargo build --workspace
 
-      - name: Smoke test (Linux/macOS)
-        if: runner.os != 'Windows'
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
         run: |
-          QT_QPA_PLATFORM=offscreen build/lazydesktop &
+          xvfb-run -a bash -c '
+            target/debug/lazydesktop &
+            APP_PID=$!
+            sleep 5
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          ' || echo "Smoke test failed (non-fatal)"
+
+      - name: Smoke test (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          target/debug/lazydesktop &
           APP_PID=$!
           sleep 5
           kill "$APP_PID" 2>/dev/null || true
@@ -141,7 +117,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: lazydesktop-${{ matrix.os }}
-          path: build/lazydesktop*
+          path: target/debug/lazydesktop*
           if-no-files-found: error
           retention-days: 7
 

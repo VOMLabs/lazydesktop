@@ -11,20 +11,21 @@ use gpui_component::*;
 
 use crate::git_service::GitService;
 use lazydesktop_app::diff::{parse_diff, DiffLine, DiffLineKind};
+use lazydesktop_app::theme::Palette;
 
-fn kind_fg(kind: DiffLineKind) -> Rgba {
+fn kind_fg(kind: DiffLineKind, p: &Palette) -> Rgba {
     match kind {
-        DiffLineKind::Addition => rgb(0x3fb950), // green
-        DiffLineKind::Deletion => rgb(0xf85149), // red
-        DiffLineKind::Hunk => rgb(0x79c0ff),     // blue
-        DiffLineKind::Context => rgb(0xc9d1d9),  // soft gray
+        DiffLineKind::Addition => p.diff_add_fg,
+        DiffLineKind::Deletion => p.diff_del_fg,
+        DiffLineKind::Hunk => p.hunk,
+        DiffLineKind::Context => p.diff_ctx_fg,
     }
 }
 
-fn kind_bg(kind: DiffLineKind) -> Option<Rgba> {
+fn kind_bg(kind: DiffLineKind, p: &Palette) -> Option<Rgba> {
     match kind {
-        DiffLineKind::Addition => Some(rgba(0x2ea04320)), // translucent green
-        DiffLineKind::Deletion => Some(rgba(0xf8514920)), // translucent red
+        DiffLineKind::Addition => Some(p.diff_add_bg),
+        DiffLineKind::Deletion => Some(p.diff_del_bg),
         _ => None,
     }
 }
@@ -109,17 +110,18 @@ fn source_title(source: &DiffSource) -> String {
 }
 
 impl Render for DiffView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let source = self.source.clone();
         let error = self.error.clone();
         let lines = self.lines.clone();
+        let p = Palette::current(cx);
 
         let title = source.as_ref().map(source_title);
         let body = match (&source, error, lines.is_empty()) {
-            (None, _, _) => placeholder("Select a file or commit to view changes"),
-            (_, Some(err), _) => placeholder(&format!("Could not load diff: {err}")),
-            (_, None, true) => placeholder("No changes to display"),
-            (_, None, false) => diff_scroll(&lines),
+            (None, _, _) => placeholder("Select a file or commit to view changes", &p),
+            (_, Some(err), _) => placeholder(&format!("Could not load diff: {err}"), &p),
+            (_, None, true) => placeholder("No changes to display", &p),
+            (_, None, false) => diff_scroll(&lines, &p),
         };
 
         div()
@@ -135,6 +137,7 @@ impl Render for DiffView {
                     .px_3()
                     .py_2()
                     .border_b_1()
+                    .border_color(p.separator)
                     .child(
                         div()
                             .text_sm()
@@ -145,7 +148,7 @@ impl Render for DiffView {
                     .child(
                         div()
                             .text_xs()
-                            .text_color(rgb(0x8c959f))
+                            .text_color(p.text_muted)
                             .child(format!("{} lines", lines.len())),
                     ),
             )
@@ -153,7 +156,7 @@ impl Render for DiffView {
     }
 }
 
-fn placeholder(text: &str) -> AnyElement {
+fn placeholder(text: &str, p: &Palette) -> AnyElement {
     div()
         .flex()
         .flex_1()
@@ -164,13 +167,13 @@ fn placeholder(text: &str) -> AnyElement {
         .child(
             div()
                 .text_sm()
-                .text_color(rgb(0x8c959f))
+                .text_color(p.text_muted)
                 .child(text.to_string()),
         )
         .into_any()
 }
 
-fn diff_scroll(lines: &[DiffLine]) -> AnyElement {
+fn diff_scroll(lines: &[DiffLine], p: &Palette) -> AnyElement {
     div()
         .flex_1()
         .id("diff-scroll")
@@ -179,18 +182,18 @@ fn diff_scroll(lines: &[DiffLine]) -> AnyElement {
             lines
                 .iter()
                 .enumerate()
-                .map(|(index, line)| diff_row(index, line)),
+                .map(|(index, line)| diff_row(index, line, p)),
         )
         .into_any()
 }
 
-fn diff_row(index: usize, line: &DiffLine) -> Div {
+fn diff_row(index: usize, line: &DiffLine, p: &Palette) -> Div {
     let mut row = div()
         .flex()
         .flex_row()
         .whitespace_nowrap()
         .font_family("monospace");
-    if let Some(bg) = kind_bg(line.kind) {
+    if let Some(bg) = kind_bg(line.kind, p) {
         row = row.bg(bg);
     }
     row.child(
@@ -200,12 +203,12 @@ fn diff_row(index: usize, line: &DiffLine) -> Div {
             .flex_shrink_0()
             .text_right()
             .pr_2()
-            .text_color(rgb(0x6e7681))
+            .text_color(p.diff_gutter)
             .child((index + 1).to_string()),
     )
     .child(
         div()
-            .text_color(kind_fg(line.kind))
+            .text_color(kind_fg(line.kind, p))
             .child(line.text.clone()),
     )
 }

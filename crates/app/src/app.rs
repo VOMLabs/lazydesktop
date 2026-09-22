@@ -11,6 +11,7 @@ use crate::file_tree::{FileTree, FileTreeEvent};
 use crate::git_service::GitService;
 use crate::settings_view::{SettingsEvent, SettingsView};
 use crate::sidebar::{Sidebar, SidebarEvent};
+use lazydesktop_app::theme::Palette;
 
 /// Which main content area is shown in the right pane.
 #[derive(Clone, Copy, PartialEq)]
@@ -29,19 +30,18 @@ pub struct LazyDesktopApp {
     settings_view: Entity<SettingsView>,
     git_service: Entity<GitService>,
     view: MainView,
-    /// Parsed colors from the selected theme (None = system default).
-    theme_bg: Option<Rgba>,
-    theme_fg: Option<Rgba>,
+    /// Latest toolbar operation result: (message, is_error).
+    op_feedback: Option<(String, bool)>,
 }
 
 impl LazyDesktopApp {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let git_service = cx.new(|_| GitService::new(std::path::PathBuf::new()));
-        let sidebar = cx.new(|cx| Sidebar::new(git_service.clone(), cx));
+        let sidebar = cx.new(|cx| Sidebar::new(window, git_service.clone(), cx));
         let file_tree = cx.new(|cx| FileTree::new(git_service.clone(), cx));
         let diff_view = cx.new(|cx| DiffView::new(git_service.clone(), cx));
         let commit_panel = cx.new(|cx| CommitPanel::new(window, git_service.clone(), cx));
-        let settings_view = cx.new(|cx| SettingsView::new(window, cx));
+        let settings_view = cx.new(|cx| SettingsView::new(git_service.clone(), window, cx));
 
         // Selecting a file in the tree shows its diff.
         cx.subscribe(&file_tree, |this, _emitter, event: &FileTreeEvent, cx| {
@@ -51,7 +51,8 @@ impl LazyDesktopApp {
         })
         .detach();
 
-        // Sidebar: history click → commit diff; settings row → settings view.
+        // Sidebar: history click → commit diff; settings row → settings view;
+        // repo open request → swap GitService.
         cx.subscribe(&sidebar, |this, _emitter, event: &SidebarEvent, cx| {
             match event {
                 SidebarEvent::CommitSelected(hash) => {
@@ -62,18 +63,30 @@ impl LazyDesktopApp {
                 SidebarEvent::SettingsRequested => {
                     this.view = MainView::Settings;
                 }
+                SidebarEvent::OpenRepoRequested(path) => {
+                    this.open_repo(path.clone(), cx);
+                    this.sidebar.update(cx, |sidebar, _| {
+                        sidebar.refresh_recent_projects();
+                    });
+                }
             }
             cx.notify();
         })
         .detach();
 
-        // Settings: apply the selected theme colors to the app root.
+        // Settings: apply the selected theme across the app and the
+        // component kit.
         cx.subscribe(
             &settings_view,
-            |this, _emitter, event: &SettingsEvent, cx| {
-                let SettingsEvent::ThemeChanged(colors) = event;
-                this.theme_bg = colors.map(|(bg, _)| bg);
-                this.theme_fg = colors.map(|(_, fg)| fg);
+            |_this, _emitter, event: &SettingsEvent, cx| {
+                let SettingsEvent::ThemeChanged(palette) = event;
+                let palette = palette.unwrap_or_else(|| match cx.window_appearance() {
+                    gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark => {
+                        Palette::dark()
+                    }
+                    _ => Palette::light(),
+                });
+                Palette::install(palette, cx);
                 cx.notify();
             },
         )
@@ -87,17 +100,44 @@ impl LazyDesktopApp {
             settings_view,
             git_service,
             view: MainView::WorkingTree,
-            theme_bg: None,
-            theme_fg: None,
+            op_feedback: None,
         }
     }
 
-    /// Open a repository. Wired up once the file dialog is implemented.
-    #[allow(dead_code)]
+    /// Open a repository. Recorded in the recent-projects list.
     pub fn open_repo(&mut self, path: std::path::PathBuf, cx: &mut Context<Self>) {
+        if path.exists() {
+            let mut recent =
+                config::projects::RecentProjects::load(&config::paths::projects_path());
+            recent.add(&path.display().to_string());
+            let _ = recent.save(&config::paths::projects_path());
+        }
         self.git_service.update(cx, |service, _| {
             *service = GitService::new(path);
             service.refresh_all();
+        });
+        self.view = MainView::WorkingTree;
+        self.op_feedback = None;
+        cx.notify();
+    }
+
+    /// Run a toolbar git operation (push / pull / fetch), refresh state, and
+    /// surface the result as feedback text.
+    fn run_git_op(
+        &mut self,
+        label: &str,
+        op: fn(&GitService) -> Result<git_cmd::types::CommandResult, git_cmd::types::VcsError>,
+        cx: &mut Context<Self>,
+    ) {
+        let result = self.git_service.update(cx, |service, _| {
+            let r = op(service);
+            service.refresh_all();
+            r
+        });
+        self.op_feedback = Some(match &result {
+            Ok(r) if r.success() => (format!("{label}: OK"), false),
+            Ok(r) => (format!("{label} failed: {}", r.stderr.trim()), true),
+            Err(e) => (format!("{label} error: {e}"), true),
         });
         cx.notify();
     }
@@ -105,12 +145,13 @@ impl LazyDesktopApp {
 
 impl Render for LazyDesktopApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = Palette::current(cx);
         div()
             .flex()
             .flex_col()
             .size_full()
-            .when_some(self.theme_bg, |this, bg| this.bg(bg))
-            .when_some(self.theme_fg, |this, fg| this.text_color(fg))
+            .bg(palette.bg)
+            .text_color(palette.text_primary)
             .child(self.render_toolbar(cx))
             .child(
                 div()
@@ -122,6 +163,7 @@ impl Render for LazyDesktopApp {
                             .w(px(260.0))
                             .h_full()
                             .border_r_1()
+                            .border_color(palette.separator)
                             .child(self.sidebar.clone()),
                     )
                     .child(match self.view {
@@ -140,6 +182,7 @@ impl Render for LazyDesktopApp {
                                                 .w(px(320.0))
                                                 .h_full()
                                                 .border_r_1()
+                                                .border_color(palette.separator)
                                                 .child(self.file_tree.clone()),
                                         )
                                         .child(
@@ -149,7 +192,10 @@ impl Render for LazyDesktopApp {
                                 )
                                 .child(
                                     // Commit panel (bottom)
-                                    div().border_t_1().child(self.commit_panel.clone()),
+                                    div()
+                                        .border_t_1()
+                                        .border_color(palette.separator)
+                                        .child(self.commit_panel.clone()),
                                 )
                                 .into_any();
                             content
@@ -171,66 +217,81 @@ impl LazyDesktopApp {
     fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let branch = self.git_service.read(cx).current_branch.clone();
         let is_dirty = self.git_service.read(cx).is_dirty;
+        let op_feedback = self.op_feedback.clone();
+        let palette = Palette::current(cx);
 
         div()
             .flex()
-            .items_center()
-            .justify_between()
-            .px_4()
-            .py_2()
+            .flex_col()
+            .bg(palette.panel)
             .border_b_1()
+            .border_color(palette.separator)
             .child(
-                // Left: repo actions
                 div()
                     .flex()
                     .items_center()
-                    .gap_3()
+                    .justify_between()
+                    .px_4()
+                    .py_2()
                     .child(
-                        Button::new("open-folder")
-                            .label("Open Folder")
-                            .on_click(cx.listener(|_this, _, _window, _cx| {
-                                // TODO: file dialog
-                            })),
+                        // Left: repo actions
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_3()
+                            .child(
+                                // Branch badge
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .px_3()
+                                    .py_1()
+                                    .rounded_md()
+                                    .bg(palette.elevated)
+                                    .text_color(palette.text_primary)
+                                    .child(div().text_sm().font_bold().child(branch.clone()))
+                                    .when(is_dirty, |this| {
+                                        this.child(
+                                            div().w_2().h_2().rounded_full().bg(palette.warning),
+                                        )
+                                    }),
+                            )
+                            .when_some(op_feedback.clone(), |this, (msg, is_err)| {
+                                this.child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(if is_err {
+                                            palette.error
+                                        } else {
+                                            palette.success
+                                        })
+                                        .child(msg),
+                                )
+                            }),
                     )
                     .child(
-                        // Branch badge
+                        // Right: git actions
                         div()
                             .flex()
                             .items_center()
                             .gap_2()
-                            .px_3()
-                            .py_1()
-                            .rounded_md()
-                            .bg(gpui::rgb(0x2d333b))
-                            .child(div().text_sm().font_bold().child(branch.clone()))
-                            .when(is_dirty, |this| {
-                                this.child(div().w_2().h_2().rounded_full().bg(gpui::rgb(0xcf222e)))
-                            }),
+                            .child(Button::new("fetch").label("Fetch").on_click(cx.listener(
+                                |this, _, _, cx| {
+                                    this.run_git_op("Fetch", GitService::fetch, cx);
+                                },
+                            )))
+                            .child(Button::new("pull").label("Pull").on_click(cx.listener(
+                                |this, _, _, cx| {
+                                    this.run_git_op("Pull", GitService::pull, cx);
+                                },
+                            )))
+                            .child(Button::new("push").label("Push").on_click(cx.listener(
+                                |this, _, _, cx| {
+                                    this.run_git_op("Push", GitService::push, cx);
+                                },
+                            ))),
                     ),
-            )
-            .child(
-                // Right: git actions
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        Button::new("push")
-                            .label("Push")
-                            .disabled(!is_dirty)
-                            .on_click(cx.listener(|this, _, _window, cx| {
-                                this.git_service.update(cx, |service, _| {
-                                    let _ = service.push();
-                                });
-                            })),
-                    )
-                    .child(Button::new("pull").label("Pull").on_click(cx.listener(
-                        |this, _, _window, cx| {
-                            this.git_service.update(cx, |service, _| {
-                                let _ = service.pull();
-                            });
-                        },
-                    ))),
             )
     }
 }

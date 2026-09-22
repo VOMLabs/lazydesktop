@@ -2,20 +2,11 @@
 # Task runner (moonrepo orchestrates builds, tests, lint)
 moon = "latest"
 
-# Build system (Meson + Ninja for C++ compilation)
-ninja = "1.12"
-meson = "1.6"
-
-# Rust toolchain (builds the bundled crates)
+# Rust toolchain (builds the GPUI app and bundled crates)
 rust = "stable"
-
-# Compiler (C++23 support requires GCC 14+ or Clang 18+)
-gcc = "14"
-# clang = "18"
 
 # Packaging — Linux
 "linuxdeploy" = "1.0.0"
-"linuxdeploy-plugin-qt" = "1.0.0"
 "pkg-config" = "latest"
 "appimagetool" = "latest"
 
@@ -29,4 +20,3 @@ gcc = "14"
 
 [env]
 # Default build configuration
-MESON_BUILDTYPE = { default = "debugoptimized" }

@@ -1,11 +1,13 @@
 //! File tree — status list with checkboxes for staging.
 
+use gpui::prelude::*;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::checkbox::Checkbox;
 use gpui_component::*;
 
 use crate::git_service::GitService;
+use lazydesktop_app::theme::Palette;
 
 /// Events emitted by the file tree.
 #[derive(Clone, Debug)]
@@ -31,14 +33,14 @@ impl FileTree {
         }
     }
 
-    fn status_color(status: char) -> gpui::Rgba {
+    fn status_color(p: &Palette, status: char) -> gpui::Rgba {
         match status {
-            'M' => gpui::rgb(0xf0c83c), // Modified
-            'A' => gpui::rgb(0x2da44e), // Added
-            'D' => gpui::rgb(0xcf222e), // Deleted
-            'R' => gpui::rgb(0x0969da), // Renamed
-            '?' => gpui::rgb(0x8c959f), // Untracked
-            _ => gpui::rgb(0xf8f9fa),   // Default
+            'M' => p.status_modified,  // Modified
+            'A' => p.status_added,     // Added
+            'D' => p.status_deleted,   // Deleted
+            'R' => p.status_renamed,   // Renamed
+            '?' => p.status_untracked, // Untracked
+            _ => p.text_primary,       // Default
         }
     }
 
@@ -59,11 +61,13 @@ impl Render for FileTree {
         let files = self.git_service.read(cx).file_statuses.clone();
         let file_count = files.len();
         let all_paths: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
+        let p = Palette::current(cx);
 
         div()
             .flex()
             .flex_col()
             .size_full()
+            .bg(p.panel)
             .child(
                 // Header
                 div()
@@ -73,6 +77,7 @@ impl Render for FileTree {
                     .px_4()
                     .py_2()
                     .border_b_1()
+                    .border_color(p.separator)
                     .child(
                         Checkbox::new("select-all")
                             .checked(self.select_all)
@@ -91,7 +96,7 @@ impl Render for FileTree {
                     .child(
                         div()
                             .text_sm()
-                            .text_color(gpui::rgb(0x8c959f))
+                            .text_color(p.text_muted)
                             .child(format!("{} files", file_count)),
                     ),
             )
@@ -113,9 +118,10 @@ impl Render for FileTree {
                             .gap_2()
                             .px_3()
                             .py_1_5()
+                            .when(is_selected, |this| this.bg(p.selected))
+                            .when(!is_selected, |this| this.hover(|this| this.bg(p.hover)))
                             .id(format!("file-row-{}", f.path))
                             .cursor_pointer()
-                            .hover(|this| this.bg(gpui::rgb(0x8c959f)))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 if this.selected_files.contains(&path) {
                                     this.selected_files.retain(|p| p != &path);
@@ -134,7 +140,7 @@ impl Render for FileTree {
                                     .items_center()
                                     .justify_center()
                                     .rounded_sm()
-                                    .bg(Self::status_color(status))
+                                    .bg(Self::status_color(&p, status))
                                     .text_xs()
                                     .child(Self::status_label(status)),
                             )
@@ -168,6 +174,7 @@ impl Render for FileTree {
                     .px_4()
                     .py_2()
                     .border_t_1()
+                    .border_color(p.separator)
                     .child(
                         Button::new("stage-all")
                             .ghost()

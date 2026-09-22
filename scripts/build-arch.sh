@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build .pkg.tar.zst package for Arch Linux
-# Requires: base-devel, meson, ninja
+# Requires: base-devel, rust, cargo
 #
 # Usage:
 #   ./scripts/build-arch.sh
@@ -21,6 +21,6 @@ makepkg -s --cleanbuild
 
 echo ""
 echo "=== Package built successfully ==="
-echo "Package: lazydesktop-0.2.0-1-x86_64.pkg.tar.zst"
+echo "Package: lazydesktop-<version>-1-x86_64.pkg.tar.zst"
 echo ""
-echo "Install with: sudo pacman -U lazydesktop-0.2.0-1-x86_64.pkg.tar.zst"
+echo "Install with: sudo pacman -U lazydesktop-<version>-1-x86_64.pkg.tar.zst"

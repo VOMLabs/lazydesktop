@@ -330,10 +330,9 @@ mod tests {
 
         // Should receive an event within a reasonable time
         let event = watcher.recv().unwrap();
-        match event {
-            FileEvent::Modified(p) => assert!(p.to_string_lossy().contains("HEAD")),
-            _ => {} // Other events are acceptable too
-        }
+        if let FileEvent::Modified(p) = event {
+            assert!(p.to_string_lossy().contains("HEAD"));
+        } // Other events are acceptable too
     }
 
     #[test]

@@ -30,9 +30,8 @@ just release                  # all of the above
 just release-linux-appimage
 ```
 
-This strips the release binary, packages it with linuxdeploy and the Qt
-plugin into an AppDir, then produces `lazydesktop-x86_64.AppImage` with
-appimagetool.
+This strips the release binary, packages it with linuxdeploy into an AppDir,
+then produces `lazydesktop-x86_64.AppImage` with appimagetool.
 
 ## Debian / Ubuntu .deb
 
@@ -42,12 +41,9 @@ appimagetool.
 ```
 
 The script runs `dpkg-buildpackage -us -uc -b` using the `debian/` directory.
+`debian/rules` builds with `cargo build --release --workspace` and installs
+the `target/release/lazydesktop` binary plus desktop file and icon.
 Install with `sudo dpkg -i lazydesktop_*.deb`.
-
-> **Caveat:** `debian/rules` uses the Meson build system
-> (`--buildsystem=meson`) against the `meson.build` in the tree root. The
-> packaging scripts build the C++ app and the bundled Rust crates via
-> `cargo build --workspace` + `meson setup` + `ninja`.
 
 ## Arch Linux .pkg.tar.zst
 
@@ -57,7 +53,8 @@ Install with `sudo dpkg -i lazydesktop_*.deb`.
 ```
 
 Runs `makepkg -s --cleanbuild` using the `PKGBUILD`, producing
-`lazydesktop-<version>-1-x86_64.pkg.tar.zst`.
+`lazydesktop-<version>-1-x86_64.pkg.tar.zst`. The `PKGBUILD` builds with
+`cargo build --release --workspace`.
 
 ## Windows .msi
 
@@ -65,8 +62,9 @@ Runs `makepkg -s --cleanbuild` using the `PKGBUILD`, producing
 just release-windows-msi
 ```
 
-Uses the WiX Toolset with `install/windows/lazydesktop.wxs` and
-`install/windows/build-msi.bat`.
+Uses the WiX Toolset with `install/windows/lazydesktop.wxs`,
+`install/windows/deploy-msi.ps1` (harvests the release directory into a WiX
+fragment) and `install/windows/build-msi.bat`.
 
 ## Docker
 
@@ -79,7 +77,7 @@ See the [Docker guide](../getting-started/docker.md) for running instructions.
 ## CI / release automation
 
 Tagging the repository with `v*` triggers `.github/workflows/release.yml`,
-which builds the release binary with Cargo + Meson/Ninja and packages:
+which builds the release binary with Cargo and packages:
 
 - **Linux**: `.deb` + `.AppImage` (ubuntu-24.04)
 - **Arch**: `.pkg.tar.zst` (archlinux container)
@@ -91,14 +89,9 @@ as **prereleases** when the tag contains a pre-release segment (for example
 `v0.2.0-beta.1`); stable tags (e.g. `v0.2.0`) are published as full
 releases. See [release process](../release-process.md).
 
-> **Note:** the release workflow builds with Cargo + Meson/Ninja, matching
-> the local packaging scripts. The Windows `.msi` packages the executable
-> and base Qt plugins; bundling all Qt runtime DLLs via `windeployqt` is
-> planned.
-
 ## Requirements for local release builds
 
-- linuxdeploy + linuxdeploy-plugin-qt + appimagetool (or `mise install`)
-- `debhelper`, `meson`, `ninja` for the `.deb` (via `debian/`; see caveat)
-- `base-devel` (makepkg) for Arch
+- linuxdeploy + appimagetool (or `mise install`)
+- `debhelper`, `cargo`, `rustc` for the `.deb`
+- `base-devel` + `rust` (makepkg) for Arch
 - WiX Toolset (`.NET tool`) for the MSI

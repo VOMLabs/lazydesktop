@@ -5,9 +5,8 @@ Guidance for AI coding agents working in this repository.
 ## Project overview
 
 **LazyDesktop** is a fast, native Git GUI for the KDE Plasma desktop — a
-lightweight alternative to GitHub Desktop. It is built with **Qt 6 Widgets
-and C++23** (no Electron, no web runtime) and integrates with the system
-theme.
+lightweight alternative to GitHub Desktop. It is built with **Rust and GPUI**
+(no Electron, no web runtime) and integrates with the system theme.
 
 Core capabilities:
 
@@ -17,7 +16,7 @@ Core capabilities:
   (`projects.yaml`), folder scanning.
 - AI commit messages: cloud providers (OpenRouter, OpenAI, Anthropic, Google
   AI Studio) or fully local GGUF inference via the bundled Rust `ai_core`
-  crate (`llama-cpp-2`) exposed over a C FFI.
+  crate (`llama-cpp-2`).
 - Native SSH key management and Git remote config through the bundled Rust
   `vcs_core` crate (no `ssh-keygen` / `ssh` / `git remote` subprocesses).
 
@@ -25,37 +24,38 @@ Core capabilities:
 
 | Area | Technology |
 |------|------------|
-| UI | Qt 6 Widgets (Core, Gui, Widgets, Network), C++23 |
-| Build | Meson + Ninja (`meson.build`), links pre-built Rust static libs |
-| Rust crates | `crates/ai_core` (GGUF inference), `crates/vcs_core` (SSH + remotes) — both `staticlib` with C ABI headers consumed by C++ |
-| Persistence | `QSettings` (INI) + YAML (`projects.yaml`, themes) — no database |
-| Git operations | `git` CLI via `QProcess` (no libgit2) |
+| UI | GPUI (`crates/app`), Rust |
+| Build | Cargo + Just (`justfile`), moon for orchestration |
+| Rust crates | `crates/ai_core` (GGUF inference), `crates/vcs_core` (SSH + remotes), `crates/git_cmd` (git CLI), `crates/config` (settings/projects) |
+| Persistence | `config` crate (INI settings + `projects.yaml`) — no database |
+| Git operations | `git` CLI via `git_cmd` (no libgit2) |
 | Task runner | `justfile` recipes (`just setup`, `just build`, `just run`, …) |
 | Toolchain | Pinned in `mise.toml` (`mise install`) |
 
 ## Repository layout
 
-- `src/` — C++ application (`mainwindow.cpp` holds most logic,
-  `diffviewer`, `model_manager_bridge`, `vcs_bridge`, `background_download`)
-- `crates/ai_core/` — Rust AI engine (staticlib + `ai_core.h` C ABI)
-- `crates/vcs_core/` — Rust SSH/remote engine (staticlib + `vcs_core.h` C ABI)
+- `crates/app/` — GPUI application (UI shell, commit panel, sidebar, settings, diff viewer)
+- `crates/git_cmd/` — git CLI wrapper
+- `crates/ai_core/` — Rust AI engine (cloud providers + local GGUF inference)
+- `crates/vcs_core/` — Rust SSH/remote engine
+- `crates/config/` — settings, paths, projects persistence
+- `crates/watcher/`, `crates/addons/` — file watching and addons
 - `docs/` — full documentation (see below)
 - `data/`, `assets/`, `install/`, `debian/`, `scripts/` — packaging and resources
 - `.github/workflows/` — CI (`ci.yml`), release (`release.yml`), CodeQL
 - `.opencode/` — OpenCode agents, skills, context, tools
 - `.moon/` — Moon workspace config (task orchestration)
-- `meson.build` — Meson/Ninja C++ build definition
 - `ROADMAP.md`, `IMPLEMENTATION.md` — project direction and technical deep-dive
 
 ## Build, test, and quality
 
 ```bash
 just setup           # install toolchain via mise
-just build           # cargo build + meson/ninja build (C++ + Rust crates)
+just build           # cargo build --workspace (Rust app + crates)
 just run             # run the debug binary
-just test            # cargo test --workspace (Rust crates; no C++ test suite yet)
-just format          # clang-format on src/*.{cpp,h}
-just tidy            # clang-tidy (C++23)
+just test            # cargo test --workspace
+just format          # cargo fmt --all
+just clippy          # cargo clippy --workspace --all-targets
 just lint            # run all pre-commit hooks
 ```
 

@@ -4,15 +4,15 @@
 
 ### What is LazyDesktop?
 
-A fast, native Git GUI client for KDE Plasma, built with Qt 6 and C++23 — a
-lightweight alternative to GitHub Desktop without Electron. A pure-Rust
-frontend built on GPUI is in development. See the [README](../README.md).
+A fast, native Git GUI client for KDE Plasma, built with Rust and GPUI — a
+lightweight alternative to GitHub Desktop without Electron. See the
+[README](../README.md).
 
 ### Is it only for KDE?
 
 It is built with the same stack KDE uses and integrates best with KDE Plasma,
-but it is a standard Qt application and works on any Linux desktop that has
-Qt 6 available.
+but it is a standard GPUI/X11 application and works on any Linux desktop with
+an X or Wayland server (running under XWayland where needed).
 
 ### Does it support Windows or macOS?
 
@@ -31,8 +31,8 @@ clone/init, discard changes, and credential handling. See the
 
 ### Does it use libgit2?
 
-No. All Git operations run through the `git` CLI via `QProcess`. This keeps
-the binary small and guarantees parity with the command line.
+No. All Git operations run through the `git` CLI via the `git_cmd` crate.
+This keeps the binary small and guarantees parity with the command line.
 
 ### Where is my data stored?
 
@@ -63,14 +63,10 @@ the GUI app's AI feature. See [editor skills](ai/editor-skills.md).
 
 ## Build & install
 
-### Which compiler do I need?
+### Which toolchain do I need?
 
-A C++23 compiler — GCC 14+ or Clang 18+.
-
-### meson picked Qt 5 instead of Qt 6!
-
-Point `PATH` at your Qt 6 bin directory before configuring, e.g.
-`PATH=/usr/lib/qt6/bin:$PATH meson setup build --reconfigure`.
+The Rust stable toolchain (`cargo`, `rustc`), plus `cmake`/`ninja` on Linux
+for the C code in the dependency tree (`aws-lc-sys`, `llama-cpp-2`).
 
 ### The Rust build fails with "cargo not found"
 
@@ -86,9 +82,9 @@ Yes — the binary runs directly from the build directory. See
 
 ### The status list does not refresh
 
-The auto-refresh watches `.git/index` and `.git/HEAD` with a 2-second
-debounce. If it is stale, trigger a manual action (e.g. switch branches) or
-reopen the repository.
+The auto-refresh watches `.git/index` and `.git/HEAD` through the `watcher`
+crate with a debounce. If it is stale, trigger a manual action (e.g. switch
+branches) or reopen the repository.
 
 ### A remote push asks for credentials every time
 
@@ -98,4 +94,4 @@ or your OS keyring), or use an SSH remote.
 ### Where do I report bugs?
 
 Open an issue on the GitHub repository. Include the LazyDesktop version, your
-OS/Qt versions, and steps to reproduce.
+OS, and steps to reproduce.

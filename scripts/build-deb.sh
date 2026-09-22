@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build .deb package for Debian/Ubuntu
-# Requires: debhelper, meson, ninja, build-essential
+# Requires: debhelper, cargo, rustc
 #
 # Usage:
 #   ./scripts/build-deb.sh

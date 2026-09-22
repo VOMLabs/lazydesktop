@@ -140,22 +140,42 @@ pub struct ThemeEntry {
     pub path: PathBuf,
 }
 
-/// The built-in "Dark" theme with VS Code-style colors.
+/// The built-in "Dark" theme with the application's shade palette.
 pub fn builtin_dark_theme() -> Theme {
     let mut colors = HashMap::new();
-    colors.insert("background".to_string(), "#1e1e1e".to_string());
-    colors.insert("foreground".to_string(), "#d4d4d4".to_string());
-    colors.insert("widget_background".to_string(), "#252526".to_string());
-    colors.insert("input_background".to_string(), "#3c3c3c".to_string());
-    colors.insert("input_foreground".to_string(), "#d4d4d4".to_string());
-    colors.insert("button_background".to_string(), "#0e639c".to_string());
+    colors.insert("background".to_string(), "#181a1f".to_string());
+    colors.insert("foreground".to_string(), "#d7dae0".to_string());
+    colors.insert("widget_background".to_string(), "#1d2027".to_string());
+    colors.insert("input_background".to_string(), "#20242d".to_string());
+    colors.insert("input_foreground".to_string(), "#d7dae0".to_string());
+    colors.insert("button_background".to_string(), "#568af2".to_string());
     colors.insert("button_foreground".to_string(), "#ffffff".to_string());
-    colors.insert("tooltip_background".to_string(), "#252526".to_string());
-    colors.insert("tooltip_foreground".to_string(), "#cccccc".to_string());
-    colors.insert("selection".to_string(), "#264f78".to_string());
+    colors.insert("tooltip_background".to_string(), "#232730".to_string());
+    colors.insert("tooltip_foreground".to_string(), "#d7dae0".to_string());
+    colors.insert("selection".to_string(), "#568af2".to_string());
 
     Theme {
         name: "Dark".to_string(),
+        colors,
+    }
+}
+
+/// The built-in "Light" theme with the application's shade palette.
+pub fn builtin_light_theme() -> Theme {
+    let mut colors = HashMap::new();
+    colors.insert("background".to_string(), "#f6f7f9".to_string());
+    colors.insert("foreground".to_string(), "#1c1f26".to_string());
+    colors.insert("widget_background".to_string(), "#eef0f3".to_string());
+    colors.insert("input_background".to_string(), "#ffffff".to_string());
+    colors.insert("input_foreground".to_string(), "#1c1f26".to_string());
+    colors.insert("button_background".to_string(), "#2f6fe0".to_string());
+    colors.insert("button_foreground".to_string(), "#ffffff".to_string());
+    colors.insert("tooltip_background".to_string(), "#ffffff".to_string());
+    colors.insert("tooltip_foreground".to_string(), "#1c1f26".to_string());
+    colors.insert("selection".to_string(), "#2f6fe0".to_string());
+
+    Theme {
+        name: "Light".to_string(),
         colors,
     }
 }
@@ -182,6 +202,15 @@ mod tests {
     fn builtin_dark_theme_has_required_colors() {
         let theme = builtin_dark_theme();
         assert_eq!(theme.name, "Dark");
+        assert!(theme.color("background").is_some());
+        assert!(theme.color("foreground").is_some());
+        assert!(theme.color("selection").is_some());
+    }
+
+    #[test]
+    fn builtin_light_theme_has_required_colors() {
+        let theme = builtin_light_theme();
+        assert_eq!(theme.name, "Light");
         assert!(theme.color("background").is_some());
         assert!(theme.color("foreground").is_some());
         assert!(theme.color("selection").is_some());

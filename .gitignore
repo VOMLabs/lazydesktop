@@ -4,33 +4,6 @@ target/
 .xmake/
 xmake.lock
 compile_commands.json
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-CTestTestfile.cmake
-*.o
-*.obj
-*.a
-*.lib
-*.so
-*.so.*
-*.dylib
-*.dll
-
-# ── Qt generated sources ───────────────────────────────────────────
-.qmake.stash
-moc_*.cpp
-moc_*.h
-qrc_*.cpp
-ui_*.h
-*.user
-*.user.*
-
-# ── Test / coverage ────────────────────────────────────────────────
-*.gcda
-*.gcno
-*.profraw
-*.profdata
 
 # ── Editor / IDE ───────────────────────────────────────────────────
 .vscode/

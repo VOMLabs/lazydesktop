@@ -1,9 +1,9 @@
 # Docker
 
-The Docker image builds the C++ UI and the bundled Rust `ai_core` crate, then
-ships only the runtime — no toolchain. The Qt window either connects to your
-host's X server or falls back to a browser-accessible VNC session, so you can
-run LazyDesktop on macOS, Windows, or a headless server.
+The Docker image builds the GPUI app and the bundled Rust crates (`ai_core`,
+`vcs_core`), then ships only the runtime — no toolchain. The window either
+connects to your host's X server or falls back to a browser-accessible VNC
+session, so you can run LazyDesktop on macOS, Windows, or a headless server.
 
 ## Quick start
 
@@ -74,7 +74,7 @@ PUID=$(id -u) PGID=$(id -g) docker compose up -d
 
 ## Notes
 
-- The image is large because it includes Qt runtime libraries and a base GGUF
-  model runtime — by design, it needs no toolchain to run.
+- The image ships only the runtime — no toolchain. Build deps (cmake, ninja,
+  Rust) live in the multi-stage builder.
 - Local model files downloaded inside the container are stored in the named
   volume and persist across container recreations.

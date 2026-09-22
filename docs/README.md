@@ -1,8 +1,8 @@
 # LazyDesktop Documentation
 
 Welcome to the LazyDesktop documentation. LazyDesktop is a fast, native Git
-GUI for the KDE Plasma desktop. The current UI is built with Qt 6 and C++23; a
-pure-Rust frontend built on GPUI is in development in `crates/app`.
+GUI for the KDE Plasma desktop. The UI is built with **Rust and GPUI** in
+`crates/app` and calls the backend Rust crates directly.
 
 ## Getting started
 
@@ -11,7 +11,7 @@ New here? Start with the guides below.
 - [Installation](getting-started/installation.md) — install from packages,
   AppImage, or source
 - [Build from source](getting-started/build-from-source.md) — requirements,
-  meson/ninja + moon, and the `justfile` recipes
+  cargo + moon, and the `justfile` recipes
 - [Docker](getting-started/docker.md) — run LazyDesktop in a container
   (X11 or VNC/noVNC)
 - [Configuration](getting-started/configuration.md) — where data lives and
@@ -51,7 +51,7 @@ For contributors and people who want to understand the internals.
 - [Source layout](development/source-layout.md) — where everything lives
 - [`ai_core` crate](development/ai-core.md) — the Rust inference engine and
   its C FFI
-- [Build & test](development/build-and-test.md) — meson/ninja + moon, cargo
+- [Build & test](development/build-and-test.md) — cargo + moon, cargo
   test, pre-commit, CI
 - [Packaging](development/packaging.md) — .deb, .AppImage, .pkg.tar.zst,
   .msi, Docker

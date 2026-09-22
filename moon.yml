@@ -1,7 +1,7 @@
-# LazyDesktop app project
+# LazyDesktop app project (Rust + GPUI)
 # https://moonrepo.dev/docs/config/project
 
-language: 'cpp'
+language: 'rust'
 layer: 'application'
 
 project:
@@ -10,33 +10,35 @@ project:
 
 tasks:
   build:
-    script: 'meson setup build --buildtype=debugoptimized --reconfigure 2>/dev/null && ninja -C build'
+    command: 'cargo'
+    args: ['build', '-p', 'lazydesktop-app']
     inputs:
-      - 'src/**/*'
-      - 'meson.build'
-      - 'crates/*/include/*.h'
-      - 'crates/ai_core/*.h'
-      - 'crates/vcs_core/*.h'
+      - 'crates/app/**/*'
 
-  build-release:
-    script: 'meson setup build --buildtype=release --reconfigure 2>/dev/null && ninja -C build'
+  test:
+    command: 'cargo'
+    args: ['test', '-p', 'lazydesktop-app']
     inputs:
-      - 'src/**/*'
-      - 'meson.build'
-
-  run:
-    command: 'build/lazydesktop'
-    deps:
-      - '~:build'
-
-  format:
-    command: 'clang-format'
-    args: ['-i', '-style=file', 'src/*.cpp', 'src/*.h']
-    inputs:
-      - 'src/**/*'
+      - 'crates/app/**/*'
 
   lint:
-    command: 'clang-tidy'
-    args: ['src/*.cpp', 'src/*.h', '--', '-std=c++23']
+    command: 'cargo'
+    args: ['clippy', '-p', 'lazydesktop-app', '--', '-D', 'warnings']
     inputs:
-      - 'src/**/*'
+      - 'crates/app/**/*'
+
+  format:
+    command: 'cargo'
+    args: ['fmt', '-p', 'lazydesktop-app', '--', '--check']
+    inputs:
+      - 'crates/app/**/*'
+
+  format-fix:
+    command: 'cargo'
+    args: ['fmt', '-p', 'lazydesktop-app']
+    inputs:
+      - 'crates/app/**/*'
+
+  run:
+    command: 'cargo'
+    args: ['run', '-p', 'lazydesktop-app']

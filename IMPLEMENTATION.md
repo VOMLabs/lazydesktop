@@ -11,26 +11,22 @@ companion to the user-facing guides in [`docs/`](docs/README.md).
 ### What is LazyDesktop?
 
 LazyDesktop is a native Git GUI client for KDE Plasma, built as a lightweight
-alternative to GitHub Desktop. It uses the same technology stack as KDE
-itself (Qt 6, C++23) for the UI layer, with an increasingly Rust-based
-backend for core services.
+alternative to GitHub Desktop. It is built entirely with **Rust**: the UI uses
+**GPUI** (the editor framework from Zed), and seven crates form a single Cargo
+workspace for the frontend and the backend services.
 
 ### Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                     MainWindow (Qt/C++)                 │
+│                     App (GPUI/Rust)                    │
 │  ┌──────────┐  ┌────────────────────┐  ┌─────────────┐ │
-│  │  Toolbar  │  │   Sidebar Tabs     │  │   Viewer    │ │
-│  │  - Branch │  │  ┌──────────────┐ │  │  Stack      │ │
-│  │  - Push   │  │  │ Changes Tab  │ │  │  - Diff     │ │
-│  │  - Project│  │  │  - File List │ │  │  - Image    │ │
-│  │           │  │  │  - Commit    │ │  │  - Placeholder│ │
-│  │           │  │  ├──────────────┤ │  │             │ │
-│  │           │  │  │ History Tab  │ │  │             │ │
-│  │           │  │  │  - Commits   │ │  │             │ │
-│  │           │  │  │  - Files     │ │  │             │ │
-│  │           │  │  └──────────────┘ │  │             │ │
+│  │  Toolbar  │  │  Sidebar          │  │  Main       │ │
+│  │  - Branch │  │  - Branches       │  │  content    │ │
+│  │  - Push   │  │  - History        │  │  - File tree│ │
+│  │  - Project│  │  - Projects       │  │  - Diff     │ │
+│  │           │  ├───────────────────┤  │  - Image    │ │
+│  │           │  │  Commit panel     │  │             │ │
 │  └──────────┘  └────────────────────┘  └─────────────┘ │
 ├─────────────────────────────────────────────────────────┤
 │              Rust Backend Crates                         │
@@ -48,9 +44,9 @@ backend for core services.
 │  └─────────────┘ └─────────────┘ └────────────────────┘ │
 ├─────────────────────────────────────────────────────────┤
 │  Persistence Layer  │  Build System                     │
-│  - QSettings (INI)  │  - Meson/Ninja (C++ app)         │
-│  - YAML (projects,  │  - Cargo workspace (Rust crates) │
-│    themes)          │  - justfile recipes               │
+│  - INI settings     │  - Cargo workspace (single)       │
+│  - YAML (projects,  │  - justfile recipes               │
+│    themes)          │  - Moon task orchestration        │
 └─────────────────────┴───────────────────────────────────┘
 ```
 
@@ -58,11 +54,10 @@ backend for core services.
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| UI Framework | Qt 6 (Core, Gui, Widgets, Network) | All UI rendering |
-| Language (UI) | C++23 | Application logic and UI |
-| Language (Backend) | Rust | Core services, security, VCS |
-| Build System | Meson/Ninja + Cargo | Compilation and linking |
-| Config Storage | Rust `config` crate | INI settings, Lua projects/themes |
+| UI Framework | GPUI (`crates/app`) | All UI rendering |
+| Language | Rust | Application logic, UI, backend |
+| Build System | Cargo workspace + Moon + just | Compilation and linking |
+| Config Storage | Rust `config` crate | INI settings, YAML projects/themes |
 | Local AI | Rust `ai_core` crate | GGUF model inference |
 | Native VCS/SSH | Rust `vcs_core` crate | SSH keys, git remotes |
 | Addon System | Rust `addons` crate | Security core, package parsing |
@@ -89,7 +84,8 @@ All persistent data lives under `~/.config/lazydesktop/`:
 
 ```
 crates/
-├── ai_core/      # GGUF inference, model management, commit messages
+├── app/          # GPUI frontend (the shipped UI)
+├── ai_core/      # GGUF inference, cloud providers, model management
 ├── vcs_core/     # SSH key management, git remotes, connection tests
 ├── addons/       # Addon system security core (archive, manifest, path security)
 ├── watcher/      # VCS-aware file watcher with debouncing
@@ -97,9 +93,14 @@ crates/
 └── git_cmd/      # Git/Jujutsu CLI command execution wrapper
 ```
 
+> **Note on FFI:** every crate still ships an `ffi.rs` module and builds as
+> `staticlib` for **external C++ hosts**. The bundled GPUI app (`app`) calls
+> the crates directly as Rust libraries and does not use the C ABI.
+
 ### 2.1 `ai_core` — AI Inference Engine
 
-**Purpose:** Local GGUF model inference and download, exposed over a C FFI.
+**Purpose:** Local GGUF model inference + downloads, and cloud provider calls
+(`ai_core::cloud` for OpenRouter / OpenAI / Anthropic / Google AI Studio).
 
 | Module | Responsibility |
 |--------|---------------|
@@ -183,7 +184,7 @@ pub enum FileEvent {
 
 ### 2.5 `config` — Configuration Management (NEW)
 
-**Purpose:** Typed access to settings, projects, and themes without Qt dependency.
+**Purpose:** Typed access to settings, projects, and themes.
 
 | Module | Responsibility |
 |--------|---------------|
@@ -220,43 +221,32 @@ pub enum FileEvent {
 
 ---
 
-## Part 3: C++/Qt Layer (Remaining)
+## Part 3: Frontend Layer (Rust + GPUI)
 
 ### 3.1 Source Files
 
-| File | Responsibility | Migration Status |
-|------|---------------|-----------------|
-| `src/mainwindow.h/cpp` | All UI setup, git process management, settings dialog | **UI remains** — backend logic migratable |
-| `src/diffviewer.h/cpp` | Custom QPlainTextEdit with line numbers and syntax highlighting | **UI remains** — tied to Qt widgets |
-| `src/model_manager_bridge.h/cpp` | C++ wrapper around `ai_core` C FFI | **Bridge remains** — thin Qt signal wrapper |
-| `src/vcs_bridge.h/cpp` | C++ wrapper around `vcs_core` C FFI | **Bridge remains** — thin Qt wrapper |
-| `src/addon_bridge.h/cpp` | C++ wrapper around `addons` C FFI | **Bridge remains** — thin Qt wrapper |
-| `src/background_download.h/cpp` | Detached model installer mode | **Migratable** — uses `ai_core` FFI |
-| `src/main.cpp` | Entry point | **Minimal** — stays in C++ |
+The Qt/C++ application in `src/` (plus `meson.build` and the `include/*.h`
+C ABI headers) was **removed** when the GPUI frontend reached feature
+parity. The whole repository is now a single Rust Cargo workspace.
 
-### 3.2 Qt Bridges
+| File | Responsibility |
+|------|---------------|
+| `crates/app/src/main.rs` | Entry point (GPUI app) |
+| `crates/app/src/app.rs` | Root view: toolbar, sidebar, file tree, diff, commit panel |
+| `crates/app/src/sidebar.rs` | Branches / History / Projects navigation |
+| `crates/app/src/file_tree.rs` | Status file list with staging checkboxes |
+| `crates/app/src/diff_view.rs` | Diff viewer (syntax highlighting, inline images) |
+| `crates/app/src/commit_panel.rs` | Commit summary/description, AI generation, stash/reset actions |
+| `crates/app/src/settings_view.rs` | Settings dialog (AI, SSH keys, remotes, appearance) |
+| `crates/app/src/git_service.rs` | Async Git CLI wrapper for the app |
 
-The C++ bridges (`model_manager_bridge`, `vcs_bridge`, `addon_bridge`) are
-thin wrappers that:
-1. Convert Qt types (`QString`, `QByteArray`) to C strings
-2. Call Rust FFI functions
-3. Convert results back to Qt types
-4. Emit Qt signals for async results
+### 3.2 C FFI modules
 
-These bridges will remain until the GPUI frontend replaces Qt. They are
-intentionally thin — all business logic lives in Rust.
-
-### 3.3 Still in C++/Qt
-
-| Subsystem | Current Location | Why It Remains | Migration Path |
-|-----------|-----------------|----------------|----------------|
-| UI rendering | `mainwindow.cpp` | Qt widgets | GPUI frontend |
-| Settings dialog | `mainwindow.cpp` | Qt widgets | GPUI frontend |
-| Diff viewer | `diffviewer.cpp` | Qt widgets | GPUI frontend |
-| Process management | `mainwindow.cpp` | QProcess for git | Already has Rust `git_cmd` — bridges can switch |
-| File watching | `mainwindow.cpp` | QFileSystemWatcher | Already has Rust `watcher` — bridges can switch |
-| Project management UI | `mainwindow.cpp` | Qt widgets | GPUI frontend |
-| Theme application | `mainwindow.cpp` | Qt stylesheet | GPUI frontend |
+`ffi.rs` modules remain in `ai_core`, `vcs_core`, `config`, `git_cmd`,
+`watcher`, and `addons`, and those crates still build as `staticlib` for
+external C++ hosts. The bundled app does **not** use them — it calls the
+crates directly as Rust libraries. The `include/*.h` headers that declared
+the C ABI were deleted together with the Qt app.
 
 ---
 
@@ -266,55 +256,51 @@ intentionally thin — all business logic lives in Rust.
 
 | Component | Crate | Tests | Status |
 |-----------|-------|-------|--------|
-| AI inference | `ai_core` | — | Production |
-| SSH/Remote | `vcs_core` | — | Production |
+| AI inference + cloud providers | `ai_core` | ✅ | Production |
+| SSH/Remote | `vcs_core` | ✅ | Production |
 | Addon system | `addons` | 77 ✅ | Production |
-| File watching | `watcher` | 10 ✅ | New — ready for integration |
-| Configuration | `config` | 30 ✅ | New — ready for integration |
-| Git/jj commands | `git_cmd` | 7 ✅ | New — ready for integration |
+| File watching | `watcher` | 10 ✅ | Production |
+| Configuration | `config` | 30 ✅ | Production |
+| Git/jj commands | `git_cmd` | 7 ✅ | Production |
+| **GPUI frontend** | `app` | — | **Shipped UI** |
 
-### In Progress
+### Completed (Frontend)
 
-| Component | Status | Next Step |
-|-----------|--------|-----------|
-| C++ → Rust bridge switching | Bridges exist | Switch `mainwindow.cpp` to use new Rust crates |
-| Background download | Still in C++ | Migrate to use `watcher` + `config` crates |
+| Component | Status | Notes |
+|-----------|--------|-------|
+| GPUI app replaces Qt `mainwindow` | ✅ | `crates/app` is the shipped UI |
+| Git ops switched to `git_cmd` crate | ✅ | `crates/app/src/git_service.rs`, async via `spawn_blocking` |
+| File watching via `watcher` crate | ✅ | .git/index + .git/HEAD debounce |
+| Settings via `config` crate | ✅ | INI settings, `projects.yaml`, themes |
+| AI wired directly (`ai_core`) | ✅ | Local GGUF + cloud providers (`ai_core::cloud`) |
+| SSH/remotes via `vcs_core` | ✅ | No `ssh-keygen` / `ssh` / `git remote` subprocesses |
+| Diff viewer | ✅ | Colorized diffs, line-number gutter; word-level highlighting + inline images remaining |
+| Branch/stash/reset UI | ✅ | Create/switch/delete/rename branches, stash push/pop, reset modes |
 
-### Remaining C++/Qt Backend
+### Remaining Frontend Work
 
-| Component | What It Does | Location | Why It Exists | Migration Complexity |
-|-----------|-------------|----------|---------------|---------------------|
-| Process management | QProcess for git commands | `mainwindow.cpp` | UI integration | Low — `git_cmd` crate ready |
-| File watcher integration | QFileSystemWatcher | `mainwindow.cpp` | UI integration | Low — `watcher` crate ready |
-| Settings dialog | Qt widgets for settings | `mainwindow.cpp` | UI | Medium — needs GPUI |
-| Project management UI | Qt widgets for project list | `mainwindow.cpp` | UI | Medium — needs GPUI |
-| Diff viewer | QPlainTextEdit subclass | `diffviewer.cpp` | UI rendering | High — needs GPUI |
-| Theme application | Qt stylesheet generation | `mainwindow.cpp` | UI | Medium — needs GPUI |
-
-### GPUI Migration (Future)
-
-The GPUI frontend will need:
-1. **File watching:** Use `watcher` crate events directly
-2. **Configuration:** Use `config` crate for all settings/projects/themes
-3. **Git operations:** Use `git_cmd` crate for all git/jj commands
-4. **AI inference:** Use `ai_core` crate directly (no C++ bridge needed)
-5. **SSH/Remote:** Use `vcs_core` crate directly
-6. **Addons:** Use `addons` crate directly
-
-The Rust backend is now complete enough to support a GPUI frontend
-without any C++ dependency for core services.
+| Item | Status |
+|------|--------|
+| Diff viewer: word-level syntax highlighting + inline image rendering | In progress |
+| Co-author selector, amend toggle in commit panel | Planned |
+| Stash list/drop UI, revert UI | Planned |
+| Theming — map `config` crate tokens to `gpui-component` theme tokens | Planned |
+| Data migration — Qt-era YAML persistence to `config` crate Lua files | Planned |
+| Full Jujutsu (jj) UI support in the status/commit flows | Planned |
+| UI test coverage for `crates/app` | Planned |
 
 ---
 
 ## Part 5: Build System
 
-### Meson/Ninja + Cargo
+### Cargo (single workspace)
 
-The build process:
-1. `cargo build --workspace` builds each Rust crate (staticlib + rlib)
-2. Meson configures the C++ application with Qt
-3. Ninja compiles the C++ application and links the Rust static libraries
-4. The C++ app links against all Rust static libraries
+The whole application — GPUI frontend (`app`) plus the backend crates —
+builds with Cargo:
+
+1. `cargo build --workspace` builds every crate (including the `app` bin)
+2. The `app` crate links the backend crates directly as Rust libraries
+3. Release builds use LTO + `opt-level = "z"` + strip (see `Cargo.toml`)
 
 ### Workspace Configuration
 
@@ -327,6 +313,7 @@ members = [
     "crates/watcher",
     "crates/config",
     "crates/git_cmd",
+    "crates/app",
 ]
 ```
 
@@ -336,8 +323,10 @@ members = [
 cargo check --workspace          # Type checking
 cargo test --workspace           # All tests
 cargo clippy --workspace         # Linting
+cargo fmt --all                  # Formatting
+cargo audit                      # Security audit
 just test                        # Rust tests via justfile
-just build                       # Full build (C++ + Rust)
+just build                       # Full build (Rust workspace)
 ```
 
 ---
@@ -406,12 +395,16 @@ just build                       # Full build (C++ + Rust)
 
 ## Known Notes / Caveats
 
-- **Packaging build system** — The Debian rules and Arch PKGBUILD build with
-  Meson/Ninja + Cargo, matching CI and the release workflows.
+- **Packaging build system** — The Debian rules, Arch PKGBUILD, and Windows
+  MSI script all build with `cargo build --workspace --release`, matching CI
+  and the release workflows (no build-system drift).
 - **AI quality depends on the model/provider** — Small local models produce
   usable but terse commit messages; larger models and cloud providers
   generally produce better summaries.
-- **New crates not yet integrated** — The `watcher`, `config`, and `git_cmd`
-  crates are complete and tested but the C++ `mainwindow.cpp` has not yet
-  been switched to use them. Integration requires replacing QProcess/
-  QFileSystemWatcher calls with FFI calls to the new crates.
+- **`staticlib` + `ffi.rs` kept for external hosts** — The bundled app calls
+  the crates directly; the C ABI modules remain only for external C++ hosts
+  and are inert in this repository (headers removed).
+- **Remaining UI gaps** — Word-level diff highlighting, inline image
+  rendering, co-author selector, amend toggle, stash list/drop, revert UI,
+  full jj UI support, and `crates/app` unit tests are still open (see
+  [ROADMAP.md](ROADMAP.md)).

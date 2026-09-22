@@ -21,6 +21,8 @@ gpui-component = { git = "https://github.com/longbridge/gpui-component", branch 
 lazydesktop-git-cmd = { path = "../git_cmd" }
 lazydesktop-config = { path = "../config" }
 lazydesktop-watcher = { path = "../watcher" }
+ai_core = { path = "../ai_core" }
+vcs_core = { path = "../vcs_core" }
 
 # Async runtime
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }

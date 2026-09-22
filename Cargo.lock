@@ -4738,6 +4738,7 @@ dependencies = [
 name = "lazydesktop-app"
 version = "0.3.0"
 dependencies = [
+ "ai_core",
  "anyhow",
  "gpui-component",
  "gpui-pre",
@@ -4748,6 +4749,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "vcs_core",
 ]
 
 [[package]]
@@ -7174,6 +7176,8 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "rustls-platform-verifier",
+ "serde",
+ "serde_json",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",

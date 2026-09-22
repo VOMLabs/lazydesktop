@@ -46,16 +46,17 @@ docs/packaging
 
 ## Code style
 
-- C++ is formatted with **clang-format** (`.clang-format`): `just format`.
-- Static analysis with **clang-tidy** (`.clang-tidy`): `just tidy`.
+- Rust is formatted with **rustfmt** (`cargo fmt --all`): `just format`.
+- Lints with **clippy**: `just clippy`.
 - Run all pre-commit hooks with `just lint` (see
   [build & test](development/build-and-test.md)).
 
 ## Testing
 
-- The Rust `ai_core` crate has a unit test suite: `just test`.
-- There is currently no C++ test suite; add regression tests where practical
-  and describe manual verification in the PR.
+- The workspace has a unit test suite: `just test`
+  (`cargo test --workspace`).
+- Add regression tests where practical and describe manual verification in
+  the PR.
 
 ## Pull request workflow
 
