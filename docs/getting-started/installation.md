@@ -20,13 +20,12 @@ makepkg -s --cleanbuild
 sudo pacman -U lazydesktop-<version>-1-x86_64.pkg.tar.zst
 ```
 
-The PKGBUILD depends on `qt6-base`, `yaml-cpp`, `git`, and
-`shared-mime-info`.
+The PKGBUILD depends on `git` and `shared-mime-info`.
 
 ## Debian / Ubuntu
 
-Build a `.deb` with the helper script (requires `debhelper`, `meson`,
-`ninja`, and the Qt 6 / yaml-cpp dev packages):
+Build a `.deb` with the helper script (requires `debhelper`, `cargo`, and
+`rustc`):
 
 ```bash
 ./scripts/build-deb.sh

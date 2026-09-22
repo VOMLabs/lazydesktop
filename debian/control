@@ -3,24 +3,23 @@ Section: devel
 Priority: optional
 Maintainer: LazyDesktop Team <team@lazydesktop.dev>
 Build-Depends: debhelper-compat (= 13),
-               meson (>= 1.0.0),
-               ninja-build,
-               qt6-base-dev (>= 6.5.0),
-               libyaml-cpp-dev (>= 0.7.0),
-               pkg-kde-tools,
-               libgl-dev
+               cargo (>= 1.70),
+               rustc (>= 1.70),
+               cmake,
+               ninja-build
 Standards-Version: 4.7.0
 Homepage: https://lazydesktop.dev
 Rules-Requires-Root: no
 
 Package: lazydesktop
 Architecture: any
-Depends: ${shlibs:Depends},
-         ${misc:Depends},
+Depends: ${misc:Depends},
          git,
-         shared-mime-info
-Description: A KDE-native Git GUI alternative
- LazyDesktop is a fast, native Git client built with Qt 6 and C++23.
+         shared-mime-info,
+         libgl1,
+         libxkbcommon-x11-0
+Description: A native Git GUI for the KDE Plasma desktop
+ LazyDesktop is a fast, native Git client built with Rust and GPUI.
  It integrates seamlessly with KDE Plasma and provides a clean interface
  for staging, committing, pushing, and managing Git repositories.
  .
@@ -32,7 +31,7 @@ Description: A KDE-native Git GUI alternative
   - Branch management (create, switch, delete)
   - Push / Fetch / Pull with smart cycling button
   - Commit history browser with file-level diff exploration
-   - Custom YAML theme support
+  - Custom YAML theme support
 
 Package: lazydesktop-dbgsym
 Section: debug

@@ -1,22 +1,25 @@
 # `ai_core` — the Rust AI Engine
 
-`ai_core` is a Rust crate that gives LazyDesktop local AI capabilities: GGUF
+`ai_core` is a Rust crate that gives LazyDesktop AI capabilities: cloud
+provider calls (OpenRouter, OpenAI, Anthropic, Google AI Studio), local GGUF
 model inference, model downloads, and Conventional Commits message
-generation. It is compiled as a `staticlib` and linked into the C++
-application, which talks to it through a small C ABI.
+generation. The GPUI app consumes it directly as a Rust library; it is also
+compiled as a `staticlib` for external C++ hosts (the `include/*.h` headers
+were removed when the bundled C++ UI was deleted).
 
 ## Why Rust?
 
 - `llama-cpp-2` is a mature, safe Rust binding for llama.cpp.
 - Memory safety for code that runs untrusted token data.
-- The crate is self-contained; the C++ side only sees the C ABI.
+- Cloud calls use `reqwest`; local inference uses `llama-cpp-2`.
 
 ## Crate layout
 
 | Module | Responsibility |
 |--------|---------------|
 | `lib.rs` | Crate root and module wiring |
-| `ffi.rs` | `extern "C"` exports |
+| `cloud.rs` | Cloud providers (OpenRouter / OpenAI / Anthropic / Google) |
+| `ffi.rs` | `extern "C"` exports (kept for external C++ hosts) |
 | `inference.rs` | GGUF loading (`llama_cpp_2`) + streaming inference on a worker thread |
 | `download.rs` | HuggingFace downloads with progress + SHA-256 verification |
 | `discovery.rs` | Model discovery (HuggingFace API + curated list), `ggml` backend detection |
@@ -24,41 +27,18 @@ application, which talks to it through a small C ABI.
 | `types.rs` | Shared types, `CommitContext` JSON |
 | `error.rs` | Error types |
 
-## C FFI reference
+## Cloud providers
 
-Declared in `crates/ai_core/ai_core.h`.
+`ai_core::cloud` provides `generate_cloud(provider, model, api_key,
+system_prompt, user_prompt)` — a blocking function that returns the generated
+text. It implements the exact API contracts used by the app:
 
-### Lifecycle
+- **OpenRouter / OpenAI** — `POST /chat/completions`, Bearer auth.
+- **Anthropic** — `POST /v1/messages`, `x-api-key` auth, single user message
+  combining system and user prompts.
+- **Google AI Studio** — `POST /v1beta/models/{model}:generateContent?key=…`.
 
-| Function | Description |
-|----------|-------------|
-| `ModelManager *mm_init(models_dir, config_path)` | Create the manager. `models_dir` is where GGUF files live; `config_path` persists model metadata. |
-| `void mm_destroy(ModelManager *)` | Free all resources. Safe while no inference thread is running. |
-
-### Downloads
-
-| Function | Description |
-|----------|-------------|
-| `int32_t mm_download_model(mm, url, dest_path, expected_sha256, progress_cb, finished_cb, user_data)` | Start a download; returns a download ID or `-1`. Progress and completion callbacks are optional. |
-| `void mm_cancel_download(mm, download_id)` | Cancel an active download. |
-
-### Model listing / deletion
-
-| Function | Description |
-|----------|-------------|
-| `char *mm_list_local_models(mm)` | JSON array of known models (name, url, path, size, sha256, downloaded). Free with `mm_free_string`. |
-| `char *mm_discover_models(mm)` | JSON array of discoverable models from HuggingFace + curated list. |
-| `bool mm_delete_model(mm, path)` | Delete a model file from disk. |
-| `void mm_free_string(char *)` | Free strings returned by the crate. |
-
-### Inference
-
-| Function | Description |
-|----------|-------------|
-| `bool mm_stream_inference(mm, model_path, prompt, n_gpu_layers, on_token, on_error, on_cancelled, on_finish, user_data)` | Generic streaming completion. Returns immediately; callbacks run on the inference thread. `on_cancelled` is polled — return `true` to cancel. |
-| `bool mm_generate_commit_message(mm, model_path, context_json, n_gpu_layers, on_token, on_error, on_cancelled, on_finish, user_data)` | Generate a Conventional Commits message from a `CommitContext` JSON object. Raw tokens stream via `on_token`; the normalized message arrives via `on_finish`. |
-
-Only one inference may run at a time; a second request returns `false`.
+`extract_text` normalizes each provider's JSON response into plain text.
 
 ## `CommitContext` JSON
 
@@ -82,28 +62,22 @@ All fields are optional unless noted. The crate builds a prompt (honoring the
 `<diff>` placeholder), runs inference, and normalizes the output to
 `type(scope): subject`.
 
-## C++ side
+## GPUI-side usage
 
-`ModelManagerBridge` (`src/model_manager_bridge.h/.cpp`) wraps the FFI in
-Qt-friendly signals:
+`crates/app/src/commit_panel.rs` calls:
 
-- `inferenceToken` — streamed tokens
-- `inferenceFinished` — final normalized text
-- `inferenceFailed` — error message
-- `inferenceCancelled` — user-requested cancellation
-
-The bridge owns the `ModelManager` handle; worker threads never touch the
-manager directly, so the handle can be torn down safely on exit.
+- `ai_core::cloud::generate_cloud(...)` — blocking; invoked from
+  `tokio::task::spawn_blocking`.
+- `ai_core::commit_message::generate_commit_message(...)` — local GGUF
+  inference (non-blocking in the app thanks to `spawn_blocking`).
 
 ## Background downloads
 
-Model downloads in the UI do not use the FFI directly. The main process
-relaunches itself in a detached worker mode
-(`lazydesktop --background-dl <url> <dest> <sha256> <modelsDir>
-<configPath>`), which downloads the model via a `.part` file, verifies the
-SHA-256 checksum, and writes JSON sidecar status files so the UI can show
-progress and offer cancellation across restarts. See
-`src/background_download.h`.
+Model downloads in the UI do not use the FFI directly. The app launches a
+detached worker mode (`lazydesktop --background-dl <url> <dest> <sha256>
+<modelsDir> <configPath>`), which downloads the model via a `.part` file,
+verifies the SHA-256 checksum, and writes JSON sidecar status files so the UI
+can show progress and offer cancellation across restarts.
 
 ## Testing
 
@@ -113,4 +87,5 @@ Run the crate's test suite with:
 cargo test --manifest-path crates/ai_core/Cargo.toml
 ```
 
-or `just test`. Tests use `tempfile` for isolated model directories.
+or `just test`. Tests use `tempfile` for isolated model directories and mock
+HTTP responses for the cloud providers.

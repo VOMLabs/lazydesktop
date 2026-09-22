@@ -9,9 +9,9 @@ Git work.
 
 > Think GitHub Desktop, but native, fast, and built for the KDE ecosystem.
 
-> **Status:** the current UI is built with **Qt 6 Widgets and C++23**. A
-> pure-Rust frontend built on **GPUI** is in active development in
-> [`crates/app`](crates/app) and will replace the Qt UI once feature-complete.
+> **Status:** the UI is built with **Rust and GPUI** in [`crates/app`](crates/app)
+> and calls the backend Rust crates (`git_cmd`, `ai_core`, `vcs_core`,
+> `config`) directly — no FFI, no C++.
 
 ---
 
@@ -61,7 +61,7 @@ Git work.
 - **Local inference** — Built-in GGUF model support with one-click downloads
   from HuggingFace, GPU acceleration toggle, and full model management. Local
   inference runs inside the bundled Rust crate (`crates/ai_core`, powered by
-  `llama-cpp-2`) and is exposed to the UI over a C FFI.
+  `llama-cpp-2`).
 - **Right-click** the AI button to switch providers; the **model name** is
   configurable in Settings → AI.
 
@@ -84,8 +84,7 @@ the project's conventions. The two skills live in `.opencode/skills/`:
 ### Look and feel
 
 - Uses system palette colors throughout and respects your desktop theme.
-- A built-in **Dark theme** and custom **YAML themes** apply Qt stylesheets
-  at startup.
+- A built-in **Dark theme** and custom **YAML themes** are applied at startup.
 - System monospace font in the diff viewer; no custom painting for the file
   list.
 
@@ -112,10 +111,9 @@ colors:
 The theme appears in Settings → Appearance after a restart or reopening the
 settings dialog. See [themes](docs/user-guide/themes.md).
 
-> **Note:** the bundled Rust `config` crate (used by the in-development GPUI
-> frontend) persists projects and themes as Lua (`projects.lua`,
-> `*.theme.lua`). The Qt UI still reads YAML directly; the migration is
-> tracked in the [roadmap](ROADMAP.md).
+> **Note:** the bundled Rust `config` crate persists projects and themes as
+> Lua (`projects.lua`, `*.theme.lua`). The migration is tracked in the
+> [roadmap](ROADMAP.md).
 
 ### Settings
 
@@ -135,9 +133,9 @@ A categorized settings dialog covers:
   (`pkexec`/`sudo` on Linux, `xcode-select` on macOS, `winget` on Windows).
 - **Credential handling** — `GIT_ASKPASS` integration with a credential
   dialog for remote authentication.
-- **Auto-refresh** — A `QFileSystemWatcher` watches `.git/index` and
-  `.git/HEAD`; changes trigger a debounced 2-second status refresh that
-  preserves your selection and diff state.
+- **Auto-refresh** — A file watcher watches `.git/index` and
+  `.git/HEAD`; changes trigger a debounced status refresh that preserves your
+  selection and diff state.
 - **Files menu** — Open in Editor (kate), File Manager, Terminal (konsole),
   or View on GitHub.
 - **Right-click context menu** — Discard changes on modified files or delete
@@ -149,13 +147,13 @@ A categorized settings dialog covers:
 
 ```bash
 just setup           # install the pinned toolchain via mise
-just build           # cargo build + meson/ninja build (C++ + Rust crates)
+just build           # cargo build --workspace (Rust app + crates)
 just run             # run the debug binary
 ```
 
-The binary runs directly from the build directory — no `make install`
-needed. The build compiles the Rust crates (`ai_core`, `vcs_core`, and the
-backend crates) and links them into the C++ binary. Your data survives
+The binary runs directly from the target directory — no `make install`
+needed. The build compiles the GPUI app plus the backend crates
+(`git_cmd`, `ai_core`, `vcs_core`, `config`). Your data survives
 rebuilds:
 
 - Projects: `~/.config/lazydesktop/projects.yaml`
@@ -163,18 +161,14 @@ rebuilds:
 - Custom themes: `~/.config/lazydesktop/themes/*.theme.yaml`
 - Local AI models: `~/.config/lazydesktop/models/`
 
-> **Note on Qt versions:** if both Qt 5 and Qt 6 are installed, meson may pick
-> Qt 5 from your `PATH`. Point it at Qt 6 before configuring, for example
-> `PATH=/usr/lib/qt6/bin:$PATH meson setup build --reconfigure`.
-
 See [build from source](docs/getting-started/build-from-source.md) for the
 full guide, or use the included [`justfile`](justfile) recipes
 (`just setup`, `just build`, `just run`, …).
 
 ## Run in Docker
 
-The Docker image builds the C++ UI and the bundled Rust crates (`ai_core`,
-`vcs_core`), then ships only the runtime (no toolchain). The Qt window either
+The Docker image builds the GPUI app plus the bundled Rust crates (`ai_core`,
+`vcs_core`), then ships only the runtime (no toolchain). The window either
 connects to your host's X server or falls back to a browser-accessible VNC
 session.
 
@@ -236,11 +230,11 @@ See the [AI documentation](docs/ai/overview.md) for details.
 
 ## Requirements
 
-- Qt 6 (Core, Gui, Widgets, Network) — Qt 6.7+ recommended
-- Rust stable toolchain (builds the bundled crates)
-- moon, meson, ninja (build orchestration)
+- Rust stable toolchain (builds the GPUI app and bundled crates)
+- moon (build orchestration)
 - Git
-- A C++23 compiler (GCC 14+ or Clang 18+) — only needed while the Qt UI ships
+- Linux: `libgl1`, `libxkbcommon-x11-0` (X11/GL runtime), plus standard
+  build deps (`cmake`, `ninja`) for the bundled C-dependent crates
 
 ## Documentation
 

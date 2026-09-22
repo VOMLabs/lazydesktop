@@ -1,43 +1,30 @@
 # ─── Variables ───────────────────────────────────────────────────
 project         := "lazydesktop"
-builddir        := "build"
-binary          := builddir + "/lazydesktop"
-binary_release  := builddir + "/lazydesktop"
+binary          := "target/debug/lazydesktop"
+binary_release  := "target/release/lazydesktop"
 appdir          := "AppDir"
 
 # ─── Default ─────────────────────────────────────────────────────
 default: build
 
 # ─── Setup ───────────────────────────────────────────────────────
-# Install moon if not present, then run moon setup
+# Install moon if not present, then run moon sync
 setup:
     @command -v moon >/dev/null 2>&1 || cargo install moonrepo
     moon sync
 
 # ─── Build ───────────────────────────────────────────────────────
-# Build Rust crates + C++ app (debug)
+# Build the Rust workspace (debug)
 build:
     cargo build --workspace
-    meson setup {{ builddir }} --buildtype=debugoptimized --reconfigure 2>/dev/null || true
-    ninja -C {{ builddir }}
 
-# Build Rust crates + C++ app (release)
+# Build the Rust workspace (release)
 build-release:
     cargo build --workspace --release
-    meson setup {{ builddir }} --buildtype=release --reconfigure 2>/dev/null || true
-    ninja -C {{ builddir }}
 
-# Build only Rust crates
-build-rust:
-    cargo build --workspace
-
-# Build only Rust crates (release)
-build-rust-release:
-    cargo build --workspace --release
-
-# Generate compile_commands.json for clangd
+# Generate rust-analyzer project metadata
 compile-commands:
-    meson setup {{ builddir }} --reconfigure 2>/dev/null || true
+    cargo metadata --format-version 1
 
 # ─── Test ────────────────────────────────────────────────────────
 # Run all Rust test suites
@@ -57,30 +44,14 @@ run:
 run-release:
     cargo run -p lazydesktop-app --release
 
-# Build and run the Qt/C++ app (legacy, debug)
-run-qt: build
-    {{ binary }}
-
-# Build and run the Qt/C++ app (legacy, release)
-run-qt-release: build-release
-    {{ binary_release }}
-
 # ─── Quality ─────────────────────────────────────────────────────
-# Format C++ sources with clang-format
-format:
-    clang-format -i -style=file src/*.cpp src/*.h
-
 # Format Rust sources
-format-rust:
+format:
     cargo fmt --all
 
 # Check Rust formatting
 check-rust-fmt:
     cargo fmt --all -- --check
-
-# Run clang-tidy static analysis
-tidy:
-    clang-tidy src/*.cpp src/*.h -- -std=c++23
 
 # Run Rust clippy lints
 clippy:
@@ -126,7 +97,7 @@ release: release-linux-appimage release-linux-deb release-linux-arch release-win
 # Linux .AppImage
 release-linux-appimage: build-release
     strip {{ binary_release }}
-    linuxdeploy-x86_64.AppImage --appdir {{ appdir }} --executable {{ binary_release }} --plugin qt
+    linuxdeploy-x86_64.AppImage --appdir {{ appdir }} --executable {{ binary_release }}
     appimagetool-x86_64.AppImage {{ appdir }}
     mv {{ project }}*-x86_64.AppImage {{ project }}-x86_64.AppImage
 
@@ -145,8 +116,8 @@ release-windows-msi: build-release
 # ─── Clean ───────────────────────────────────────────────────────
 # Remove build artifacts
 clean:
-    rm -rf {{ builddir }} {{ appdir }} builddir
+    rm -rf {{ appdir }}
 
 # Remove all build artifacts including Rust targets
 distclean: clean
-    rm -rf crates/*/target target
+    rm -rf target

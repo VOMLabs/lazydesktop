@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [cpp]
+        language: [rust]
 
     steps:
       - uses: actions/checkout@v7
@@ -46,18 +46,6 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Install Meson and Ninja
-        run: pip install meson ninja
-
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.7'
-          cache: true
-
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libyaml-cpp-dev libgl1-mesa-dev
-
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
@@ -66,11 +54,6 @@ jobs:
 
       - name: Build Rust crates
         run: cargo build --workspace
-
-      - name: Configure and build
-        run: |
-          meson setup build --buildtype=debugoptimized
-          ninja -C build
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4

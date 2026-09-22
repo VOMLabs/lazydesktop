@@ -1,7 +1,7 @@
 //! Git CLI command execution.
 //!
-//! Provides typed wrappers around common git commands that were previously
-//! executed via QProcess in mainwindow.cpp.
+//! Provides typed wrappers around common git commands. Used by the GPUI app
+//! (`crates/app/src/git_service.rs`) on `tokio::task::spawn_blocking` workers.
 
 use std::path::Path;
 use std::process::Command;
@@ -277,6 +277,55 @@ pub fn is_git_repo(path: &Path) -> bool {
     path.join(".git").is_dir()
 }
 
+/// Rename the current branch (`git branch -m`).
+pub fn rename_branch(repo_path: &Path, name: &str) -> Result<CommandResult, VcsError> {
+    run_git(repo_path, &["branch", "-m", name])
+}
+
+/// Stash all working-tree changes (`git stash push`).
+pub fn stash_push(repo_path: &Path) -> Result<CommandResult, VcsError> {
+    run_git(repo_path, &["stash", "push"])
+}
+
+/// List stashes (`git stash list`). Returns one entry per line.
+pub fn stash_list(repo_path: &Path) -> Vec<String> {
+    run_git(repo_path, &["stash", "list"])
+        .map(|r| {
+            r.stdout
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Restore the most recent stash (`git stash pop`).
+pub fn stash_pop(repo_path: &Path) -> Result<CommandResult, VcsError> {
+    run_git(repo_path, &["stash", "pop"])
+}
+
+/// Reset the index to HEAD, keeping working-tree changes (`git reset`).
+///
+/// Equivalent to unstaging everything; never discards file contents.
+pub fn reset_mixed(repo_path: &Path) -> Result<CommandResult, VcsError> {
+    run_git(repo_path, &["reset"])
+}
+
+/// Recent commit subjects (`git log --oneline -<limit>`), used as style
+/// reference when generating AI commit messages.
+pub fn recent_subjects(repo_path: &Path, limit: usize) -> Vec<String> {
+    let limit_arg = format!("-{limit}");
+    run_git(repo_path, &["log", "--oneline", &limit_arg])
+        .map(|r| {
+            parse_oneline_log(&r.stdout)
+                .into_iter()
+                .map(|e| e.subject)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,5 +413,87 @@ mod tests {
         assert!(out.contains("commit "), "missing commit header: {out}");
         assert!(out.contains("diff --git"), "missing diff header: {out}");
         assert!(out.contains("+hello"), "missing added line: {out}");
+    }
+
+    /// Helper: initialize a temp repo with a local identity and one commit.
+    fn init_repo(tmp: &TempDir) {
+        use std::process::Command;
+
+        init(tmp.path()).unwrap();
+        Command::new("git")
+            .current_dir(tmp.path())
+            .args(["config", "user.name", "LazyDesktop Test"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .current_dir(tmp.path())
+            .args(["config", "user.email", "test@example.com"])
+            .output()
+            .unwrap();
+        std::fs::write(tmp.path().join("f.txt"), "hello\n").unwrap();
+        Command::new("git")
+            .current_dir(tmp.path())
+            .args(["add", "f.txt"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .current_dir(tmp.path())
+            .args(["commit", "-m", "Add f"])
+            .output()
+            .unwrap();
+    }
+
+    #[test]
+    fn rename_branch_renames_current() {
+        let tmp = TempDir::new().unwrap();
+        init_repo(&tmp);
+
+        rename_branch(tmp.path(), "renamed").unwrap();
+        assert_eq!(current_branch(tmp.path()).unwrap(), "renamed");
+    }
+
+    #[test]
+    fn stash_push_list_pop_roundtrip() {
+        let tmp = TempDir::new().unwrap();
+        init_repo(&tmp);
+
+        // Make a dirty change.
+        std::fs::write(tmp.path().join("f.txt"), "modified\n").unwrap();
+        assert!(is_dirty(tmp.path()));
+
+        stash_push(tmp.path()).unwrap();
+        assert!(!is_dirty(tmp.path()), "stash should clean the tree");
+        let stashes = stash_list(tmp.path());
+        assert_eq!(stashes.len(), 1, "one stash expected: {stashes:?}");
+
+        stash_pop(tmp.path()).unwrap();
+        assert!(is_dirty(tmp.path()), "pop should restore the change");
+        assert!(stash_list(tmp.path()).is_empty());
+    }
+
+    #[test]
+    fn reset_mixed_unstages_keeps_worktree() {
+        let tmp = TempDir::new().unwrap();
+        init_repo(&tmp);
+
+        std::fs::write(tmp.path().join("f.txt"), "modified\n").unwrap();
+        add_files(tmp.path(), &["f.txt"]).unwrap();
+        assert!(!status(tmp.path()).unwrap().is_empty());
+
+        reset_mixed(tmp.path()).unwrap();
+        // File contents are preserved; only the index is reset.
+        assert_eq!(
+            std::fs::read_to_string(tmp.path().join("f.txt")).unwrap(),
+            "modified\n"
+        );
+    }
+
+    #[test]
+    fn recent_subjects_returns_subjects() {
+        let tmp = TempDir::new().unwrap();
+        init_repo(&tmp);
+
+        let subjects = recent_subjects(tmp.path(), 5);
+        assert_eq!(subjects, vec!["Add f".to_string()]);
     }
 }

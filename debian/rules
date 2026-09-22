@@ -1,12 +1,18 @@
 #!/usr/bin/make -f
 
 %:
-	dh $@ --buildsystem=meson
+	dh $@
 
-override_dh_auto_configure:
-	dh_auto_configure -- \
-		-Dbuildtype=release \
-		-Dwarning_level=0
+override_dh_auto_build:
+	cargo build --release --workspace
+
+override_dh_auto_test:
+	cargo test --workspace
+
+override_dh_auto_install:
+	install -Dm755 target/release/lazydesktop debian/lazydesktop/usr/bin/lazydesktop
+	install -Dm644 data/lazydesktop.desktop debian/lazydesktop/usr/share/applications/lazydesktop.desktop
+	install -Dm644 data/icons/hicolor/scalable/apps/lazydesktop.svg debian/lazydesktop/usr/share/icons/hicolor/scalable/apps/lazydesktop.svg
 
 override_dh_strip:
 	dh_strip --dbg-package=lazydesktop-dbgsym

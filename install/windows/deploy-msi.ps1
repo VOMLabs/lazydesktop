@@ -1,11 +1,11 @@
-# Deploy Qt runtime dependencies next to the built exe (windeployqt) and
+# Deploy LazyDesktop runtime files next to the built exe and
 # generate a WiX v4 fragment (.wxs) that installs every deployed file into
 # INSTALLDIR. The fragment is referenced by lazydesktop.wxs via a
 # ComponentGroup named "LazyDesktopBinaries".
 #
 # Usage:
 #   powershell -File deploy-msi.ps1 -BuildDir <abs path to release bin dir> `
-#       -QtRoot <abs path to Qt install root> -OutputFile <path to .wxs fragment>
+#       -OutputFile <path to .wxs fragment>
 #
 # WiX v4 removed the standalone heat/harvest tool from the core CLI, so we
 # generate the file components from the deployed directory ourselves.
@@ -15,37 +15,27 @@ param(
     [string]$BuildDir,
 
     [Parameter(Mandatory = $true)]
-    [string]$QtRoot,
+    [string]$OutputFile,
 
-    [Parameter(Mandatory = $true)]
-    [string]$OutputFile
+    # Kept for compatibility with older invocations; unused (no Qt runtime).
+    [string]$QtRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 # ---------------------------------------------------------------------------
-# 1. Run windeployqt to copy Qt DLLs + plugins next to the exe
+# 1. Make sure the built exe is present
 # ---------------------------------------------------------------------------
-$windeployqt = Join-Path $QtRoot "bin\windeployqt.exe"
-if (-not (Test-Path $windeployqt)) {
-    throw "windeployqt not found at: $windeployqt"
-}
-
 $exe = Join-Path $BuildDir "lazydesktop.exe"
 if (-not (Test-Path $exe)) {
     throw "Built executable not found at: $exe"
 }
 
-Write-Host "Running windeployqt on $exe ..."
-& $windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw $exe
-if ($LASTEXITCODE -ne 0) {
-    throw "windeployqt failed with exit code $LASTEXITCODE"
-}
-
 # ---------------------------------------------------------------------------
-# 2. Walk the deployed directory tree and emit a WiX v4 fragment
+# 2. Walk the release directory tree and emit a WiX v4 fragment
 # ---------------------------------------------------------------------------
 $root = (Resolve-Path $BuildDir).Path.TrimEnd('\')
+$files = Get-ChildItem -Path $root -Recurse -File | Sort-Object FullName
 
 $sb = [System.Text.StringBuilder]::new()
 [void]$sb.AppendLine('<?xml version="1.0" encoding="UTF-8"?>')

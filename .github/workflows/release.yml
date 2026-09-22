@@ -25,31 +25,16 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Install Meson and Ninja
-        run: pip install meson ninja
-
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.7'
-          cache: true
-
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libyaml-cpp-dev libgl1-mesa-dev file
+          sudo apt-get install -y libgl1-mesa-dev libxkbcommon-x11-0 file
 
       - name: Build Rust crates
         run: cargo build --workspace --release
 
-      - name: Configure (release)
-        run: meson setup build --buildtype=release
-
-      - name: Build
-        run: ninja -C build
-
       - name: Strip binary
-        run: strip build/lazydesktop
+        run: strip target/release/lazydesktop
 
       - name: Build .deb
         run: |
@@ -58,7 +43,7 @@ jobs:
           PKG="debroot"
           rm -rf "${PKG}"
           mkdir -p "${PKG}/DEBIAN"
-          install -Dm755 build/lazydesktop "${PKG}/usr/bin/lazydesktop"
+          install -Dm755 target/release/lazydesktop "${PKG}/usr/bin/lazydesktop"
           install -Dm644 data/lazydesktop.desktop "${PKG}/usr/share/applications/lazydesktop.desktop"
           install -Dm644 data/icons/hicolor/scalable/apps/lazydesktop.svg "${PKG}/usr/share/icons/hicolor/scalable/apps/lazydesktop.svg"
           cat > "${PKG}/DEBIAN/control" <<EOF
@@ -68,9 +53,9 @@ jobs:
           Priority: optional
           Architecture: amd64
           Maintainer: LazyDesktop Team <team@lazydesktop.dev>
-          Depends: qt6-base (>= 6.5), libyaml-cpp (>= 0.7), git
-          Description: A KDE-native Git GUI alternative
-           LazyDesktop is a fast, native Git client built with Qt 6 and C++23.
+          Depends: git, shared-mime-info
+          Description: A native Git GUI for the KDE Plasma desktop
+           LazyDesktop is a fast, native Git client built with Rust and GPUI.
           EOF
           dpkg-deb --build --root-owner-group "${PKG}" "lazydesktop_${VERSION}_amd64.deb"
 
@@ -79,18 +64,17 @@ jobs:
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage appimagetool-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage appimagetool-x86_64.AppImage
           export APPIMAGE_EXTRACT_AND_RUN=1
           export PATH="$PWD:$PATH"
           rm -rf AppDir
           mkdir -p AppDir
           ./linuxdeploy-x86_64.AppImage --appdir AppDir \
-            --executable build/lazydesktop \
+            --executable target/release/lazydesktop \
             --desktop-file data/lazydesktop.desktop \
             --icon-file data/icons/hicolor/scalable/apps/lazydesktop.svg \
-            --plugin qt --output appimage
+            --output appimage
           mv LazyDesktop-*.AppImage "lazydesktop-${VERSION}-x86_64.AppImage"
 
       - name: Upload artifacts
@@ -114,16 +98,10 @@ jobs:
       - name: Install build dependencies
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel rust qt6-base yaml-cpp git clang cmake ninja meson python-pip
+          pacman -S --noconfirm base-devel rust git clang cmake ninja python-pip
 
       - name: Build Rust crates
         run: cargo build --workspace --release
-
-      - name: Configure (release)
-        run: meson setup build --buildtype=release
-
-      - name: Build
-        run: ninja -C build
 
       - name: Package (.pkg.tar.zst)
         run: |
@@ -131,7 +109,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           PKG="pkg"
           rm -rf "${PKG}"
-          install -Dm755 build/lazydesktop "${PKG}/usr/bin/lazydesktop"
+          install -Dm755 target/release/lazydesktop "${PKG}/usr/bin/lazydesktop"
           install -Dm644 data/lazydesktop.desktop "${PKG}/usr/share/applications/lazydesktop.desktop"
           install -Dm644 data/icons/hicolor/scalable/apps/lazydesktop.svg "${PKG}/usr/share/icons/hicolor/scalable/apps/lazydesktop.svg"
           SIZE="$(du -sb "${PKG}" | cut -f1)"
@@ -139,15 +117,13 @@ jobs:
           pkgname = lazydesktop
           pkgbase = lazydesktop
           pkgver = ${VERSION}-1
-          pkgdesc = A KDE-native Git GUI alternative
+          pkgdesc = A native Git GUI for the KDE Plasma desktop
           url = https://lazydesktop.dev
           builddate = $(date -u +%s)
           packager = LazyDesktop Team <team@lazydesktop.dev>
           size = ${SIZE}
           arch = x86_64
           license = MIT
-          depend = qt6-base
-          depend = yaml-cpp
           depend = git
           EOF
           chown -R root:root "${PKG}"
@@ -178,24 +154,8 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Install Meson and Ninja
-        run: pip install meson ninja
-
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.7'
-          arch: win64_msvc2019_64
-          cache: true
-
-      - name: Build Rust crates
+      - name: Build Rust release binary
         run: cargo build --workspace --release
-
-      - name: Configure (release)
-        run: meson setup build --buildtype=release
-
-      - name: Build
-        run: ninja -C build
 
       - name: Install WiX Toolset
         run: dotnet tool install --global wix --version 4.0.5
@@ -203,35 +163,23 @@ jobs:
       - name: Install WiX UI Extension
         run: wix extension add WixToolset.UI.wixext/4.0.5 --global
 
-      - name: Deploy Qt runtime
+      - name: Generate MSI fragment
         run: |
-          $VERSION = $env:GITHUB_REF_NAME -replace '^v', ''
-          $QT_ROOT = $env:Qt6_DIR
-          if (-not $QT_ROOT) {
-            $qmake = Get-Command qmake6.exe, qmake.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-            $QT_ROOT = Split-Path (Split-Path $qmake.Source)
-          }
-          $BIN_DIR = "$env:GITHUB_WORKSPACE\build"
-          & .\install\windows\deploy-msi.ps1 -BuildDir "$BIN_DIR" -QtRoot "$QT_ROOT" -OutputFile "$env:GITHUB_WORKSPACE\install\windows\AppFiles.g.wxs"
+          $BIN_DIR = "$env:GITHUB_WORKSPACE\target\release"
+          & .\install\windows\deploy-msi.ps1 -BuildDir "$BIN_DIR" -OutputFile "$env:GITHUB_WORKSPACE\target\release\AppFiles.g.wxs"
           Write-Host "Generated fragment:"
-          Get-Content .\install\windows\AppFiles.g.wxs | Select-Object -First 40
+          Get-Content "$env:GITHUB_WORKSPACE\target\release\AppFiles.g.wxs" | Select-Object -First 40
 
       - name: Build MSI
         run: |
           $VERSION = $env:GITHUB_REF_NAME -replace '^v', ''
-          $QT_ROOT = $env:Qt6_DIR
-          if (-not $QT_ROOT) {
-            $qmake = Get-Command qmake6.exe, qmake.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-            $QT_ROOT = Split-Path (Split-Path $qmake.Source)
-          }
-          $BIN_DIR = "$env:GITHUB_WORKSPACE\build"
-          wix build install/windows/lazydesktop.wxs install/windows/AppFiles.g.wxs `
+          $BIN_DIR = "$env:GITHUB_WORKSPACE\target\release"
+          wix build install/windows/lazydesktop.wxs "$BIN_DIR\AppFiles.g.wxs" `
             -out "lazydesktop-${VERSION}.msi" `
             -arch x64 `
             -ext WixToolset.UI.wixext `
             -d ProductVersion="$VERSION" `
             -d BuildDir="$BIN_DIR" `
-            -d QtDir="$QT_ROOT" `
             -d SourceDir="$env:GITHUB_WORKSPACE"
 
       - name: Upload MSI
