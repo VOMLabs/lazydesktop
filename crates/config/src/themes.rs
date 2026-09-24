@@ -148,11 +148,11 @@ pub fn builtin_dark_theme() -> Theme {
     colors.insert("widget_background".to_string(), "#121215".to_string());
     colors.insert("input_background".to_string(), "#27272a".to_string());
     colors.insert("input_foreground".to_string(), "#ededef".to_string());
-    colors.insert("button_background".to_string(), "#3b82f6".to_string());
+    colors.insert("button_background".to_string(), "#16a34a".to_string());
     colors.insert("button_foreground".to_string(), "#ffffff".to_string());
     colors.insert("tooltip_background".to_string(), "#27272a".to_string());
     colors.insert("tooltip_foreground".to_string(), "#ededef".to_string());
-    colors.insert("selection".to_string(), "#3b82f6".to_string());
+    colors.insert("selection".to_string(), "#16a34a".to_string());
 
     Theme {
         name: "Dark".to_string(),
@@ -168,11 +168,11 @@ pub fn builtin_light_theme() -> Theme {
     colors.insert("widget_background".to_string(), "#eef0f3".to_string());
     colors.insert("input_background".to_string(), "#ffffff".to_string());
     colors.insert("input_foreground".to_string(), "#1c1f26".to_string());
-    colors.insert("button_background".to_string(), "#2f6fe0".to_string());
+    colors.insert("button_background".to_string(), "#15803d".to_string());
     colors.insert("button_foreground".to_string(), "#ffffff".to_string());
     colors.insert("tooltip_background".to_string(), "#ffffff".to_string());
     colors.insert("tooltip_foreground".to_string(), "#1c1f26".to_string());
-    colors.insert("selection".to_string(), "#2f6fe0".to_string());
+    colors.insert("selection".to_string(), "#15803d".to_string());
 
     Theme {
         name: "Light".to_string(),
