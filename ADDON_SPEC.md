@@ -6,6 +6,16 @@
 core, C ABI FFI, C++/Qt Lua host, package formats, security model, threading,
 error model, and testing strategy.
 
+> **Current status (v0.3+):** the Rust security core described here shipped
+> in `crates/addons` (archive parsing, manifest validation, path security —
+> 77 tests), and the GPUI frontend (`crates/app`) is the shipped UI. The
+> **C++/Qt Lua host** sections (§13 Lua execution model, §14 C++/Qt host
+> design, §18 host settings) describe the Qt-era architecture, whose host
+> (`addon_host`, `addon_manager_bridge`, QSettings persistence) was removed
+> with the C++ UI; a native Rust Lua host for the GPUI app is planned (see
+> ROADMAP). Rust-side sections (§9, §11–12, §16, §20) remain the contract for
+> `crates/addons`.
+
 **Priority order (governs every design decision):**
 1. Memory safety
 2. Security

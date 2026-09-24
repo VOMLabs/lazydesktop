@@ -273,9 +273,9 @@ reusing battle-tested primitives for everything else.
 - [x] Implement main window layout in GPUI using `gpui-component`
       panels: sidebar, changes tree, diff viewer (placeholder), and
       commit panel
-- [ ] Build custom `.theme.lua` parser mapping directly to GPUI theme
-      tokens — `.theme.lua` parsing already exists in the `config` crate;
-      mapping to GPUI/`gpui-component` theme tokens is pending
+- [x] Build custom `.theme.lua` parser mapping directly to GPUI theme
+      tokens — `Palette::from_theme` (luminance → dark/light) plus the
+      gpui-component `ThemeSet` projection in `crates/app/src/theme.rs`
 - [x] Implement settings view (Appearance theme picker, Git identity,
       data locations) — hand-rolled on `gpui-component` elements; the
       `config` crate persists `appearance/theme`
@@ -324,11 +324,12 @@ Feature-parity items for `crates/app`:
 - [ ] Commit panel — co-author selector, amend toggle
 - [ ] Stash list / drop UI and reset / revert UI
 - [ ] Full Jujutsu (jj) UI support in the GPUI status/commit flows
-- [ ] Theming — map `.theme.lua` tokens from the `config` crate to GPUI /
-      `gpui-component` theme tokens
-- [ ] **Data migration** — migrate Qt-era persisted files (`projects.yaml`,
-      `*.theme.yaml`) to the Lua files (`projects.lua`, `*.theme.lua`) that
-      the `config` crate writes
+- [x] Theming — map `.theme.lua` tokens from the `config` crate to GPUI /
+      `gpui-component` theme tokens — done via the shared `Palette`
+      (System / Dark / Light / custom, persisted and applied at startup)
+- [ ] **Data migration** — import Qt-era `projects.yaml` / `*.theme.yaml`
+      for existing installs (new installs already write `projects.lua` /
+      `*.theme.lua`, which the `config` crate reads)
 - [ ] Auto-refresh — subscribe to `watcher` crate events (dep already
       declared)
 - [ ] UX polish — keyboard shortcuts, multi-select staging, status filter,

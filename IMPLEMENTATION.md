@@ -45,7 +45,7 @@ workspace for the frontend and the backend services.
 ├─────────────────────────────────────────────────────────┤
 │  Persistence Layer  │  Build System                     │
 │  - INI settings     │  - Cargo workspace (single)       │
-│  - YAML (projects,  │  - justfile recipes               │
+│  - Lua (projects,   │  - justfile recipes               │
 │    themes)          │  - Moon task orchestration        │
 └─────────────────────┴───────────────────────────────────┘
 ```
@@ -57,7 +57,7 @@ workspace for the frontend and the backend services.
 | UI Framework | GPUI (`crates/app`) | All UI rendering |
 | Language | Rust | Application logic, UI, backend |
 | Build System | Cargo workspace + Moon + just | Compilation and linking |
-| Config Storage | Rust `config` crate | INI settings, YAML projects/themes |
+| Config Storage | Rust `config` crate | INI settings, Lua projects/themes |
 | Local AI | Rust `ai_core` crate | GGUF model inference |
 | Native VCS/SSH | Rust `vcs_core` crate | SSH keys, git remotes |
 | Addon System | Rust `addons` crate | Security core, package parsing |
@@ -72,8 +72,8 @@ All persistent data lives under `~/.config/lazydesktop/`:
 | File | Format | Purpose |
 |------|--------|---------|
 | `lazydesktop.conf` | INI | App settings (AI provider, API key, theme, model) |
-| `projects.yaml` | YAML | Recent project paths |
-| `themes/*.theme.yaml` | YAML | Custom theme definitions |
+| `projects.lua` | Lua | Recent project paths |
+| `themes/*.theme.lua` | Lua | Custom theme definitions |
 | `models/` | GGUF files | Downloaded local AI models |
 
 ---
@@ -89,13 +89,13 @@ crates/
 ├── vcs_core/     # SSH key management, git remotes, connection tests
 ├── addons/       # Addon system security core (archive, manifest, path security)
 ├── watcher/      # VCS-aware file watcher with debouncing
-├── config/       # Settings (INI), projects (YAML), themes (YAML)
+├── config/       # Settings (INI), projects (Lua), themes (Lua)
 └── git_cmd/      # Git/Jujutsu CLI command execution wrapper
 ```
 
 > **Note on FFI:** every crate still ships an `ffi.rs` module and builds as
-> `staticlib` for **external C++ hosts**. The bundled GPUI app (`app`) calls
-> the crates directly as Rust libraries and does not use the C ABI.
+> `staticlib` for **external consumer projects**. The bundled GPUI app (`app`)
+> calls the crates directly as Rust libraries and does not use the C ABI.
 
 ### 2.1 `ai_core` — AI Inference Engine
 
@@ -188,9 +188,9 @@ pub enum FileEvent {
 
 | Module | Responsibility |
 |--------|---------------|
-| `settings.rs` | INI format settings (QSettings compatible) |
-| `projects.rs` | YAML project list management |
-| `themes.rs` | YAML theme definitions + scanning |
+| `settings.rs` | INI format settings (section/key = value) |
+| `projects.rs` | Lua project list management |
+| `themes.rs` | Lua theme definitions + scanning |
 | `paths.rs` | Platform-appropriate path resolution |
 | `ffi.rs` | C ABI (`config_*` functions) |
 
@@ -244,7 +244,7 @@ parity. The whole repository is now a single Rust Cargo workspace.
 
 `ffi.rs` modules remain in `ai_core`, `vcs_core`, `config`, `git_cmd`,
 `watcher`, and `addons`, and those crates still build as `staticlib` for
-external C++ hosts. The bundled app does **not** use them — it calls the
+external consumer projects. The bundled app does **not** use them — it calls the
 crates directly as Rust libraries. The `include/*.h` headers that declared
 the C ABI were deleted together with the Qt app.
 
@@ -271,7 +271,7 @@ the C ABI were deleted together with the Qt app.
 | GPUI app replaces Qt `mainwindow` | ✅ | `crates/app` is the shipped UI |
 | Git ops switched to `git_cmd` crate | ✅ | `crates/app/src/git_service.rs`, async via `spawn_blocking` |
 | File watching via `watcher` crate | ✅ | .git/index + .git/HEAD debounce |
-| Settings via `config` crate | ✅ | INI settings, `projects.yaml`, themes |
+| Settings via `config` crate | ✅ | INI settings, `projects.lua`, themes |
 | AI wired directly (`ai_core`) | ✅ | Local GGUF + cloud providers (`ai_core::cloud`) |
 | SSH/remotes via `vcs_core` | ✅ | No `ssh-keygen` / `ssh` / `git remote` subprocesses |
 | Diff viewer | ✅ | Colorized diffs, line-number gutter; word-level highlighting + inline images remaining |
@@ -374,9 +374,9 @@ just build                       # Full build (Rust workspace)
 
 ### Configuration (via `config` crate)
 
-- [x] INI settings (QSettings compatible)
-- [x] YAML project list
-- [x] YAML theme management
+- [x] INI settings
+- [x] Lua project list
+- [x] Lua theme management
 - [x] Platform-appropriate paths
 
 ---
@@ -402,8 +402,8 @@ just build                       # Full build (Rust workspace)
   usable but terse commit messages; larger models and cloud providers
   generally produce better summaries.
 - **`staticlib` + `ffi.rs` kept for external hosts** — The bundled app calls
-  the crates directly; the C ABI modules remain only for external C++ hosts
-  and are inert in this repository (headers removed).
+  the crates directly; the C ABI modules remain only for external consumer
+  projects and are inert in this repository (headers removed).
 - **Remaining UI gaps** — Word-level diff highlighting, inline image
   rendering, co-author selector, amend toggle, stash list/drop, revert UI,
   full jj UI support, and `crates/app` unit tests are still open (see

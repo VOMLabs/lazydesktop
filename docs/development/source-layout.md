@@ -105,8 +105,8 @@ A quick tour of where everything lives in the repository.
   libraries. Moon (`.moon/` + `moon.yml`) orchestrates workspace tasks; the
   `justfile` wraps the common workflows.
 - The `ai_core`, `vcs_core`, and other crates still ship `ffi.rs` modules and
-  `staticlib` crate-types for backwards compatibility with external C++ hosts,
-  but the bundled app no longer uses the C ABI (the old C++ UI in `src/` and
+  `staticlib` crate-types for backwards compatibility with external consumer
+  projects, but the bundled app no longer uses the C ABI (the old C++ UI in `src/` and
   the `include/*.h` headers were removed).
 - The data layout at runtime is documented in
   [configuration](../getting-started/configuration.md).

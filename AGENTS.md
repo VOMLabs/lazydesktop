@@ -13,7 +13,7 @@ Core capabilities:
 - Git essentials: status list, per-file staging, diff viewer (images render
   inline), commits, push/fetch/pull, branch management, commit history.
 - Project management: clone / init / load repos, recent-projects list
-  (`projects.yaml`), folder scanning.
+  (`projects.lua`), folder scanning.
 - AI commit messages: cloud providers (OpenRouter, OpenAI, Anthropic, Google
   AI Studio) or fully local GGUF inference via the bundled Rust `ai_core`
   crate (`llama-cpp-2`).
@@ -27,7 +27,7 @@ Core capabilities:
 | UI | GPUI (`crates/app`), Rust |
 | Build | Cargo + Just (`justfile`), moon for orchestration |
 | Rust crates | `crates/ai_core` (GGUF inference), `crates/vcs_core` (SSH + remotes), `crates/git_cmd` (git CLI), `crates/config` (settings/projects) |
-| Persistence | `config` crate (INI settings + `projects.yaml`) — no database |
+| Persistence | `config` crate (INI settings + `projects.lua`) — no database |
 | Git operations | `git` CLI via `git_cmd` (no libgit2) |
 | Task runner | `justfile` recipes (`just setup`, `just build`, `just run`, …) |
 | Toolchain | Pinned in `mise.toml` (`mise install`) |

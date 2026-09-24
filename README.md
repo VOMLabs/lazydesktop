@@ -47,7 +47,7 @@ Git work.
 
 - **Add project dropdown** — Clone a repository (`git clone`), create one
   (`git init`), or load an existing folder.
-- **Recent projects** — Persistent history in `projects.yaml`, grouped by
+- **Recent projects** — Persistent history in `projects.lua`, grouped by
   remote owner/org, with a yellow dot on repos that have uncommitted changes.
 - **Scan folder** — Bulk-import every Git repo inside a directory.
 - **Remove / Clear all** — Remove one project or wipe the whole list, with
@@ -83,43 +83,39 @@ the project's conventions. The two skills live in `.opencode/skills/`:
 
 ### Look and feel
 
-- Uses system palette colors throughout and respects your desktop theme.
-- A built-in **Dark theme** and custom **YAML themes** are applied at startup.
+- A shared palette token system (`crates/app/src/theme.rs`) drives every
+  surface, interactive state, and text tier — no hardcoded UI colors.
+- Built-in **Dark** and **Light** palettes, plus **System Default** which
+  follows your desktop appearance.
+- Custom **Lua themes** (`.theme.lua`) tune the mode via their background
+  color; every other shade comes from the matching token set.
 - System monospace font in the diff viewer; no custom painting for the file
   list.
 
-#### Custom YAML themes
+#### Custom themes
 
-Drop a `.theme.yaml` file into `~/.config/lazydesktop/themes/` to add a new
+Drop a `.theme.lua` file into `~/.config/lazydesktop/themes/` to add a new
 theme option in Appearance settings:
 
-```yaml
-name: "Ocean Night"
-colors:
-  background: "#0d1117"
-  foreground: "#c9d1d9"
-  widget_background: "#161b22"
-  input_background: "#21262d"
-  input_foreground: "#c9d1d9"
-  button_background: "#1f6feb"
-  button_foreground: "#ffffff"
-  tooltip_background: "#21262d"
-  tooltip_foreground: "#c9d1d9"
-  selection: "#1f6feb"
+```lua
+return {
+  name = "Ocean Night",
+  colors = {
+    background = "#0d1117",
+    foreground = "#c9d1d9",
+  }
+}
 ```
 
 The theme appears in Settings → Appearance after a restart or reopening the
-settings dialog. See [themes](docs/user-guide/themes.md).
-
-> **Note:** the bundled Rust `config` crate persists projects and themes as
-> Lua (`projects.lua`, `*.theme.lua`). The migration is tracked in the
-> [roadmap](ROADMAP.md).
+settings dialog. Only `background` is required — its luminance selects the
+Dark or Light token set. See [themes](docs/user-guide/themes.md).
 
 ### Settings
 
 A categorized settings dialog covers:
 
-- **Appearance** — System Default, Dark, and any custom YAML themes.
+- **Appearance** — System Default, Dark, Light, and any custom Lua themes.
 - **Git** — Read and write global `user.name` / `user.email` via
   `git config --global`.
 - **SSH Keys** — Generate keypairs, browse existing public keys (only public
@@ -156,9 +152,9 @@ needed. The build compiles the GPUI app plus the backend crates
 (`git_cmd`, `ai_core`, `vcs_core`, `config`). Your data survives
 rebuilds:
 
-- Projects: `~/.config/lazydesktop/projects.yaml`
+- Projects: `~/.config/lazydesktop/projects.lua`
 - Settings (API key, theme, model, system prompt): `~/.config/lazydesktop/lazydesktop.conf`
-- Custom themes: `~/.config/lazydesktop/themes/*.theme.yaml`
+- Custom themes: `~/.config/lazydesktop/themes/*.theme.lua`
 - Local AI models: `~/.config/lazydesktop/models/`
 
 See [build from source](docs/getting-started/build-from-source.md) for the
