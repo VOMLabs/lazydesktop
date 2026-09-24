@@ -128,6 +128,7 @@ impl Render for DiffView {
             .flex()
             .flex_col()
             .size_full()
+            .bg(p.bg)
             .child(
                 // Header bar
                 div()
@@ -141,7 +142,7 @@ impl Render for DiffView {
                     .child(
                         div()
                             .text_sm()
-                            .font_bold()
+                            .font_medium()
                             .child(title.unwrap_or_else(|| "Diff".to_string())),
                     )
                     .child(div().flex_1())
@@ -163,7 +164,21 @@ fn placeholder(text: &str, p: &Palette) -> AnyElement {
         .flex_col()
         .items_center()
         .justify_center()
-        .gap_2()
+        .gap_3()
+        .child(
+            // Dark-tinted icon block (diff emblem).
+            div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .w_10()
+                .h_10()
+                .rounded_md()
+                .bg(p.elevated)
+                .border_1()
+                .border_color(p.separator)
+                .child(div().text_lg().text_color(p.text_muted).child("±")),
+        )
         .child(
             div()
                 .text_sm()

@@ -219,15 +219,6 @@ impl Render for Sidebar {
             .p_3()
             .gap_4()
             .overflow_hidden()
-            .child(
-                // App title
-                div()
-                    .px_1()
-                    .py_1()
-                    .text_lg()
-                    .font_bold()
-                    .child("LazyDesktop"),
-            )
             .child(self.render_branches(branches, current, renaming_branch, cx))
             .child(self.render_history(history, cx))
             .child(self.render_projects(recent_projects, cx))
@@ -251,7 +242,7 @@ impl Render for Sidebar {
                         cx.emit(SidebarEvent::SettingsRequested);
                         cx.notify();
                     }))
-                    .child(div().text_sm().font_bold().child("Settings")),
+                    .child(div().text_sm().font_medium().child("Settings")),
             )
     }
 }
@@ -287,12 +278,21 @@ impl Sidebar {
                         this.expanded_section = SidebarSection::Branches;
                         cx.notify();
                     }))
-                    .child(div().text_sm().font_bold().child("Branches"))
+                    .child(div().text_sm().font_medium().child("Branches"))
                     .child(
                         div()
-                            .text_xs()
-                            .text_color(p.text_muted)
-                            .child(format!("{}", branches_len)),
+                            .flex()
+                            .items_center()
+                            .px_2()
+                            .py_0p5()
+                            .rounded_full()
+                            .bg(p.elevated)
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(p.text_muted)
+                                    .child(format!("{}", branches_len)),
+                            ),
                     ),
             )
             .when(self.expanded_section == SidebarSection::Branches, |this| {
@@ -314,6 +314,7 @@ impl Sidebar {
                                 .rounded_md()
                                 .id(format!("branch-{}", b.name))
                                 .when(is_current, |this| this.bg(p.accent_selected))
+                                .when(!is_current, |this| this.hover(|this| this.bg(p.hover)))
                                 .cursor_pointer()
                                 .on_click(cx.listener({
                                     let switch_name = branch_name.clone();
@@ -327,6 +328,16 @@ impl Sidebar {
                                         }
                                     }
                                 }))
+                                .child(
+                                    // Active indicator rail (invisible when not current).
+                                    div().w_0p5().h_4().flex_shrink_0().rounded_full().bg(
+                                        if is_current {
+                                            p.accent
+                                        } else {
+                                            gpui::rgba(0x00000000)
+                                        },
+                                    ),
+                                )
                                 .child(div().flex_1().text_sm().child(b.name.clone()))
                                 .when(is_current, |this| {
                                     // Rename button (current branch).
@@ -425,12 +436,21 @@ impl Sidebar {
                         this.expanded_section = SidebarSection::History;
                         cx.notify();
                     }))
-                    .child(div().text_sm().font_bold().child("History"))
+                    .child(div().text_sm().font_medium().child("History"))
                     .child(
                         div()
-                            .text_xs()
-                            .text_color(p.text_muted)
-                            .child(format!("{}", history_len)),
+                            .flex()
+                            .items_center()
+                            .px_2()
+                            .py_0p5()
+                            .rounded_full()
+                            .bg(p.elevated)
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(p.text_muted)
+                                    .child(format!("{}", history_len)),
+                            ),
                     ),
             )
             .when(self.expanded_section == SidebarSection::History, |this| {
@@ -546,12 +566,21 @@ impl Sidebar {
                         this.expanded_section = SidebarSection::Projects;
                         cx.notify();
                     }))
-                    .child(div().text_sm().font_bold().child("Projects"))
+                    .child(div().text_sm().font_medium().child("Projects"))
                     .child(
                         div()
-                            .text_xs()
-                            .text_color(p.text_muted)
-                            .child(format!("{}", recent_len)),
+                            .flex()
+                            .items_center()
+                            .px_2()
+                            .py_0p5()
+                            .rounded_full()
+                            .bg(p.elevated)
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(p.text_muted)
+                                    .child(format!("{}", recent_len)),
+                            ),
                     ),
             )
             .when(self.expanded_section == SidebarSection::Projects, |this| {
