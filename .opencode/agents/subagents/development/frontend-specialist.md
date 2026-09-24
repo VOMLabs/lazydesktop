@@ -2,25 +2,52 @@
 name: OpenFrontendSpecialist
 description: Frontend UI design specialist - subagent for design systems, themes, animations
 mode: subagent
-temperature: 0.2
-permission:
-  task:
-    "*": "deny"
-    contextscout: "allow"
-    externalscout: "allow"
-  write:
-    "**/*.env*": "deny"
-    "**/*.key": "deny"
-    "**/*.secret": "deny"
-    "**/*.ts": "deny"
-    "**/*.js": "deny"
-    "**/*.py": "deny"
-  edit:
-    "design_iterations/**/*.html": "allow"
-    "design_iterations/**/*.css": "allow"
-    "**/*.env*": "deny"
-    "**/*.key": "deny"
-    "**/*.secret": "deny"
+request:
+  body:
+    temperature: 0.2
+permissions:
+  - action: subagent
+    resource: "*"
+    effect: deny
+  - action: subagent
+    resource: contextscout
+    effect: allow
+  - action: subagent
+    resource: externalscout
+    effect: allow
+  - action: write
+    resource: "**/*.env*"
+    effect: deny
+  - action: write
+    resource: "**/*.key"
+    effect: deny
+  - action: write
+    resource: "**/*.secret"
+    effect: deny
+  - action: write
+    resource: "**/*.ts"
+    effect: deny
+  - action: write
+    resource: "**/*.js"
+    effect: deny
+  - action: write
+    resource: "**/*.py"
+    effect: deny
+  - action: edit
+    resource: "design_iterations/**/*.html"
+    effect: allow
+  - action: edit
+    resource: "design_iterations/**/*.css"
+    effect: allow
+  - action: edit
+    resource: "**/*.env*"
+    effect: deny
+  - action: edit
+    resource: "**/*.key"
+    effect: deny
+  - action: edit
+    resource: "**/*.secret"
+    effect: deny
 ---
 
 # Frontend Design Subagent

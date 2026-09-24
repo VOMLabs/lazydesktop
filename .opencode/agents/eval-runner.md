@@ -8,7 +8,9 @@ type: utility
 version: 1.0.0
 author: opencode
 mode: subagent
-temperature: 0.2
+request:
+  body:
+    temperature: 0.2
 ---
 
 # Eval Runner - Test Harness

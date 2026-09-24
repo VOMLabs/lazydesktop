@@ -2,26 +2,52 @@
 name: TaskManager
 description: JSON-driven task breakdown specialist transforming complex features into atomic, verifiable subtasks with dependency tracking and CLI integration
 mode: subagent
-temperature: 0.1
-permission:
-  bash:
-    "*": "deny"
-    "npx ts-node*task-cli*": "allow"
-    "mkdir -p .tmp/tasks*": "allow"
-    "mv .tmp/tasks*": "allow"
-  edit:
-    "**/*.env*": "deny"
-    "**/*.key": "deny"
-    "**/*.secret": "deny"
-    "node_modules/**": "deny"
-    ".git/**": "deny"
-  task:
-    contextscout: "allow"
-    externalscout: "allow"
-    "*": "deny"
-  skill:
-    "*": "deny"
-    "task-management": "allow"
+request:
+  body:
+    temperature: 0.1
+permissions:
+  - action: shell
+    resource: "*"
+    effect: deny
+  - action: shell
+    resource: "npx ts-node*task-cli*"
+    effect: allow
+  - action: shell
+    resource: "mkdir -p .tmp/tasks*"
+    effect: allow
+  - action: shell
+    resource: "mv .tmp/tasks*"
+    effect: allow
+  - action: edit
+    resource: "**/*.env*"
+    effect: deny
+  - action: edit
+    resource: "**/*.key"
+    effect: deny
+  - action: edit
+    resource: "**/*.secret"
+    effect: deny
+  - action: edit
+    resource: "node_modules/**"
+    effect: deny
+  - action: edit
+    resource: ".git/**"
+    effect: deny
+  - action: subagent
+    resource: contextscout
+    effect: allow
+  - action: subagent
+    resource: externalscout
+    effect: allow
+  - action: subagent
+    resource: "*"
+    effect: deny
+  - action: skill
+    resource: "*"
+    effect: deny
+  - action: skill
+    resource: task-management
+    effect: allow
 ---
 
 <context>

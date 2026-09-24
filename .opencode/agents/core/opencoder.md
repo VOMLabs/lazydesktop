@@ -2,25 +2,55 @@
 name: OpenCoder
 description: "Orchestration agent for complex coding, architecture, and multi-file refactoring"
 mode: primary
-temperature: 0.1
-permission:
-  question: "allow"
-  bash:
-    "rm -rf *": "ask"
-    "sudo *": "deny"
-    "chmod *": "ask"
-    "curl *": "ask"
-    "wget *": "ask"
-    "docker *": "ask"
-    "kubectl *": "ask"
-  edit:
-    "**/*.env*": "deny"
-    "**/*.key": "deny"
-    "**/*.secret": "deny"
-    "node_modules/**": "deny"
-    "**/__pycache__/**": "deny"
-    "**/*.pyc": "deny"
-    ".git/**": "deny"
+request:
+  body:
+    temperature: 0.1
+permissions:
+  - action: question
+    resource: "*"
+    effect: allow
+  - action: shell
+    resource: "rm -rf *"
+    effect: ask
+  - action: shell
+    resource: "sudo *"
+    effect: deny
+  - action: shell
+    resource: "chmod *"
+    effect: ask
+  - action: shell
+    resource: "curl *"
+    effect: ask
+  - action: shell
+    resource: "wget *"
+    effect: ask
+  - action: shell
+    resource: "docker *"
+    effect: ask
+  - action: shell
+    resource: "kubectl *"
+    effect: ask
+  - action: edit
+    resource: "**/*.env*"
+    effect: deny
+  - action: edit
+    resource: "**/*.key"
+    effect: deny
+  - action: edit
+    resource: "**/*.secret"
+    effect: deny
+  - action: edit
+    resource: "node_modules/**"
+    effect: deny
+  - action: edit
+    resource: "**/__pycache__/**"
+    effect: deny
+  - action: edit
+    resource: "**/*.pyc"
+    effect: deny
+  - action: edit
+    resource: ".git/**"
+    effect: deny
 ---
 
 # Development Agent

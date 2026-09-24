@@ -2,26 +2,52 @@
 name: BuildAgent
 description: Type check and build validation agent
 mode: subagent
-temperature: 0.1
-permission:
-  bash:
-    "tsc": "allow"
-    "mypy": "allow"
-    "go build": "allow"
-    "cargo check": "allow"
-    "cargo build": "allow"
-    "npm run build": "allow"
-    "yarn build": "allow"
-    "pnpm build": "allow"
-    "python -m build": "allow"
-    "*": "deny"
-  edit:
-    "**/*": "deny"
-  write:
-    "**/*": "deny"
-  task:
-    contextscout: "allow"
-    "*": "deny"
+request:
+  body:
+    temperature: 0.1
+permissions:
+  - action: shell
+    resource: tsc
+    effect: allow
+  - action: shell
+    resource: mypy
+    effect: allow
+  - action: shell
+    resource: go build
+    effect: allow
+  - action: shell
+    resource: cargo check
+    effect: allow
+  - action: shell
+    resource: cargo build
+    effect: allow
+  - action: shell
+    resource: npm run build
+    effect: allow
+  - action: shell
+    resource: yarn build
+    effect: allow
+  - action: shell
+    resource: pnpm build
+    effect: allow
+  - action: shell
+    resource: python -m build
+    effect: allow
+  - action: shell
+    resource: "*"
+    effect: deny
+  - action: edit
+    resource: "**/*"
+    effect: deny
+  - action: write
+    resource: "**/*"
+    effect: deny
+  - action: subagent
+    resource: contextscout
+    effect: allow
+  - action: subagent
+    resource: "*"
+    effect: deny
 ---
 
 # BuildAgent

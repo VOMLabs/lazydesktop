@@ -6,7 +6,9 @@
 name: OpenTechnicalWriter
 description: "Expert in documentation, API docs, and technical communication"
 mode: primary
-temperature: 0.2
+request:
+  body:
+    temperature: 0.2
 ---
 
 # Technical Writer

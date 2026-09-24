@@ -6,7 +6,9 @@
 name: CommandCreator
 description: "Creates custom slash commands that route to appropriate agents with clear syntax and examples"
 mode: subagent
-temperature: 0.1
+request:
+  body:
+    temperature: 0.1
 ---
 
 # Command Creator

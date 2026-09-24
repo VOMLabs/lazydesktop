@@ -6,7 +6,9 @@
 name: AgentGenerator
 description: "Generates XML-optimized agent files (orchestrator and subagents) following research-backed patterns"
 mode: subagent
-temperature: 0.1
+request:
+  body:
+    temperature: 0.1
 ---
 
 # Agent Generator

@@ -3,9 +3,11 @@
 > This `.opencode/` directory is validated for **OpenCode V2** and uses the
 > V2-preferred layout: `agents/`, `commands/`, `skills/`, `plugins/`, `context/`.
 >
-> - **Plugins** (`plugins/notify.ts`, `plugins/gemini/`) are ported to the V2
+> - **Plugins** (`plugins/notify/`, `plugins/gemini/`) are ported to the V2
 >   plugin API (`Plugin.define` + `setup(ctx)` + `ctx.tool.transform()`).
-> - **Local plugin config** lives in `.opencode/opencode.json`.
+> - **Plugin discovery** is automatic: OpenCode loads every direct `.ts`/`.js`
+>   file and immediate plugin directory under `.opencode/plugins/` (V2
+>   discovery), so `opencode.json` does not list them.
 > - **API keys**: copy `env.example` to `.env` (`GEMINI_API_KEY` for the Gemini
 >   image tools).
 >
