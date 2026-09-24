@@ -2,7 +2,7 @@
 
 use gpui::prelude::*;
 use gpui::*;
-use gpui_component::button::Button;
+use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::*;
 
 use crate::commit_panel::CommitPanel;
@@ -163,7 +163,7 @@ impl Render for LazyDesktopApp {
                             .w(px(260.0))
                             .h_full()
                             .border_r_1()
-                            .border_color(palette.separator)
+                            .border_color(palette.border)
                             .child(self.sidebar.clone()),
                     )
                     .child(match self.view {
@@ -182,7 +182,7 @@ impl Render for LazyDesktopApp {
                                                 .w(px(320.0))
                                                 .h_full()
                                                 .border_r_1()
-                                                .border_color(palette.separator)
+                                                .border_color(palette.border)
                                                 .child(self.file_tree.clone()),
                                         )
                                         .child(
@@ -194,7 +194,7 @@ impl Render for LazyDesktopApp {
                                     // Commit panel (bottom)
                                     div()
                                         .border_t_1()
-                                        .border_color(palette.separator)
+                                        .border_color(palette.border)
                                         .child(self.commit_panel.clone()),
                                 )
                                 .into_any();
@@ -222,75 +222,81 @@ impl LazyDesktopApp {
 
         div()
             .flex()
-            .flex_col()
+            .items_center()
+            .justify_between()
+            .h(px(40.0))
+            .px_3()
             .bg(palette.panel)
             .border_b_1()
-            .border_color(palette.separator)
+            .border_color(palette.border)
             .child(
+                // Left: app title + branch chip
                 div()
                     .flex()
                     .items_center()
-                    .justify_between()
-                    .px_4()
-                    .py_2()
+                    .gap_3()
+                    .child(div().text_sm().font_medium().child("LazyDesktop"))
                     .child(
-                        // Left: repo actions
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_3()
-                            .child(
-                                // Branch badge
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .px_3()
-                                    .py_1()
-                                    .rounded_md()
-                                    .bg(palette.elevated)
-                                    .text_color(palette.text_primary)
-                                    .child(div().text_sm().font_bold().child(branch.clone()))
-                                    .when(is_dirty, |this| {
-                                        this.child(
-                                            div().w_2().h_2().rounded_full().bg(palette.warning),
-                                        )
-                                    }),
-                            )
-                            .when_some(op_feedback.clone(), |this, (msg, is_err)| {
-                                this.child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(if is_err {
-                                            palette.error
-                                        } else {
-                                            palette.success
-                                        })
-                                        .child(msg),
-                                )
-                            }),
-                    )
-                    .child(
-                        // Right: git actions
                         div()
                             .flex()
                             .items_center()
                             .gap_2()
-                            .child(Button::new("fetch").label("Fetch").on_click(cx.listener(
-                                |this, _, _, cx| {
-                                    this.run_git_op("Fetch", GitService::fetch, cx);
-                                },
-                            )))
-                            .child(Button::new("pull").label("Pull").on_click(cx.listener(
-                                |this, _, _, cx| {
-                                    this.run_git_op("Pull", GitService::pull, cx);
-                                },
-                            )))
-                            .child(Button::new("push").label("Push").on_click(cx.listener(
-                                |this, _, _, cx| {
-                                    this.run_git_op("Push", GitService::push, cx);
-                                },
-                            ))),
+                            .px_2()
+                            .py_0p5()
+                            .rounded_md()
+                            .bg(palette.elevated)
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(palette.text_secondary)
+                                    .child(branch.clone()),
+                            )
+                            .when(is_dirty, |this| {
+                                this.child(div().w_2().h_2().rounded_full().bg(palette.warning))
+                            }),
+                    )
+                    .when_some(op_feedback.clone(), |this, (msg, is_err)| {
+                        this.child(
+                            div()
+                                .text_xs()
+                                .text_color(if is_err {
+                                    palette.error
+                                } else {
+                                    palette.success
+                                })
+                                .child(msg),
+                        )
+                    }),
+            )
+            .child(
+                // Right: sync actions (ghost buttons with hover states)
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        Button::new("fetch")
+                            .ghost()
+                            .label("Fetch")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.run_git_op("Fetch", GitService::fetch, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("pull")
+                            .ghost()
+                            .label("Pull")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.run_git_op("Pull", GitService::pull, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("push")
+                            .ghost()
+                            .label("Push")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.run_git_op("Push", GitService::push, cx);
+                            })),
                     ),
             )
     }

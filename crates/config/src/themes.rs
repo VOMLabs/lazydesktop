@@ -143,16 +143,16 @@ pub struct ThemeEntry {
 /// The built-in "Dark" theme with the application's shade palette.
 pub fn builtin_dark_theme() -> Theme {
     let mut colors = HashMap::new();
-    colors.insert("background".to_string(), "#181a1f".to_string());
-    colors.insert("foreground".to_string(), "#d7dae0".to_string());
-    colors.insert("widget_background".to_string(), "#1d2027".to_string());
-    colors.insert("input_background".to_string(), "#20242d".to_string());
-    colors.insert("input_foreground".to_string(), "#d7dae0".to_string());
-    colors.insert("button_background".to_string(), "#568af2".to_string());
+    colors.insert("background".to_string(), "#18181b".to_string());
+    colors.insert("foreground".to_string(), "#ededef".to_string());
+    colors.insert("widget_background".to_string(), "#121215".to_string());
+    colors.insert("input_background".to_string(), "#27272a".to_string());
+    colors.insert("input_foreground".to_string(), "#ededef".to_string());
+    colors.insert("button_background".to_string(), "#3b82f6".to_string());
     colors.insert("button_foreground".to_string(), "#ffffff".to_string());
-    colors.insert("tooltip_background".to_string(), "#232730".to_string());
-    colors.insert("tooltip_foreground".to_string(), "#d7dae0".to_string());
-    colors.insert("selection".to_string(), "#568af2".to_string());
+    colors.insert("tooltip_background".to_string(), "#27272a".to_string());
+    colors.insert("tooltip_foreground".to_string(), "#ededef".to_string());
+    colors.insert("selection".to_string(), "#3b82f6".to_string());
 
     Theme {
         name: "Dark".to_string(),

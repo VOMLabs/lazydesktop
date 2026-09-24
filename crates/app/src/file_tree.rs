@@ -91,13 +91,22 @@ impl Render for FileTree {
                                 cx.notify();
                             })),
                     )
-                    .child(div().text_sm().font_bold().child("Changed Files"))
+                    .child(div().text_sm().font_medium().child("Changed Files"))
                     .child(div().flex_1())
                     .child(
                         div()
-                            .text_sm()
-                            .text_color(p.text_muted)
-                            .child(format!("{} files", file_count)),
+                            .flex()
+                            .items_center()
+                            .px_2()
+                            .py_0p5()
+                            .rounded_full()
+                            .bg(p.elevated)
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(p.text_muted)
+                                    .child(format!("{}", file_count)),
+                            ),
                     ),
             )
             .child(

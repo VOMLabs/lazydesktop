@@ -350,7 +350,7 @@ impl Render for CommitPanel {
             .p_4()
             .gap_3()
             .child(
-                // Row 1: summary + description + commit
+                // Row 1: summary + description inputs
                 div()
                     .flex()
                     .items_center()
@@ -360,13 +360,15 @@ impl Render for CommitPanel {
                         div().flex_1().child(Input::new(&self.summary_input)),
                     )
                     .child(
-                        // Description input (placeholder until Textarea is wired up)
+                        // Description input (inset block, mirrors the input
+                        // surface until a real Textarea is wired up)
                         div()
                             .flex_1()
                             .h(px(32.0))
                             .rounded_md()
                             .border_1()
                             .border_color(p.border)
+                            .bg(p.input)
                             .px_2()
                             .flex()
                             .items_center()
@@ -384,33 +386,6 @@ impl Render for CommitPanel {
                                         self.description.clone()
                                     }),
                             ),
-                    )
-                    .child(
-                        Button::new("commit-btn")
-                            .primary()
-                            .label("Commit")
-                            .disabled(summary.is_empty() || !is_dirty)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                let summary = this.summary_input.read(cx).value().to_string();
-                                let description = this.description.clone();
-                                let message = if description.is_empty() {
-                                    summary.clone()
-                                } else {
-                                    format!("{}\n\n{}", summary, description)
-                                };
-                                this.git_service.update(cx, |service, _| {
-                                    // Skip hooks mirrors the Qt checkbox on the
-                                    // commit panel (git commit --no-verify).
-                                    let _ = service.commit_with_hooks(&message, !this.skip_hooks);
-                                });
-                                this.summary_input
-                                    .update(cx, |state, cx| state.set_value("", window, cx));
-                                this.description.clear();
-                                this.git_service.update(cx, |service, _| {
-                                    service.refresh_all();
-                                });
-                                cx.notify();
-                            })),
                     ),
             )
             .child(
@@ -480,9 +455,37 @@ impl Render for CommitPanel {
                     .child(div().flex_1())
                     .child(
                         div()
-                            .text_sm()
+                            .text_xs()
                             .text_color(p.text_muted)
                             .child(format!("{} files changed", file_count)),
+                    )
+                    .child(
+                        // Primary commit action, anchored bottom-right.
+                        Button::new("commit-btn")
+                            .primary()
+                            .label("Commit")
+                            .disabled(summary.is_empty() || !is_dirty)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                let summary = this.summary_input.read(cx).value().to_string();
+                                let description = this.description.clone();
+                                let message = if description.is_empty() {
+                                    summary.clone()
+                                } else {
+                                    format!("{}\n\n{}", summary, description)
+                                };
+                                this.git_service.update(cx, |service, _| {
+                                    // Skip hooks mirrors the Qt checkbox on the
+                                    // commit panel (git commit --no-verify).
+                                    let _ = service.commit_with_hooks(&message, !this.skip_hooks);
+                                });
+                                this.summary_input
+                                    .update(cx, |state, cx| state.set_value("", window, cx));
+                                this.description.clear();
+                                this.git_service.update(cx, |service, _| {
+                                    service.refresh_all();
+                                });
+                                cx.notify();
+                            })),
                     ),
             )
             .when_some(ai_error.clone(), |this, err| {
