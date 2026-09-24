@@ -4,16 +4,23 @@ Comprehensive documentation of what is implemented in LazyDesktop, how it
 works internally, and what each component does. This is the technical
 companion to the user-facing guides in [`docs/`](docs/README.md).
 
+**Current status:** LazyDesktop is a **pure Rust** application. The UI is
+built with **GPUI** (the editor framework from Zed) in `crates/app`, and six
+backend crates form a single Cargo workspace. The Qt/C++ UI, the Meson build,
+and the C ABI headers were removed when the GPUI frontend reached feature
+parity — the repository contains no C++ code today. The active milestone is
+v0.3; see [`ROADMAP.md`](ROADMAP.md) for what is still open.
+
 ---
 
 ## Part 1: High-Level Overview
 
 ### What is LazyDesktop?
 
-LazyDesktop is a native Git GUI client for KDE Plasma, built as a lightweight
-alternative to GitHub Desktop. It is built entirely with **Rust**: the UI uses
-**GPUI** (the editor framework from Zed), and seven crates form a single Cargo
-workspace for the frontend and the backend services.
+LazyDesktop is a native Git GUI client for the KDE Plasma desktop, built as a
+lightweight alternative to GitHub Desktop. It is built entirely with **Rust**:
+the UI uses **GPUI**, and seven crates form a single Cargo workspace for the
+frontend and the backend services.
 
 ### Architecture
 
@@ -25,7 +32,7 @@ workspace for the frontend and the backend services.
 │  │  - Branch │  │  - Branches       │  │  content    │ │
 │  │  - Push   │  │  - History        │  │  - File tree│ │
 │  │  - Project│  │  - Projects       │  │  - Diff     │ │
-│  │           │  ├───────────────────┤  │  - Image    │ │
+│  │           │  ├───────────────────┤  │             │ │
 │  │           │  │  Commit panel     │  │             │ │
 │  └──────────┘  └────────────────────┘  └─────────────┘ │
 ├─────────────────────────────────────────────────────────┤
@@ -33,8 +40,8 @@ workspace for the frontend and the backend services.
 │  ┌─────────────┐ ┌─────────────┐ ┌────────────────────┐ │
 │  │ ai_core     │ │ vcs_core    │ │ addons             │ │
 │  │ - GGUF      │ │ - SSH keys  │ │ - Archive parsing  │ │
-│  │ - Inference │ │ - Remotes   │ │ - Manifests        │ │
-│  │ - Downloads │ │ - Connect   │ │ - Path security    │ │
+│  │ - Cloud     │ │ - Remotes   │ │ - Manifests        │ │
+│  │ - Inference │ │ - Connect   │ │ - Path security    │ │
 │  └─────────────┘ └─────────────┘ └────────────────────┘ │
 │  ┌─────────────┐ ┌─────────────┐ ┌────────────────────┐ │
 │  │ watcher     │ │ config      │ │ git_cmd            │ │
@@ -59,6 +66,7 @@ workspace for the frontend and the backend services.
 | Build System | Cargo workspace + Moon + just | Compilation and linking |
 | Config Storage | Rust `config` crate | INI settings, Lua projects/themes |
 | Local AI | Rust `ai_core` crate | GGUF model inference |
+| Cloud AI | Rust `ai_core::cloud` | OpenRouter / OpenAI / Anthropic / Google AI Studio |
 | Native VCS/SSH | Rust `vcs_core` crate | SSH keys, git remotes |
 | Addon System | Rust `addons` crate | Security core, package parsing |
 | File Watching | Rust `watcher` crate | VCS state monitoring |
@@ -93,9 +101,11 @@ crates/
 └── git_cmd/      # Git/Jujutsu CLI command execution wrapper
 ```
 
-> **Note on FFI:** every crate still ships an `ffi.rs` module and builds as
-> `staticlib` for **external consumer projects**. The bundled GPUI app (`app`)
-> calls the crates directly as Rust libraries and does not use the C ABI.
+> **Note on FFI:** each backend crate still ships an `ffi.rs` module and
+> builds as `staticlib` for **external consumer projects**. The bundled GPUI
+> app (`app`) calls the crates directly as Rust libraries and does not use
+> the C ABI. The `include/*.h` headers that declared that ABI were deleted
+> together with the Qt app.
 
 ### 2.1 `ai_core` — AI Inference Engine
 
@@ -105,18 +115,16 @@ crates/
 | Module | Responsibility |
 |--------|---------------|
 | `inference.rs` | GGUF model loading, token-by-token streaming |
+| `cloud/` | Cloud provider clients (OpenRouter, OpenAI, Anthropic, Google AI Studio) |
 | `download.rs` | HuggingFace model downloads with progress |
 | `discovery.rs` | CPU/GPU backend discovery |
 | `commit_message.rs` | Conventional Commits message generation |
 | `ffi.rs` | C ABI (`mm_*` functions) |
 | `error.rs` | Error taxonomy |
 
-**Key FFI functions:**
-- `mm_init` / `mm_destroy` — Manager lifecycle
-- `mm_stream_inference` — Generic completion
-- `mm_generate_commit_message` — Commit-message generation
-- `mm_download_model` / `mm_cancel_download` — Model downloads
-- `mm_list_local_models` / `mm_discover_models` — Model listing
+Key functions consumed by the app: `ai_core::commit_message::generate` and
+`ai_core::cloud::generate` back the **AI button** in the commit panel; the
+provider, model, and system prompt come from `lazydesktop.conf`.
 
 ### 2.2 `vcs_core` — SSH and Remote Management
 
@@ -130,11 +138,9 @@ crates/
 | `jj.rs` | Jujutsu subprocess orchestration |
 | `ffi.rs` | C ABI (`vcs_*` functions) |
 
-**Key FFI functions:**
-- `vcs_ssh_list_public_keys` — List public keys
-- `vcs_ssh_generate_key` — Generate keypairs
-- `vcs_ssh_test_connection` — Test SSH connections
-- `vcs_remote_list` / `vcs_remote_add` / `vcs_remote_set_url` — Remote management
+The Settings view uses `vcs_core::ssh` (list/generate/copy public keys) and
+`vcs_core::remote` (list/add/remove remotes) directly. No `ssh-keygen`, `ssh`,
+or `git remote` subprocesses are needed.
 
 ### 2.3 `addons` — Addon System Security Core
 
@@ -151,9 +157,10 @@ crates/
 | `registry.rs` | Provider aggregation, snapshot index |
 | `ffi.rs` | C ABI (`lda_*` functions) |
 
-**Test status:** 77 tests passing (archive, manifest, ignore, pathsec, registry, provider, runtime, error).
+This crate is a self-contained security core; it is not yet surfaced in the
+GPUI app.
 
-### 2.4 `watcher` — File Watcher (NEW)
+### 2.4 `watcher` — File Watcher
 
 **Purpose:** VCS-aware filesystem monitoring with typed events and debouncing.
 
@@ -173,16 +180,13 @@ pub enum FileEvent {
 }
 ```
 
-**Key FFI functions:**
-- `watcher_create` — Start watching a repository
-- `watcher_poll` — Get next event with timeout
-- `watcher_destroy` — Stop watching and join threads
-
 **Watches:** `.git/HEAD`, `.git/index` (Git) or `.jj/working_copy`, `.jj/repo` (Jujutsu).
 
-**Test status:** 10 tests passing.
+> **Status:** implemented and tested on its own; **not wired into the GPUI
+> app yet** — `lazydesktop-watcher` is declared in `crates/app/Cargo.toml`
+> but no code consumes it. Auto-refresh via watcher events is open work.
 
-### 2.5 `config` — Configuration Management (NEW)
+### 2.5 `config` — Configuration Management
 
 **Purpose:** Typed access to settings, projects, and themes.
 
@@ -190,17 +194,14 @@ pub enum FileEvent {
 |--------|---------------|
 | `settings.rs` | INI format settings (section/key = value) |
 | `projects.rs` | Lua project list management |
-| `themes.rs` | Lua theme definitions + scanning |
+| `themes.rs` | Lua theme definitions + scanning + **builtin Dark/Light palettes** |
 | `paths.rs` | Platform-appropriate path resolution |
 | `ffi.rs` | C ABI (`config_*` functions) |
 
-**Key FFI functions:**
-- `config_settings_load` / `config_settings_get` — Settings access
-- `config_projects_load` / `config_projects_add` / `config_projects_remove` — Project management
+`themes.rs` is the source of the builtin theme definitions and the
+`.theme.lua` parser used by the palette system (see Part 3).
 
-**Test status:** 30 tests passing.
-
-### 2.6 `git_cmd` — Git/Jujutsu CLI Wrapper (NEW)
+### 2.6 `git_cmd` — Git/Jujutsu CLI Wrapper
 
 **Purpose:** Typed, synchronous API for git and jj CLI commands.
 
@@ -211,13 +212,8 @@ pub enum FileEvent {
 | `types.rs` | Shared types (`FileStatus`, `CommitEntry`, `BranchEntry`) |
 | `ffi.rs` | C ABI (`vcs_git_*`, `vcs_jj_*` functions) |
 
-**Key FFI functions:**
-- `vcs_git_status` / `vcs_git_log` / `vcs_git_branches` — Git queries
-- `vcs_git_diff_file` / `vcs_git_is_dirty` — File status
-- `vcs_jj_status` / `vcs_jj_diff_file` — Jujutsu queries
-- `vcs_is_git_available` / `vcs_is_jj_available` — Detection
-
-**Test status:** 7 tests passing.
+The app talks to git through `crates/app/src/git_service.rs`, which wraps
+these calls and runs them off the UI thread.
 
 ---
 
@@ -225,80 +221,132 @@ pub enum FileEvent {
 
 ### 3.1 Source Files
 
-The Qt/C++ application in `src/` (plus `meson.build` and the `include/*.h`
-C ABI headers) was **removed** when the GPUI frontend reached feature
-parity. The whole repository is now a single Rust Cargo workspace.
-
 | File | Responsibility |
 |------|---------------|
 | `crates/app/src/main.rs` | Entry point (GPUI app) |
-| `crates/app/src/app.rs` | Root view: toolbar, sidebar, file tree, diff, commit panel |
+| `crates/app/src/lib.rs` | Crate root with shared types |
+| `crates/app/src/app.rs` | Root view: toolbar, sidebar, content split; git-op feedback |
 | `crates/app/src/sidebar.rs` | Branches / History / Projects navigation |
 | `crates/app/src/file_tree.rs` | Status file list with staging checkboxes |
-| `crates/app/src/diff_view.rs` | Diff viewer (syntax highlighting, inline images) |
-| `crates/app/src/commit_panel.rs` | Commit summary/description, AI generation, stash/reset actions |
-| `crates/app/src/settings_view.rs` | Settings dialog (AI, SSH keys, remotes, appearance) |
+| `crates/app/src/diff_view.rs` | Diff viewer (colorized lines, gutter, source/file/commit modes) |
+| `crates/app/src/diff.rs` | Diff parsing + color mapping (unit-tested) |
+| `crates/app/src/commit_panel.rs` | Commit summary/description, AI generation, skip-hooks toggle, stash/reset actions |
+| `crates/app/src/settings_view.rs` | Settings dialog (appearance, git identity, AI, SSH keys, remotes, data locations) |
 | `crates/app/src/git_service.rs` | Async Git CLI wrapper for the app |
+| `crates/app/src/color.rs` | Palette component colors (unit-tested) |
+| `crates/app/src/theme.rs` | **Palette token system** — single source of truth for UI colors |
 
-### 3.2 C FFI modules
+### 3.2 Theme System
+
+Theming was consolidated in `crates/app/src/theme.rs` plus
+`crates/config/src/themes.rs`:
+
+- **`Palette`** — a `Copy` struct of 37 color tokens (background, surface,
+  foreground, text tiers, accent, status colors, diff colors, …). Every view
+  renders exclusively from a `Palette`; there are no hardcoded UI colors.
+- **Builtin palettes** — Dark and Light token sets defined in
+  `crates/config/src/themes.rs`.
+- **Custom themes** — a `.theme.lua` file (`return { name = …, colors = { background = …, foreground = … } }`)
+  is parsed by `config::themes`; the `background` luminance selects the Dark
+  or Light token set, and every other shade flows from the matching palette.
+- **Selection** — System Default / Dark / Light / custom, persisted under
+  `appearance/theme` in `lazydesktop.conf`, resolved at startup in `main.rs`.
+- **Propagation** — a `ThemeChanged(Option<Palette>)` event is emitted on
+  theme change and applied across sidebar, file tree, diff view, commit
+  panel, settings view, and app.
+- The system monospace font powers the diff viewer; the file list needs no
+  custom painting.
+
+### 3.3 C FFI Modules
 
 `ffi.rs` modules remain in `ai_core`, `vcs_core`, `config`, `git_cmd`,
-`watcher`, and `addons`, and those crates still build as `staticlib` for
-external consumer projects. The bundled app does **not** use them — it calls the
-crates directly as Rust libraries. The `include/*.h` headers that declared
-the C ABI were deleted together with the Qt app.
+`watcher`, and `addons`, and those crates build as `staticlib` for external
+consumer projects. The bundled app does **not** use them — it calls the crates
+directly as Rust libraries.
 
 ---
 
-## Part 4: Migration Roadmap
+## Part 4: Implemented Features (current)
 
-### Completed (Rust Backend)
+What the shipped `crates/app` UI does today, and where:
 
-| Component | Crate | Tests | Status |
-|-----------|-------|-------|--------|
-| AI inference + cloud providers | `ai_core` | ✅ | Production |
-| SSH/Remote | `vcs_core` | ✅ | Production |
-| Addon system | `addons` | 77 ✅ | Production |
-| File watching | `watcher` | 10 ✅ | Production |
-| Configuration | `config` | 30 ✅ | Production |
-| Git/jj commands | `git_cmd` | 7 ✅ | Production |
-| **GPUI frontend** | `app` | — | **Shipped UI** |
+### Git operations — `git_service.rs` + `git_cmd`
 
-### Completed (Frontend)
+- Status list with per-file staging checkboxes (`file_tree.rs`)
+- Commit with summary + description, **skip-hooks toggle** (`--no-verify`)
+- **Toolbar:** branch badge, **Fetch / Pull / Push** buttons with result
+  feedback (`app.rs::run_git_op`)
+- Branch management: **create, switch, delete, rename** (`sidebar.rs`)
+- **Stash pop** with live count, **unstage all** (mixed reset)
+  (`commit_panel.rs`)
+- Reset index to HEAD (unstage), preserving working-tree changes
+- Jujutsu detection (`.jj` directory) in the git service
+- Remote management via `vcs_core::remote` in Settings
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| GPUI app replaces Qt `mainwindow` | ✅ | `crates/app` is the shipped UI |
-| Git ops switched to `git_cmd` crate | ✅ | `crates/app/src/git_service.rs`, async via `spawn_blocking` |
-| File watching via `watcher` crate | ✅ | .git/index + .git/HEAD debounce |
-| Settings via `config` crate | ✅ | INI settings, `projects.lua`, themes |
-| AI wired directly (`ai_core`) | ✅ | Local GGUF + cloud providers (`ai_core::cloud`) |
-| SSH/remotes via `vcs_core` | ✅ | No `ssh-keygen` / `ssh` / `git remote` subprocesses |
-| Diff viewer | ✅ | Colorized diffs, line-number gutter; word-level highlighting + inline images remaining |
-| Branch/stash/reset UI | ✅ | Create/switch/delete/rename branches, stash push/pop, reset modes |
+### AI commit messages — `commit_panel.rs` + `ai_core`
 
-### Remaining Frontend Work
+- Cloud providers (OpenRouter / OpenAI / Anthropic / Google AI Studio) and
+  local GGUF inference, both via `ai_core`
+- Provider/model/API key/system prompt configured in Settings → AI
+- Local model downloads from HuggingFace with GPU toggle
 
-| Item | Status |
-|------|--------|
-| Diff viewer: word-level syntax highlighting + inline image rendering | In progress |
-| Co-author selector, amend toggle in commit panel | Planned |
-| Stash list/drop UI, revert UI | Planned |
-| Theming — map `config` crate tokens to `gpui-component` theme tokens | Planned |
-| Data migration — Qt-era YAML persistence to `config` crate Lua files | Planned |
-| Full Jujutsu (jj) UI support in the status/commit flows | Planned |
-| UI test coverage for `crates/app` | Planned |
+### Diff viewer — `diff_view.rs` + `diff.rs`
+
+- Colorized unified diff with line-number gutter and hunk coloring
+- File / commit / source modes; binary files shown as "Binary files differ"
+- **Not yet:** word-level syntax highlighting, inline image rendering
+
+### History — `sidebar.rs` + `diff_view.rs`
+
+- Commit list; clicking a commit shows its full diff (`git show`)
+
+### Projects — `sidebar.rs` + `config::projects`
+
+- Recent-projects list (persisted in `projects.lua`), load / init / clone
+  controls
+
+### Settings — `settings_view.rs`
+
+- Appearance: theme picker (System / Dark / Light / custom Lua)
+- Git identity via `git config --global`
+- AI: enable toggle, provider, model, API key, local GGUF path, GPU toggle
+- SSH keys via `vcs_core::ssh`
+- Remotes via `vcs_core::remote`
+- Data locations (read-only)
 
 ---
 
-## Part 5: Build System
+## Part 5: Not Yet Implemented
+
+Open items tracked in [`ROADMAP.md`](ROADMAP.md) — the short list:
+
+- Diff viewer: word-level syntax highlighting, inline image rendering,
+  hunk-level staging
+- History view: affected-files list with per-file drill-down
+- Commit panel: co-author selector, amend toggle
+- Stash list / drop UI; reset / revert UI
+- Tag management; rebase / cherry-pick UI; merge conflict resolver;
+  submodules; staging-area UI (staged vs unstaged)
+- Full Jujutsu (jj) UI support in status/commit/branch flows
+- Wire the `watcher` crate into the app for auto-refresh; scan folder for
+  project import; data migration from Qt-era YAML
+- UX: keyboard shortcuts, multi-select, status filter, history search,
+  tabbed multi-repo
+- Expanded GPUI test coverage (unit tests exist for `color`, `diff`,
+  `theme`; no UI/snapshot tests yet)
+- Refresh `.opencode` skills: replace Qt/QML-era `qt-*` skills with
+  GPUI/Rust equivalents
+
+---
+
+## Part 6: Build System
 
 ### Cargo (single workspace)
 
 The whole application — GPUI frontend (`app`) plus the backend crates —
 builds with Cargo:
 
-1. `cargo build --workspace` builds every crate (including the `app` bin)
+1. `cargo build --workspace` builds every crate (including the `app` binary)
 2. The `app` crate links the backend crates directly as Rust libraries
 3. Release builds use LTO + `opt-level = "z"` + strip (see `Cargo.toml`)
 
@@ -322,89 +370,47 @@ members = [
 ```bash
 cargo check --workspace          # Type checking
 cargo test --workspace           # All tests
-cargo clippy --workspace         # Linting
+cargo clippy --workspace -D warnings  # Linting (gate)
 cargo fmt --all                  # Formatting
 cargo audit                      # Security audit
 just test                        # Rust tests via justfile
-just build                       # Full build (Rust workspace)
+just lint                        # All pre-commit hooks
 ```
 
----
-
-## Part 6: Feature Checklist
-
-### Git Operations (via `git_cmd` crate)
-
-- [x] `git status --porcelain` parsing
-- [x] Branch listing
-- [x] Current branch detection
-- [x] Commit log
-- [x] File diff
-- [x] Dirty repository detection
-- [x] Jujutsu support (`jj status`, `jj diff`)
-
-### AI System (via `ai_core` crate)
-
-- [x] OpenRouter/OpenAI/Anthropic/Google AI Studio providers
-- [x] Local GGUF inference
-- [x] Token-by-token streaming
-- [x] Background model downloads
-- [x] Model management (list, discover, delete)
-
-### SSH/Remote (via `vcs_core` crate)
-
-- [x] SSH key generation
-- [x] SSH connection testing
-- [x] Git remote management
-
-### Addon System (via `addons` crate)
-
-- [x] Package parsing (zip, lzd, directory)
-- [x] Manifest validation
-- [x] Path security enforcement
-- [x] Ignore system (.lzdignore)
-- [x] Provider architecture
-
-### File Watching (via `watcher` crate)
-
-- [x] VCS-aware monitoring (.git, .jj)
-- [x] Typed events (Created, Modified, Removed, Renamed)
-- [x] Debouncing
-- [x] Cross-platform (Linux inotify, macOS FSEvents, Windows ReadDirectoryChanges)
-
-### Configuration (via `config` crate)
-
-- [x] INI settings
-- [x] Lua project list
-- [x] Lua theme management
-- [x] Platform-appropriate paths
+CI runs on Ubuntu, Windows, and macOS (`.github/workflows/ci.yml`). Release
+artifacts (`.deb`, `.AppImage`, `.pkg.tar.zst`, `.msi`) are built with
+`cargo build --workspace --release` by the tag-driven release workflow —
+no build-system drift between packaging scripts and CI.
 
 ---
 
-## Part 7: Test Results
+## Part 7: Test Status
 
 | Crate | Tests | Status |
 |-------|-------|--------|
 | `lazydesktop-addons` | 77 | ✅ All passing |
-| `lazydesktop-config` | 30 | ✅ All passing |
+| `lazydesktop-config` | 33 | ✅ All passing |
+| `lazydesktop-vcs-core` | 61 | ✅ All passing |
+| `lazydesktop-git-cmd` | 12 | ✅ All passing |
 | `lazydesktop-watcher` | 10 | ✅ All passing |
-| `lazydesktop-git-cmd` | 7 | ✅ All passing |
-| **Total** | **124** | **✅ All passing** |
+| `lazydesktop-ai-core` | 4 | ✅ All passing |
+| `lazydesktop-app` | 16 | ✅ All passing (color 5, diff 4, theme 7) |
+| **Total** | **213** | **✅ All passing** |
 
 ---
 
 ## Known Notes / Caveats
 
-- **Packaging build system** — The Debian rules, Arch PKGBUILD, and Windows
-  MSI script all build with `cargo build --workspace --release`, matching CI
-  and the release workflows (no build-system drift).
+- **Packaging build system** — Debian rules, Arch PKGBUILD, and Windows MSI
+  script all build with `cargo build --workspace --release`, matching CI and
+  the release workflows (no build-system drift).
 - **AI quality depends on the model/provider** — Small local models produce
   usable but terse commit messages; larger models and cloud providers
   generally produce better summaries.
 - **`staticlib` + `ffi.rs` kept for external hosts** — The bundled app calls
   the crates directly; the C ABI modules remain only for external consumer
   projects and are inert in this repository (headers removed).
-- **Remaining UI gaps** — Word-level diff highlighting, inline image
-  rendering, co-author selector, amend toggle, stash list/drop, revert UI,
-  full jj UI support, and `crates/app` unit tests are still open (see
-  [ROADMAP.md](ROADMAP.md)).
+- **Watcher crate not wired** — `lazydesktop-watcher` is tested standalone
+  but status auto-refresh in the app is not yet event-driven.
+- **Remaining UI gaps** — see [Part 5](#part-5-not-yet-implemented) and
+  [ROADMAP.md](ROADMAP.md).
