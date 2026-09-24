@@ -47,6 +47,6 @@ your checked files at generation time.
 ## Privacy notes
 
 - Your diff text is sent to the provider's API as part of the prompt.
-- The API key is stored locally in plain text (QSettings INI format); protect
+- The API key is stored locally in plain text (INI file); protect
   `~/.config/lazydesktop/lazydesktop.conf` like any credential file.
 - For fully offline operation, use [local models](local-models.md) instead.

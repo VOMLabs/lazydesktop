@@ -27,7 +27,7 @@ Day-to-day usage of the application.
   management and commit history drill-down
 - [Projects](user-guide/projects.md) — recent projects, clone/create/load,
   scanning folders
-- [Themes](user-guide/themes.md) — system, dark, and custom YAML themes
+- [Themes](user-guide/themes.md) — System, Dark, Light, and custom Lua themes
 
 ## AI
 

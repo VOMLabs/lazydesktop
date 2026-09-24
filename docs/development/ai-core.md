@@ -3,9 +3,8 @@
 `ai_core` is a Rust crate that gives LazyDesktop AI capabilities: cloud
 provider calls (OpenRouter, OpenAI, Anthropic, Google AI Studio), local GGUF
 model inference, model downloads, and Conventional Commits message
-generation. The GPUI app consumes it directly as a Rust library; it is also
-compiled as a `staticlib` for external C++ hosts (the `include/*.h` headers
-were removed when the bundled C++ UI was deleted).
+generation. The GPUI app consumes it directly as a Rust library; the crate
+also builds a `staticlib` (via `ffi.rs`) for external consumer projects.
 
 ## Why Rust?
 
@@ -19,7 +18,7 @@ were removed when the bundled C++ UI was deleted).
 |--------|---------------|
 | `lib.rs` | Crate root and module wiring |
 | `cloud.rs` | Cloud providers (OpenRouter / OpenAI / Anthropic / Google) |
-| `ffi.rs` | `extern "C"` exports (kept for external C++ hosts) |
+| `ffi.rs` | `extern "C"` exports (kept for external consumer projects) |
 | `inference.rs` | GGUF loading (`llama_cpp_2`) + streaming inference on a worker thread |
 | `download.rs` | HuggingFace downloads with progress + SHA-256 verification |
 | `discovery.rs` | Model discovery (HuggingFace API + curated list), `ggml` backend detection |

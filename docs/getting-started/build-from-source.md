@@ -63,15 +63,12 @@ A [`justfile`](../../justfile) wraps the common workflows. With
 
 Your projects and settings survive rebuilds:
 
-- Projects: `~/.config/lazydesktop/projects.yaml`
+- Projects: `~/.config/lazydesktop/projects.lua`
 - Settings: `~/.config/lazydesktop/lazydesktop.conf`
-- Custom themes: `~/.config/lazydesktop/themes/*.theme.yaml`
+- Custom themes: `~/.config/lazydesktop/themes/*.theme.lua`
 - Local AI models: `~/.config/lazydesktop/models/`
 
 See [configuration](configuration.md) for the full reference.
-
-> **Note:** the Rust `config` crate persists projects and themes.
-> See the [roadmap](../../ROADMAP.md) for the persistence migration status.
 
 ## Troubleshooting
 

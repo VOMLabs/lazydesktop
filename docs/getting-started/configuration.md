@@ -6,14 +6,10 @@ All persistent data lives under `~/.config/lazydesktop/`.
 
 | Path | Format | Purpose |
 |------|--------|---------|
-| `~/.config/lazydesktop/lazydesktop.conf` | QSettings INI | Application settings |
-| `~/.config/lazydesktop/projects.yaml` | YAML | Recent project paths |
-| `~/.config/lazydesktop/themes/*.theme.yaml` | YAML | Custom theme definitions |
+| `~/.config/lazydesktop/lazydesktop.conf` | INI | Application settings |
+| `~/.config/lazydesktop/projects.lua` | Lua | Recent project paths |
+| `~/.config/lazydesktop/themes/*.theme.lua` | Lua | Custom theme definitions |
 | `~/.config/lazydesktop/models/` | GGUF | Downloaded local AI models |
-
-> **Note:** the bundled Rust `config` crate (used by the in-development GPUI
-> frontend) persists projects and themes as Lua (`projects.lua`,
-> `*.theme.lua`). The Qt UI still reads YAML directly.
 
 The data paths themselves can be changed in **Settings → General**.
 
@@ -26,7 +22,7 @@ category (`[category] key = value`).
 
 | Key | Default | Purpose |
 |-----|---------|---------|
-| `appearance/theme` | `"system"` | Active theme name (`system`, `dark`, or a custom theme) |
+| `appearance/theme` | `"system"` | Active theme: `system` (follow the OS appearance), `Dark`, `Light`, or a custom theme name |
 
 ### Git
 
@@ -53,17 +49,16 @@ category (`[category] key = value`).
 
 | Key | Default | Purpose |
 |-----|---------|---------|
-| `paths/projects` | `~/.config/lazydesktop/projects.yaml` | Project list path |
+| `paths/projects` | `~/.config/lazydesktop/projects.lua` | Project list path |
 | `paths/settings` | `~/.config/lazydesktop/lazydesktop.conf` | Settings path |
 | `paths/themes` | `~/.config/lazydesktop/themes` | Themes directory |
 
-> **Security note:** the API key is stored in plain text in `lazydesktop.conf`
-> (as QSettings does). Protect this file the same way you protect other local
-> credentials.
+> **Security note:** the API key is stored in plain text in `lazydesktop.conf`.
+> Protect this file the same way you protect other local credentials.
 
-## Custom YAML themes
+## Custom Lua themes
 
-Drop a `.theme.yaml` file into `~/.config/lazydesktop/themes/` and it appears
+Drop a `.theme.lua` file into `~/.config/lazydesktop/themes/` and it appears
 as a theme option in **Settings → Appearance** after a restart (or after
 reopening the settings dialog). See [themes](../user-guide/themes.md) for the
-full guide and the color reference.
+full guide, the file format, and the color reference.

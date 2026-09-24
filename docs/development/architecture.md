@@ -74,7 +74,7 @@ completion `WeakEntity::update(cx, ...)` to flush the result into the UI.
 The `config` crate persists:
 
 - `settings.rs` — application settings (INI, `~/.config/lazydesktop/lazydesktop.conf`)
-- `projects.rs` — recent projects (`projects.yaml`)
+- `projects.rs` — recent projects (`projects.lua`)
 - `themes.rs` — custom themes
 
 Raw GGUF files store local models in `~/.config/lazydesktop/models/`.
@@ -85,7 +85,7 @@ Raw GGUF files store local models in `~/.config/lazydesktop/models/`.
 |----------|-----------|
 | **Git CLI via `git_cmd`, no libgit2** | Small binary, exact parity with command-line Git |
 | **Rust + GPUI, no Electron** | Native KDE integration, no web runtime |
-| **No database** | `config` crate (settings + YAML) covers configuration and project state |
+| **No database** | `config` crate (INI settings + Lua projects/themes) covers configuration and project state |
 | **Async via `spawn_blocking`** | Git and inference run off the UI thread |
 | **Rust for AI core** | `llama-cpp-2` is a mature Rust binding; cloud providers are plain HTTP |
 | **Native SSH/remotes** | `vcs_core` removes `ssh-keygen` / `ssh` / `git remote` subprocesses |

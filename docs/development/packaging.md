@@ -7,7 +7,7 @@ one and how it is built.
 
 | Artifact | Platform | Builder |
 |----------|----------|---------|
-| `.AppImage` | Linux | linuxdeploy + Qt plugin |
+| `.AppImage` | Linux | linuxdeploy + appimagetool |
 | `.deb` | Debian / Ubuntu | `debian/` + `dpkg-deb` |
 | `.pkg.tar.zst` | Arch Linux | `PKGBUILD` + makepkg |
 | `.msi` | Windows | WiX Toolset |
