@@ -2,19 +2,34 @@
 name: DocWriter
 description: Documentation authoring agent
 mode: subagent
-temperature: 0.2
-permission:
-  bash:
-    "*": "deny"
-  edit:
-    "plan/**/*.md": "allow"
-    "**/*.md": "allow"
-    "**/*.env*": "deny"
-    "**/*.key": "deny"
-    "**/*.secret": "deny"
-  task:
-    contextscout: "allow"
-    "*": "deny"
+request:
+  body:
+    temperature: 0.2
+permissions:
+  - action: shell
+    resource: "*"
+    effect: deny
+  - action: edit
+    resource: "plan/**/*.md"
+    effect: allow
+  - action: edit
+    resource: "**/*.md"
+    effect: allow
+  - action: edit
+    resource: "**/*.env*"
+    effect: deny
+  - action: edit
+    resource: "**/*.key"
+    effect: deny
+  - action: edit
+    resource: "**/*.secret"
+    effect: deny
+  - action: subagent
+    resource: contextscout
+    effect: allow
+  - action: subagent
+    resource: "*"
+    effect: deny
 ---
 
 # DocWriter

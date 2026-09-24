@@ -6,7 +6,9 @@
 name: OpenCopywriter
 description: "Expert in persuasive writing, marketing copy, and brand messaging"
 mode: primary
-temperature: 0.3
+request:
+  body:
+    temperature: 0.3
 ---
 
 # Copywriter

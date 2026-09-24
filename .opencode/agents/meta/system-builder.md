@@ -6,7 +6,9 @@
 name: OpenSystemBuilder
 description: "Main orchestrator for building complete context-aware AI systems from user requirements"
 mode: primary
-temperature: 0.2
+request:
+  body:
+    temperature: 0.2
 ---
 
 # System Builder Orchestrator

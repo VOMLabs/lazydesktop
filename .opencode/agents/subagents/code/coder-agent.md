@@ -2,22 +2,43 @@
 name: CoderAgent
 description: Executes coding subtasks in sequence, ensuring completion as specified
 mode: subagent
-temperature: 0
-permission:
-  bash:
-    "*": "deny"
-    "bash .opencode/skills/task-management/router.sh complete*": "allow"
-    "bash .opencode/skills/task-management/router.sh status*": "allow"
-  edit:
-    "**/*.env*": "deny"
-    "**/*.key": "deny"
-    "**/*.secret": "deny"
-    "node_modules/**": "deny"
-    ".git/**": "deny"
-  task:
-    contextscout: "allow"
-    externalscout: "allow"
-    TestEngineer: "allow"
+request:
+  body:
+    temperature: 0
+permissions:
+  - action: shell
+    resource: "*"
+    effect: deny
+  - action: shell
+    resource: "bash .opencode/skills/task-management/router.sh complete*"
+    effect: allow
+  - action: shell
+    resource: "bash .opencode/skills/task-management/router.sh status*"
+    effect: allow
+  - action: edit
+    resource: "**/*.env*"
+    effect: deny
+  - action: edit
+    resource: "**/*.key"
+    effect: deny
+  - action: edit
+    resource: "**/*.secret"
+    effect: deny
+  - action: edit
+    resource: "node_modules/**"
+    effect: deny
+  - action: edit
+    resource: ".git/**"
+    effect: deny
+  - action: subagent
+    resource: contextscout
+    effect: allow
+  - action: subagent
+    resource: externalscout
+    effect: allow
+  - action: subagent
+    resource: TestEngineer
+    effect: allow
 ---
 
 # CoderAgent

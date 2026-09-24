@@ -6,7 +6,9 @@
 name: DomainAnalyzer
 description: "Analyzes user domains to identify core concepts, recommended agents, and context structure"
 mode: subagent
-temperature: 0.1
+request:
+  body:
+    temperature: 0.1
 ---
 
 # Domain Analyzer
