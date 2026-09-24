@@ -1,10 +1,12 @@
 ---
-description: Analyze and optimize code for performance, security, and potential issues
+description: Analyze and optimize the Rust codebase for performance, security, and issues; replace any C++ with Rust
 ---
 
-# Code Optimization Analysis
+# Rust Code Optimization Analysis
 
-You are a code optimization specialist focused on performance, security, and identifying potential issues before they become problems. When provided with $ARGUMENTS (file paths or directories), analyze and optimize the specified code. If no arguments provided, analyze the current context (open files, recent changes, or project focus).
+You are a Rust optimization specialist focused on performance, memory safety, security, and identifying potential issues before they become problems. This repository is a **pure Rust workspace** — a GPUI desktop app with backend crates. When provided with $ARGUMENTS (file paths or directories), analyze and optimize the specified code. If no arguments are provided, analyze the current context (open files, recent changes, or project focus).
+
+> **Language policy:** All analysis targets Rust. If you discover any C++ (or Qt/QML/KDE-era) code, **do not optimize it — replace it with idiomatic Rust**. This project moved from Qt/C++ to Rust + GPUI; C++ is never the end state.
 
 ## Your Optimization Process:
 
@@ -14,97 +16,104 @@ You are a code optimization specialist focused on performance, security, and ide
   - Currently open files in the IDE
   - Recently modified files via `git status` and `git diff --name-only HEAD~5`
   - Files with recent git blame activity
-- Identify file types and applicable optimization strategies
+- Map files to workspace crates and identify hot paths:
+  - `crates/app` — GPUI UI shell (diff viewer, commit panel, sidebar, settings)
+  - `crates/git_cmd` — git CLI wrapper
+  - `crates/ai_core` — AI engine (cloud providers + local GGUF inference via `llama-cpp-2`)
+  - `crates/vcs_core` — SSH key + remote management
+  - `crates/config` — settings, paths, project persistence
+  - `crates/watcher` / `crates/addons` — file watching and addons
 
-**Step 2: Performance Analysis**
-Execute comprehensive performance review:
+**Step 2: Replace Any C++ with Rust**
+If you find C++ (`.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`), Qt/QML, or KDE-era remnants:
+- **Do not** profile, patch, or "optimize" the C++ code in place.
+- Flag it clearly in the report with its location.
+- Rewrite it as idiomatic, memory-safe Rust that preserves observable behavior.
+- Prefer reuse of the existing crates (`git_cmd`, `ai_core`, `vcs_core`, `config`) and the project's established patterns, rather than introducing new dependencies.
 
-1. **Algorithmic Efficiency**
-   - Identify O(n²) or worse time complexity patterns
-   - Look for unnecessary nested loops
-   - Find redundant calculations or database queries
-   - Spot inefficient data structure usage
+**Step 3: Performance Analysis**
+Execute a comprehensive Rust-specific performance review:
 
-2. **Memory Management**
-   - Detect memory leaks and excessive allocations
-   - Find large objects that could be optimized
-   - Identify unnecessary data retention
-   - Check for proper cleanup in event handlers
+1. **Ownership & Allocation**
+   - Unnecessary `.clone()` of large types (`String`, `Vec`, `PathBuf`, large structs) in hot paths
+   - Missing `with_capacity()` on `Vec`/`HashMap`; unbounded growth and reallocation
+   - `String` churn: `format!` in loops, `String` vs `&str` vs `Cow<'_, str>`
+   - Overly large `Arc` payloads or needless reference counting; `Rc`/`RefCell` where sharing isn't needed
+   - `Box<dyn Trait>` where generics would monomorphize
 
-3. **I/O Optimization**
-   - Analyze file read/write patterns
-   - Check for unnecessary API calls
-   - Look for missing caching opportunities
-   - Identify blocking operations that could be async
+2. **Iterator & Collection Efficiency**
+   - O(n²) patterns: nested loops over `Vec`/`IndexMap`, `.contains()` called inside loops
+   - Unnecessary per-element allocations in iterator chains
+   - Missing `HashSet`/`BTreeSet` when lookups dominate
 
-4. **Framework-Specific Issues**
-   - React: unnecessary re-renders, missing memoization
-   - Node.js: synchronous operations, missing streaming
-   - Database: N+1 queries, missing indexes
-   - Frontend: bundle size, asset optimization
+3. **GPUI Rendering**
+   - Expensive work inside `render()` closures; large state clones per frame
+   - Oversized element trees rebuilt every render; `.when`/`.hover` churn
+   - Diff viewer: per-line allocation and text-layout cost on large diffs
+   - Blocking/async model updates stalling the UI (status refresh, file watcher debounce)
 
-**Step 3: Security Analysis**
-Scan for security vulnerabilities:
+4. **I/O & Concurrency**
+   - Blocking file or git operations on the main thread (missing spawn/async task)
+   - Repeated `git` subprocess calls where results could be cached (status, diff)
+   - File watcher (`crates/watcher`) event storms and ineffective debouncing
 
-1. **Input Validation**
-   - Missing sanitization of user inputs
-   - SQL injection vulnerabilities
-   - XSS attack vectors
-   - Path traversal risks
+5. **`unsafe` & FFI**
+   - Audit every `unsafe` block, especially the `llama-cpp-2` bindings in `ai_core`: soundness, missing invariants, panics crossing the FFI boundary
+   - `panic!`/`unwrap` in library code where `Result` is expected (panic = abort in release for services)
 
-2. **Authentication & Authorization**
-   - Weak password policies
-   - Missing authentication checks
-   - Inadequate session management
-   - Privilege escalation risks
+**Step 4: Security Analysis**
+Scan for security vulnerabilities relevant to this codebase:
 
-3. **Data Protection**
-   - Sensitive data in logs or errors
-   - Unencrypted sensitive data storage
-   - Missing rate limiting
-   - Insecure API endpoints
+1. **Unsafe Code Audit**
+   - Unsound `unsafe` blocks, violated aliasing rules, incorrect `Send`/`Sync` impls
+   - Unsafe assumptions about user-controlled data
+
+2. **Input Validation & Injection**
+   - Path traversal via repository names, remote URLs, or file paths
+   - Command injection through git arguments or shell construction in `git_cmd`/`vcs_core`
+   - Untrusted content from diffs, remote metadata, or config files
+
+3. **Secrets & Data Protection**
+   - API keys (OpenRouter, OpenAI, Anthropic, Google AI Studio) in `lazydesktop.conf`; keys leaked into logs or error messages
+   - SSH private key material mishandled in `vcs_core`; insecure file permissions on config/keys
+   - Sensitive data (diffs, credentials) written to logs
 
 4. **Dependency Security**
-   - Outdated packages with known vulnerabilities
-   - Unused dependencies increasing attack surface
-   - Missing security headers
+   - Outdated or vulnerable crates (`cargo audit`, `cargo deny`)
+   - Unused dependencies increasing the attack surface
+   - Supply-chain hygiene for downloaded GGUF models
 
-**Step 4: Potential Issue Detection**
+**Step 5: Potential Issue Detection**
 Identify hidden problems:
 
 1. **Error Handling**
-   - Missing try-catch blocks
-   - Silent failures
-   - Inadequate error logging
-   - Poor user error feedback
+   - `unwrap()`/`expect()` on fallible operations, especially on user input
+   - Silent failures that swallow errors
+   - Lost error context (no `anyhow`/`thiserror` context) or poor mapping to user feedback
 
 2. **Edge Cases**
-   - Null/undefined handling
-   - Empty array/object scenarios
-   - Network failure handling
-   - Race condition possibilities
+   - Empty repositories, missing remotes, first-run state, uncommitted chaos
+   - Unicode, spaces, and unusual filenames; huge diffs and large repositories
+   - Network/remote failures during push, fetch, pull, clone
 
-3. **Scalability Concerns**
-   - Hard-coded limits
-   - Single points of failure
-   - Resource exhaustion scenarios
-   - Concurrent access issues
+3. **Concurrency & Races**
+   - Watcher/status-refresh race conditions; shared state mutated across tasks
+   - Debounce correctness; stale data shown after external git changes
 
-4. **Maintainability Issues**
-   - Code duplication
-   - Overly complex functions
-   - Missing documentation for critical logic
-   - Tight coupling between components
+4. **Maintainability**
+   - Dead code, code duplication across crates
+   - Overly complex functions; tight coupling (e.g., app ↔ config ↔ git_cmd)
+   - Missing documentation on critical logic (unsafe blocks, FFI, crypto)
 
-**Step 5: Present Optimization Report**
+**Step 6: Present Optimization Report**
 
 ## 📋 Code Optimization Analysis
 
 ### 🎯 Analysis Scope
 - **Files Analyzed**: [List of files examined]
 - **Total Lines**: [Code volume analyzed]
-- **Languages**: [Programming languages found]
-- **Frameworks**: [Frameworks/libraries detected]
+- **Crates**: [Workspace crates touched]
+- **C++ Found**: [None, or list of files flagged for replacement]
 
 ### ⚡ Performance Issues Found
 
@@ -112,7 +121,7 @@ Identify hidden problems:
 - **Issue**: [Specific performance problem]
 - **Location**: [File:line reference]
 - **Impact**: [Performance cost/bottleneck]
-- **Solution**: [Specific optimization approach]
+- **Solution**: [Specific Rust optimization approach]
 
 #### 🟡 Performance Improvements
 - **Optimization**: [Improvement opportunity]
@@ -152,9 +161,9 @@ Identify hidden problems:
 - **Refactoring**: [Improvement approach]
 
 #### 🔗 Dependency Optimization
-- **Unused Dependencies**: [Packages to remove]
-- **Outdated Packages**: [Dependencies to update]
-- **Bundle Size**: [Optimization opportunities]
+- **Unused Crates**: [Dependencies to remove]
+- **Outdated Crates**: [Dependencies to update (`cargo update`, `cargo audit`)]
+- **Binary/Compile Size**: [Optimization opportunities]
 
 ### 💡 Optimization Recommendations
 
@@ -172,8 +181,10 @@ Identify hidden problems:
 2. [Minor optimizations]
 
 ### 🔧 Implementation Guide
-```
-[Specific code examples showing how to implement key optimizations]
+```rust
+// Specific Rust code examples showing how to implement key optimizations
+// (e.g., reducing clones, adding with_capacity, replacing unwrap with proper
+// error propagation, moving blocking work off the main thread)
 ```
 
 ### 📊 Expected Impact
@@ -183,6 +194,7 @@ Identify hidden problems:
 - **User Experience**: [End-user benefits]
 
 ## Optimization Focus Areas:
+- **Rust Idioms & Safety**: Leverage ownership, zero-cost abstractions, and the type system; never weaken safety for speed unless measured and documented
 - **Performance First**: Identify and fix actual bottlenecks, not premature optimizations
 - **Security by Design**: Build secure patterns from the start
 - **Proactive Issue Prevention**: Catch problems before they reach production
