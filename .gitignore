@@ -5,6 +5,13 @@ target/
 xmake.lock
 compile_commands.json
 
+# ── Packaging output (AppImage, .deb, Arch, MSI) ───────────────────
+AppDir/
+*.AppImage
+*.deb
+*.pkg.tar.zst
+*.msi
+
 # ── Editor / IDE ───────────────────────────────────────────────────
 .vscode/
 !.vscode/settings.json
@@ -18,3 +25,12 @@ compile_commands.json
 # ── Temporary / session files ──────────────────────────────────────
 .tmp/
 .moon/cache/
+*.log
+
+# ── Environment / secrets ──────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Local tooling ──────────────────────────────────────────────────
+.mise.local.toml
