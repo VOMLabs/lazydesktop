@@ -346,6 +346,26 @@ pub fn show_file_bytes(repo_path: &Path, hash: &str, path: &str) -> Result<Vec<u
     }
 }
 
+/// Recent commit authors as `Name <email>` lines (`git log --pretty=%an <%ae>`),
+/// deduplicated in recency order — used for co-author suggestions.
+pub fn recent_authors(repo_path: &Path, limit: usize) -> Vec<String> {
+    let limit_arg = format!("-{limit}");
+    run_git(repo_path, &["log", "--pretty=%an <%ae>", &limit_arg])
+        .map(|r| parse_author_lines(&r.stdout))
+        .unwrap_or_default()
+}
+
+/// Parse `git log --pretty=%an <%ae>` output into deduplicated author lines.
+fn parse_author_lines(output: &str) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    output
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .filter(|l| seen.insert(l.clone()))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -515,6 +535,34 @@ mod tests {
 
         let subjects = recent_subjects(tmp.path(), 5);
         assert_eq!(subjects, vec!["Add f".to_string()]);
+    }
+
+    #[test]
+    fn parse_author_lines_deduplicates_in_order() {
+        let output = "Alice <alice@example.com>\n\
+                      Bob <bob@example.com>\n\
+                      Alice <alice@example.com>\n\
+                      \n";
+        let authors = parse_author_lines(output);
+        assert_eq!(
+            authors,
+            vec![
+                "Alice <alice@example.com>".to_string(),
+                "Bob <bob@example.com>".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn recent_authors_returns_author_lines() {
+        let tmp = TempDir::new().unwrap();
+        init_repo(&tmp);
+
+        let authors = recent_authors(tmp.path(), 5);
+        assert_eq!(
+            authors,
+            vec!["LazyDesktop Test <test@example.com>".to_string()]
+        );
     }
 
     #[test]
