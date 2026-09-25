@@ -19,8 +19,6 @@
 
 ### Diff & Review
 
-- [ ] **Word-level syntax highlighting** in the diff viewer
-- [ ] **Inline image rendering** in the diff viewer (png, jpg, webp, gif, …)
 - [ ] **Staging area UI** — staged vs unstaged sections with partial
       (hunk-by-hunk) staging from the diff view
 - [ ] **History drill-down** — affected-files list per commit with per-file
@@ -29,7 +27,6 @@
 
 ### Commit & History Tools
 
-- [ ] **Co-author selector** on the commit panel (from checked files' history)
 - [ ] **Amend toggle** — edit `HEAD` summary/description (`git commit --amend`)
 - [ ] **Stash list / drop UI** (stash push/pop already ship in the commit
       panel; a list with drop is missing)
@@ -106,7 +103,8 @@
 ### Quality & Tooling
 
 - [ ] **Expand GPUI test coverage** — unit tests exist for `color`, `diff`,
-      and `theme`; add UI/snapshot and integration tests for `crates/app`
+      `commit_msg`, and `theme`; add UI/snapshot and integration tests for
+      `crates/app`
 - [ ] **Refresh OpenCode skills for GPUI** — replace the Qt/QML-era `qt-*`
       skills with GPUI/Rust equivalents now that `crates/app` is the shipped
       UI
@@ -130,7 +128,7 @@
 ### v0.2 — GitHub Desktop Lite (shipped)
 
 - [x] Skip pre-commit hooks toggle (`--no-verify`)
-- [x] Co-author selection from git history (Qt era; GPUI re-add is open)
+- [x] Co-author selection from git history (Qt era; **re-added in GPUI v0.3+**)
 - [x] AI commit message generation (OpenRouter, OpenAI, Anthropic, Google AI
       Studio, and local GGUF via the Rust `ai_core` crate)
 - [x] Dedicated commit-message FFI (`mm_generate_commit_message`) that
@@ -141,7 +139,7 @@
 - [x] Scan folder for Git repos (Qt era; GPUI re-add is open)
 - [x] Projects grouped by remote owner
 - [x] Yellow-dot dirty repo indicator
-- [x] Image preview (png, jpg, webp, gif, etc.) — Qt era; GPUI re-add is open
+- [x] Image preview (png, jpg, webp, gif, etc.) — Qt era; **inline rendering in GPUI v0.3+**
 - [x] Custom YAML themes (Qt era; replaced by Lua `.theme.lua` in v0.3)
 - [x] Dark theme
 - [x] Credential helper dialog
@@ -314,9 +312,9 @@ components for standard widgets:
 
 #### Feature Parity Reached (complete)
 
-- [x] Real diff viewer — colorized unified diffs with line-number gutter
-      (binary files handled; word-level highlighting and inline images
-      remain open)
+- [x] Real diff viewer — colorized unified diffs with line-number gutter,
+      binary files handled, intra-line word highlighting of changed tokens,
+      and inline image rendering (png, jpg, webp, gif, bmp)
 - [x] Settings view — Appearance (theme picker), Git identity
       (`git config --global`), data locations
 - [x] Settings view — AI providers config, SSH key manager (`vcs_core`),
@@ -329,6 +327,10 @@ components for standard widgets:
       providers (OpenRouter / OpenAI / Anthropic / Google AI Studio)
 - [x] Commit panel extras — skip pre-commit hooks toggle, stash / stash pop,
       unstage all
+- [x] Co-author selector — "+ Co-author" editor with recent-author
+      suggestions (`git log --pretty=%an <%ae>`), validation, removable
+      chips, and `Co-authored-by:` trailers appended on commit (pure
+      `commit_msg` module, unit-tested)
 - [x] Theming — shared `Palette` maps `.theme.lua` tokens to GPUI /
       `gpui-component` tokens (System / Dark / Light / custom, persisted and
       applied at startup)
