@@ -326,6 +326,26 @@ pub fn recent_subjects(repo_path: &Path, limit: usize) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Raw bytes of a file at a revision (`git show <hash>:<path>`).
+///
+/// Unlike `run_git` — which decodes stdout lossily as UTF-8 — this preserves
+/// binary content so image files can be written to disk and rendered inline
+/// by the diff viewer.
+pub fn show_file_bytes(repo_path: &Path, hash: &str, path: &str) -> Result<Vec<u8>, VcsError> {
+    let rev_path = format!("{hash}:{path}");
+    let output = Command::new("git")
+        .current_dir(repo_path)
+        .args(["show", &rev_path])
+        .output()?;
+    if output.status.success() {
+        Ok(output.stdout)
+    } else {
+        Err(VcsError::CommandFailed(
+            String::from_utf8_lossy(&output.stderr).to_string(),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -495,5 +515,14 @@ mod tests {
 
         let subjects = recent_subjects(tmp.path(), 5);
         assert_eq!(subjects, vec!["Add f".to_string()]);
+    }
+
+    #[test]
+    fn show_file_bytes_returns_raw_content() {
+        let tmp = TempDir::new().unwrap();
+        init_repo(&tmp);
+
+        let bytes = show_file_bytes(tmp.path(), "HEAD", "f.txt").unwrap();
+        assert_eq!(bytes, b"hello\n");
     }
 }

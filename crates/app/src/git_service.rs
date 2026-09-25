@@ -103,6 +103,12 @@ impl GitService {
         git::show_commit(&self.repo_path, hash)
     }
 
+    /// Raw bytes of a file at a revision (`git show <hash>:<path>`) — used to
+    /// materialize image files for inline rendering in the diff viewer.
+    pub fn file_bytes_at(&self, hash: &str, path: &str) -> Result<Vec<u8>, VcsError> {
+        git::show_file_bytes(&self.repo_path, hash, path)
+    }
+
     /// Get files changed in a commit.
     #[allow(dead_code)] // Planned: affected-files list in commit detail
     pub fn commit_files(&self, hash: &str) -> Result<Vec<FileStatus>, VcsError> {
