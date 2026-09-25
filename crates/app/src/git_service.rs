@@ -156,6 +156,11 @@ impl GitService {
         git::recent_subjects(&self.repo_path, limit)
     }
 
+    /// Recent commit authors as `Name <email>` lines for co-author suggestions.
+    pub fn recent_authors(&self, limit: usize) -> Vec<String> {
+        git::recent_authors(&self.repo_path, limit)
+    }
+
     /// Clone a repository into `dest`.
     pub fn clone_repo(&self, url: &str, dest: &Path) -> Result<CommandResult, VcsError> {
         git::clone(url, dest)

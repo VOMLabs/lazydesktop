@@ -22,6 +22,7 @@ use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::*;
 
 use crate::git_service::GitService;
+use lazydesktop_app::commit_msg::{build_message, is_valid_co_author};
 use lazydesktop_app::theme::Palette;
 
 // Mirrors `kDefaultSystemPrompt` in mainwindow.cpp.
@@ -83,8 +84,14 @@ pub struct CommitPanel {
     git_service: Entity<GitService>,
     summary_input: Entity<InputState>,
     description: String,
-    #[allow(dead_code)] // Planned: co-author trailers
+    /// Selected co-authors as `Name <email>` — appended as trailers on commit.
     co_authors: Vec<String>,
+    /// Free-form `Name <email>` entry for adding a co-author.
+    co_author_input: Entity<InputState>,
+    /// Whether the co-author editor row is expanded.
+    co_author_open: bool,
+    /// Recent repo authors (`Name <email>`) offered as clickable suggestions.
+    recent_authors: Vec<String>,
     skip_hooks: bool,
     /// True while an AI request is in flight.
     ai_busy: bool,
@@ -106,11 +113,17 @@ impl CommitPanel {
             cx.new(|cx| InputState::new(window, cx).placeholder("Summary (required)"));
         cx.subscribe(&summary_input, |_, _, _: &InputEvent, cx| cx.notify())
             .detach();
+        let co_author_input = cx.new(|cx| InputState::new(window, cx).placeholder("Name <email>"));
+        cx.subscribe(&co_author_input, |_, _, _: &InputEvent, cx| cx.notify())
+            .detach();
         Self {
             git_service,
             summary_input,
             description: String::new(),
             co_authors: Vec::new(),
+            co_author_input,
+            co_author_open: false,
+            recent_authors: Vec::new(),
             skip_hooks: false,
             ai_busy: false,
             ai_error: None,
@@ -321,6 +334,32 @@ impl CommitPanel {
         });
         cx.notify();
     }
+
+    /// Expand the co-author editor, lazily loading recent-author suggestions.
+    fn open_co_author_editor(&mut self, cx: &mut Context<Self>) {
+        self.co_author_open = true;
+        if self.recent_authors.is_empty() {
+            self.recent_authors = self.git_service.read(cx).recent_authors(30);
+        }
+        cx.notify();
+    }
+
+    /// Add the co-author typed in the input to the selected list.
+    fn add_co_author(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let raw = self.co_author_input.read(cx).value().trim().to_string();
+        if is_valid_co_author(&raw) && !self.co_authors.iter().any(|a| a == &raw) {
+            self.co_authors.push(raw);
+        }
+        self.co_author_input
+            .update(cx, |state, cx| state.set_value("", window, cx));
+        cx.notify();
+    }
+
+    /// Remove a co-author from the selected list.
+    fn remove_co_author(&mut self, author: &str, cx: &mut Context<Self>) {
+        self.co_authors.retain(|a| a != author);
+        cx.notify();
+    }
 }
 
 impl Render for CommitPanel {
@@ -341,6 +380,13 @@ impl Render for CommitPanel {
         let ai_error = self.ai_error.clone();
         let stash_count = self.git_service.read(cx).stash_count;
         let p = Palette::current(cx);
+
+        // Co-author editor state (cloned so the builder closures stay simple).
+        let co_author_input = self.co_author_input.read(cx).value().to_string();
+        let co_authors = self.co_authors.clone();
+        let recent_authors = self.recent_authors.clone();
+        let add_co_author_disabled = !is_valid_co_author(&co_author_input)
+            || self.co_authors.iter().any(|a| a == co_author_input.trim());
 
         div()
             .flex()
@@ -468,11 +514,8 @@ impl Render for CommitPanel {
                             .on_click(cx.listener(|this, _, window, cx| {
                                 let summary = this.summary_input.read(cx).value().to_string();
                                 let description = this.description.clone();
-                                let message = if description.is_empty() {
-                                    summary.clone()
-                                } else {
-                                    format!("{}\n\n{}", summary, description)
-                                };
+                                let co_authors = this.co_authors.clone();
+                                let message = build_message(&summary, &description, &co_authors);
                                 this.git_service.update(cx, |service, _| {
                                     // Skip hooks mirrors the Qt checkbox on the
                                     // commit panel (git commit --no-verify).
@@ -481,12 +524,116 @@ impl Render for CommitPanel {
                                 this.summary_input
                                     .update(cx, |state, cx| state.set_value("", window, cx));
                                 this.description.clear();
+                                this.co_authors.clear();
+                                this.recent_authors.clear();
                                 this.git_service.update(cx, |service, _| {
                                     service.refresh_all();
                                 });
                                 cx.notify();
                             })),
                     ),
+            )
+            .child(
+                // Co-author editor: collapsed to a ghost "+ Co-author" toggle
+                // until opened or a co-author is selected.
+                if self.co_author_open || !self.co_authors.is_empty() {
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(div().flex_1().child(Input::new(&self.co_author_input)))
+                                .child(
+                                    Button::new("add-co-author")
+                                        .ghost()
+                                        .label("Add")
+                                        .disabled(add_co_author_disabled)
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.add_co_author(window, cx);
+                                        })),
+                                )
+                                .child(
+                                    Button::new("close-co-author-editor")
+                                        .ghost()
+                                        .label("Done")
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.co_author_open = false;
+                                            cx.notify();
+                                        })),
+                                ),
+                        )
+                        .when(!recent_authors.is_empty(), |this| {
+                            this.child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(p.text_muted)
+                                            .child("Suggestions"),
+                                    )
+                                    .children(
+                                        recent_authors
+                                            .iter()
+                                            .filter(|a| !co_authors.contains(a))
+                                            .map(|a| {
+                                                let name = a.clone();
+                                                Button::new(format!("suggest-{name}"))
+                                                    .ghost()
+                                                    .label(name.clone())
+                                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                                        if is_valid_co_author(&name) {
+                                                            this.co_authors.push(name.clone());
+                                                        }
+                                                        cx.notify();
+                                                    }))
+                                            }),
+                                    ),
+                            )
+                        })
+                        .when(!co_authors.is_empty(), |this| {
+                            this.child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(p.text_muted)
+                                            .child("Co-authors"),
+                                    )
+                                    .children(co_authors.iter().map(|a| {
+                                        let name = a.clone();
+                                        Button::new(format!("coauthor-{name}"))
+                                            .ghost()
+                                            .label(format!("{name} ✕"))
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                this.remove_co_author(&name, cx);
+                                            }))
+                                    })),
+                            )
+                        })
+                        .into_any()
+                } else {
+                    div()
+                        .flex()
+                        .child(
+                            Button::new("open-co-author-editor")
+                                .ghost()
+                                .label("+ Co-author")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.open_co_author_editor(cx);
+                                })),
+                        )
+                        .into_any()
+                },
             )
             .when_some(ai_error.clone(), |this, err| {
                 this.child(

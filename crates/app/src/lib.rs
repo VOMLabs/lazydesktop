@@ -6,5 +6,6 @@
 //! it; see `crates/app/src/diff.rs` and `crates/app/src/color.rs`.
 
 pub mod color;
+pub mod commit_msg;
 pub mod diff;
 pub mod theme;
