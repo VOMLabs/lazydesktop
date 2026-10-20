@@ -6,7 +6,7 @@ A fast, native Git client for the KDE Plasma desktop. No Electron. No web
 runtime. No waiting — just a clean, keyboard-friendly window that feels like it
 belongs on your machine, because it does.
 
-> Think GitHub Desktop, but native, fast, and built for the KDE ecosystem.
+> Think GitHub Desktop, but native, fast, and built natively.
 
 **Built on Rust + GPUI.** The interface lives in [`crates/app`](crates/app) and
 talks directly to the backend Rust crates (`git_cmd`, `ai_core`, `vcs_core`,
